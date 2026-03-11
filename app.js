@@ -165,6 +165,7 @@ const elements = {
   markFilterSelect: document.getElementById("mark-filter-select"),
   modelFilterSelect: document.getElementById("model-filter-select"),
   creditFilterSelect: document.getElementById("credit-filter-select"),
+  maxMonthlyPaymentInput: document.getElementById("max-monthly-payment-input"),
   repairFilterSelect: document.getElementById("repair-filter-select"),
   fuelFilterSelect: document.getElementById("fuel-filter-select"),
   driveFilterSelect: document.getElementById("drive-filter-select"),
@@ -191,6 +192,7 @@ const elements = {
   avgPrice: document.getElementById("avg-price"),
   avgYear: document.getElementById("avg-year"),
   avgMileage: document.getElementById("avg-mileage"),
+  avgMonthlyPayment: document.getElementById("avg-monthly-payment"),
   compareCount: document.getElementById("compare-count"),
   compareWinnerText: document.getElementById("compare-winner-text"),
   compareChips: document.getElementById("compare-chips"),
@@ -207,6 +209,8 @@ const elements = {
   topDealList: document.getElementById("top-deal-list"),
   topFreshList: document.getElementById("top-fresh-list"),
   topBadList: document.getElementById("top-bad-list"),
+  topCreditList: document.getElementById("top-credit-list"),
+  topCreditList: document.getElementById("top-credit-list"),
   bestTitle: document.getElementById("best-title"),
   bestPrice: document.getElementById("best-price"),
   bestScore: document.getElementById("best-score"),
@@ -869,6 +873,7 @@ function scoreListings(listings) {
   const owners = listings.map(item => item.owners).filter(item => item !== null && item !== undefined);
   const photoCounts = listings.map(item => item.photoCount).filter(item => item !== null && item !== undefined);
   const risks = listings.map(item => item.riskScore).filter(item => item !== null && item !== undefined);
+  const monthlyPayments = listings.map(item => item.creditMonthlyPayment).filter(item => item !== null && item !== undefined);
   const freshnessValues = listings
     .map(item => {
       const age = daysSince(item.publicationDate || item.lastUpdate || item.lastCheckedAt);
@@ -889,6 +894,8 @@ function scoreListings(listings) {
     photoMax: photoCounts.length ? Math.max(...photoCounts) : null,
     riskMin: risks.length ? Math.min(...risks) : null,
     riskMax: risks.length ? Math.max(...risks) : null,
+    monthlyPaymentMin: monthlyPayments.length ? Math.min(...monthlyPayments) : 0,
+    monthlyPaymentMax: monthlyPayments.length ? Math.max(...monthlyPayments) : 1,
     freshMin: freshnessValues.length ? Math.min(...freshnessValues) : null,
     freshMax: freshnessValues.length ? Math.max(...freshnessValues) : null
   };
@@ -940,6 +947,15 @@ function scoreListings(listings) {
       yearScore * 0.15 +
       mileageScore * 0.1 +
       riskSafetyScore * 0.1;
+    const creditScore = item.creditAvailable && item.creditMonthlyPayment
+      ? (
+          normalize(item.creditMonthlyPayment, bounds.monthlyPaymentMin, bounds.monthlyPaymentMax, true) * 0.55 +
+          marketScore * 0.2 +
+          freshnessScore * 0.1 +
+          riskSafetyScore * 0.1 +
+          yearScore * 0.05
+        )
+      : 0;
     const badScore =
       (item.riskScore !== null ? item.riskScore / 100 : 0.35) * 0.45 +
       resellerScore * 0.2 +
@@ -953,6 +969,7 @@ function scoreListings(listings) {
       score: Number(Math.max(0, Math.min(1, score)).toFixed(4)),
       dealScore: Number(dealScore.toFixed(4)),
       liquidityScore: Number(liquidityScore.toFixed(4)),
+      creditScore: Number(creditScore.toFixed(4)),
       freshnessScore: Number(freshnessScore.toFixed(4)),
       resellerScore: Number(resellerScore.toFixed(4)),
       badScore: Number(badScore.toFixed(4)),
@@ -1052,6 +1069,7 @@ function getFilteredListings() {
   const mark = elements.markFilterSelect.value;
   const model = elements.modelFilterSelect.value;
   const credit = elements.creditFilterSelect.value;
+  const maxMonthlyPayment = number(elements.maxMonthlyPaymentInput.value);
   const repair = elements.repairFilterSelect.value;
   const fuel = elements.fuelFilterSelect.value;
   const drive = elements.driveFilterSelect.value;
@@ -1070,16 +1088,20 @@ function getFilteredListings() {
     const markMatch = !mark || item.brand === mark;
     const modelMatch = !model || item.model === model;
     const creditMatch = !credit || (credit === "yes" ? item.creditAvailable : !item.creditAvailable);
+    const monthlyPaymentMatch = !maxMonthlyPayment || (item.creditMonthlyPayment !== null && item.creditMonthlyPayment <= maxMonthlyPayment);
     const repairMatch = !repair || item.repairState === repair;
     const fuelMatch = !fuel || item.fuelType === fuel;
     const driveMatch = !drive || item.driveType === drive;
     const steeringMatch = !steering || item.steeringSide === steering;
     const colorMatch = !color || item.color === color;
     const optionMatch = !optionSearch || item.options.some(option => option.toLowerCase().includes(optionSearch));
-    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch && markMatch && modelMatch && creditMatch && repairMatch && fuelMatch && driveMatch && steeringMatch && colorMatch && optionMatch;
+    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && driveMatch && steeringMatch && colorMatch && optionMatch;
   });
 
   switch (sort) {
+    case "credit-desc":
+      results.sort((a, b) => b.creditScore - a.creditScore || a.creditMonthlyPayment - b.creditMonthlyPayment);
+      break;
     case "liquidity-desc":
       results.sort((a, b) => b.liquidityScore - a.liquidityScore || b.score - a.score);
       break;
@@ -1116,6 +1138,7 @@ function renderStats(listings) {
     elements.avgPrice.textContent = "-";
     elements.avgYear.textContent = "-";
     elements.avgMileage.textContent = "-";
+    elements.avgMonthlyPayment.textContent = "-";
     elements.bestTitle.textContent = "Нет данных";
     elements.bestPrice.textContent = "-";
     elements.bestScore.textContent = "-";
@@ -1125,6 +1148,7 @@ function renderStats(listings) {
   const avgPrice = listings.reduce((sum, item) => sum + item.price, 0) / listings.length;
   const yearValues = listings.map(item => item.year).filter(item => item !== null && item !== undefined);
   const mileageValues = listings.map(item => item.mileage).filter(item => item !== null && item !== undefined);
+  const paymentValues = listings.map(item => item.creditMonthlyPayment).filter(item => item !== null && item !== undefined);
   const best = [...listings].sort((a, b) => b.score - a.score)[0];
 
   elements.avgPrice.textContent = formatPrice(avgPrice);
@@ -1133,6 +1157,9 @@ function renderStats(listings) {
     : "-";
   elements.avgMileage.textContent = mileageValues.length
     ? formatMileage(mileageValues.reduce((sum, item) => sum + item, 0) / mileageValues.length)
+    : "-";
+  elements.avgMonthlyPayment.textContent = paymentValues.length
+    ? formatPrice(paymentValues.reduce((sum, item) => sum + item, 0) / paymentValues.length)
     : "-";
   elements.bestTitle.textContent = best.title;
   elements.bestPrice.textContent = formatPrice(best.price);
@@ -1172,6 +1199,7 @@ function renderTopLists(listings) {
   elements.topDealList.innerHTML = "";
   elements.topFreshList.innerHTML = "";
   elements.topBadList.innerHTML = "";
+  elements.topCreditList.innerHTML = "";
 
   const topByScore = [...listings]
     .sort((a, b) => b.score - a.score || a.price - b.price)
@@ -1184,6 +1212,10 @@ function renderTopLists(listings) {
     .slice(0, 5);
   const topBad = [...listings]
     .sort((a, b) => b.badScore - a.badScore || b.riskScore - a.riskScore)
+    .slice(0, 5);
+  const topCredit = [...listings]
+    .filter(item => item.creditAvailable && item.creditMonthlyPayment)
+    .sort((a, b) => b.creditScore - a.creditScore || a.creditMonthlyPayment - b.creditMonthlyPayment)
     .slice(0, 5);
 
   const renderList = (target, items, valueKey, valueLabel) => {
@@ -1214,6 +1246,7 @@ function renderTopLists(listings) {
   renderList(elements.topDealList, topByDeal, "dealScore", "deal");
   renderList(elements.topFreshList, topByFresh, "freshnessScore", "fresh");
   renderList(elements.topBadList, topBad, "badScore", "bad");
+  renderList(elements.topCreditList, topCredit, "creditScore", "credit");
 }
 
 function renderTable(listings) {
@@ -1317,6 +1350,8 @@ function renderListingFacts(item) {
     renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
     renderFact("Фото", item.photoCount ?? "-"),
     renderFact("Кредит", formatYesNo(item.creditAvailable)),
+    renderFact("Платёж / мес", item.creditMonthlyPayment ? formatPrice(item.creditMonthlyPayment) : "-"),
+    renderFact("Кредит-скор", Number.isFinite(item.creditScore) ? `${(item.creditScore * 100).toFixed(0)}%` : "-"),
     renderFact("Продавец", getSellerLabel(item)),
     renderFact("Риск", Number.isFinite(item.riskScore) ? `${Math.round(item.riskScore)}/100` : "-"),
     renderFact("Ликвидность", Number.isFinite(item.liquidityScore) ? `${(item.liquidityScore * 100).toFixed(0)}%` : "-"),
@@ -2311,6 +2346,7 @@ function resetFilters() {
   elements.searchInput.value = "";
   elements.minYearInput.value = "";
   elements.maxPriceInput.value = "";
+  elements.maxMonthlyPaymentInput.value = "";
   elements.citySelect.value = "";
   elements.markFilterSelect.value = "";
   elements.modelFilterSelect.value = "";
@@ -2469,6 +2505,7 @@ async function handleFileUpload(event) {
   elements.searchInput,
   elements.minYearInput,
   elements.maxPriceInput,
+  elements.maxMonthlyPaymentInput,
   elements.citySelect,
   elements.modelFilterSelect,
   elements.creditFilterSelect,
@@ -2589,7 +2626,8 @@ elements.resultsBody.addEventListener("click", event => {
   elements.topScoreList,
   elements.topDealList,
   elements.topFreshList,
-  elements.topBadList
+  elements.topBadList,
+  elements.topCreditList
 ].forEach(container => {
   container.addEventListener("click", event => {
     const item = event.target.closest("[data-id]");
