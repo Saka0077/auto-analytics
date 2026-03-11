@@ -159,8 +159,12 @@ const elements = {
   profileNameInput: document.getElementById("profile-name-input"),
   createProfileBtn: document.getElementById("create-profile-btn"),
   searchInput: document.getElementById("search-input"),
-  minYearInput: document.getElementById("min-year-input"),
-  maxPriceInput: document.getElementById("max-price-input"),
+  yearFromInput: document.getElementById("year-from-input"),
+  yearToInput: document.getElementById("year-to-input"),
+  priceFromInput: document.getElementById("price-from-input"),
+  priceToInput: document.getElementById("price-to-input"),
+  mileageFromInput: document.getElementById("mileage-from-input"),
+  mileageToInput: document.getElementById("mileage-to-input"),
   citySelect: document.getElementById("city-select"),
   markFilterSelect: document.getElementById("mark-filter-select"),
   modelFilterSelect: document.getElementById("model-filter-select"),
@@ -209,7 +213,6 @@ const elements = {
   topDealList: document.getElementById("top-deal-list"),
   topFreshList: document.getElementById("top-fresh-list"),
   topBadList: document.getElementById("top-bad-list"),
-  topCreditList: document.getElementById("top-credit-list"),
   topCreditList: document.getElementById("top-credit-list"),
   bestTitle: document.getElementById("best-title"),
   bestPrice: document.getElementById("best-price"),
@@ -268,6 +271,14 @@ function escapeHtml(value) {
 function number(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getNormalizedRange(minValue, maxValue) {
+  if (minValue !== null && maxValue !== null && minValue > maxValue) {
+    return { min: maxValue, max: minValue };
+  }
+
+  return { min: minValue, max: maxValue };
 }
 
 function optionalPositiveNumber(value) {
@@ -1063,8 +1074,9 @@ function populateAttributeFilters() {
 
 function getFilteredListings() {
   const search = elements.searchInput.value.trim().toLowerCase();
-  const minYear = number(elements.minYearInput.value);
-  const maxPrice = number(elements.maxPriceInput.value);
+  const yearRange = getNormalizedRange(number(elements.yearFromInput.value), number(elements.yearToInput.value));
+  const priceRange = getNormalizedRange(number(elements.priceFromInput.value), number(elements.priceToInput.value));
+  const mileageRange = getNormalizedRange(number(elements.mileageFromInput.value), number(elements.mileageToInput.value));
   const city = elements.citySelect.value;
   const mark = elements.markFilterSelect.value;
   const model = elements.modelFilterSelect.value;
@@ -1082,8 +1094,15 @@ function getFilteredListings() {
   const results = scoreListings(state.listings).filter(item => {
     const actualityMatch = showInactive || isListingActual(item);
     const titleMatch = !search || item.title.toLowerCase().includes(search);
-    const yearMatch = !minYear || (item.year !== null && item.year >= minYear);
-    const priceMatch = !maxPrice || item.price <= maxPrice;
+    const yearMatch =
+      (yearRange.min === null || (item.year !== null && item.year >= yearRange.min)) &&
+      (yearRange.max === null || (item.year !== null && item.year <= yearRange.max));
+    const priceMatch =
+      (priceRange.min === null || item.price >= priceRange.min) &&
+      (priceRange.max === null || item.price <= priceRange.max);
+    const mileageMatch =
+      (mileageRange.min === null || (item.mileage !== null && item.mileage >= mileageRange.min)) &&
+      (mileageRange.max === null || (item.mileage !== null && item.mileage <= mileageRange.max));
     const cityMatch = !city || item.city === city;
     const markMatch = !mark || item.brand === mark;
     const modelMatch = !model || item.model === model;
@@ -1095,7 +1114,7 @@ function getFilteredListings() {
     const steeringMatch = !steering || item.steeringSide === steering;
     const colorMatch = !color || item.color === color;
     const optionMatch = !optionSearch || item.options.some(option => option.toLowerCase().includes(optionSearch));
-    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && driveMatch && steeringMatch && colorMatch && optionMatch;
+    return actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && driveMatch && steeringMatch && colorMatch && optionMatch;
   });
 
   switch (sort) {
@@ -2344,8 +2363,12 @@ function render() {
 
 function resetFilters() {
   elements.searchInput.value = "";
-  elements.minYearInput.value = "";
-  elements.maxPriceInput.value = "";
+  elements.yearFromInput.value = "";
+  elements.yearToInput.value = "";
+  elements.priceFromInput.value = "";
+  elements.priceToInput.value = "";
+  elements.mileageFromInput.value = "";
+  elements.mileageToInput.value = "";
   elements.maxMonthlyPaymentInput.value = "";
   elements.citySelect.value = "";
   elements.markFilterSelect.value = "";
@@ -2503,8 +2526,12 @@ async function handleFileUpload(event) {
 
 [
   elements.searchInput,
-  elements.minYearInput,
-  elements.maxPriceInput,
+  elements.yearFromInput,
+  elements.yearToInput,
+  elements.priceFromInput,
+  elements.priceToInput,
+  elements.mileageFromInput,
+  elements.mileageToInput,
   elements.maxMonthlyPaymentInput,
   elements.citySelect,
   elements.modelFilterSelect,
