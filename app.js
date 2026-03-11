@@ -167,6 +167,7 @@ const elements = {
   importMarkSelect: document.getElementById("import-mark-select"),
   importBodySelect: document.getElementById("import-body-select"),
   importTransmissionSelect: document.getElementById("import-transmission-select"),
+  importCustomSelect: document.getElementById("import-custom-select"),
   importPriceFromInput: document.getElementById("import-price-from-input"),
   importPriceToInput: document.getElementById("import-price-to-input"),
   kolesaUrlInput: document.getElementById("kolesa-url-input"),
@@ -296,6 +297,7 @@ function setImportBusy(isBusy) {
   elements.importMarkSelect.disabled = isBusy;
   elements.importBodySelect.disabled = isBusy;
   elements.importTransmissionSelect.disabled = isBusy;
+  elements.importCustomSelect.disabled = isBusy;
   elements.importPriceFromInput.disabled = isBusy;
   elements.importPriceToInput.disabled = isBusy;
   elements.importKolesaBtn.textContent = isBusy ? "Загрузка..." : "Импортировать";
@@ -339,6 +341,7 @@ function buildImportUrlFromFilters() {
   const mark = elements.importMarkSelect.value;
   const body = elements.importBodySelect.value;
   const transmission = elements.importTransmissionSelect.value;
+  const custom = elements.importCustomSelect.value;
   const priceFrom = number(elements.importPriceFromInput.value);
   const priceTo = number(elements.importPriceToInput.value);
 
@@ -353,6 +356,9 @@ function buildImportUrlFromFilters() {
   }
   if (transmission) {
     params.set("auto-car-transm", transmission);
+  }
+  if (custom) {
+    params.set("auto-custom", custom);
   }
   if (priceFrom) {
     params.set("price[from]", String(priceFrom));
@@ -1667,6 +1673,7 @@ elements.importAktauBtn.addEventListener("click", () => {
   elements.importMarkSelect,
   elements.importBodySelect,
   elements.importTransmissionSelect,
+  elements.importCustomSelect,
   elements.importPriceFromInput,
   elements.importPriceToInput
 ].forEach(element => {
