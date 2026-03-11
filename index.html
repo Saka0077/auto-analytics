@@ -115,9 +115,39 @@
         </label>
 
         <div class="import-box">
+          <div class="field-row">
+            <label class="field import-field">
+              <span>Город</span>
+              <select id="import-city-select"></select>
+            </label>
+            <label class="field import-field">
+              <span>Марка</span>
+              <select id="import-mark-select"></select>
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field import-field">
+              <span>Кузов</span>
+              <select id="import-body-select"></select>
+            </label>
+            <label class="field import-field">
+              <span>КПП</span>
+              <select id="import-transmission-select"></select>
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field import-field">
+              <span>Цена от</span>
+              <input id="import-price-from-input" type="number" placeholder="3000000">
+            </label>
+            <label class="field import-field">
+              <span>Цена до</span>
+              <input id="import-price-to-input" type="number" placeholder="12000000">
+            </label>
+          </div>
           <label class="field import-field">
-            <span>Ссылка Kolesa</span>
-            <input id="kolesa-url-input" type="url" placeholder="https://kolesa.kz/cars/...">
+            <span>Ссылка Kolesa или авто-сборка</span>
+            <input id="kolesa-url-input" type="url" placeholder="Если пусто, ссылка соберётся из фильтров выше">
           </label>
           <label class="field import-field">
             <span>Сколько объявлений</span>
@@ -145,8 +175,8 @@
         <div class="hint-box">
           <strong>Важно</strong>
           <p>
-            Импорт с Kolesa теперь идет через сервер. Вставь ссылку на страницу поиска или список объявлений,
-            и сайт загрузит карточки в текущую таблицу.
+            Импорт с Kolesa идет через сервер. Можно вставить готовую ссылку или выбрать город, марку, кузов,
+            КПП и цену, чтобы сайт сам собрал узкий поиск и снизил нагрузку.
           </p>
         </div>
       </section>

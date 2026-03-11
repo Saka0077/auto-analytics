@@ -51,6 +51,85 @@ const defaultListings = [
   }
 ];
 
+const IMPORT_CITIES = [
+  { value: "aktau", label: "Актау" },
+  { value: "almaty", label: "Алматы" },
+  { value: "astana", label: "Астана" },
+  { value: "shymkent", label: "Шымкент" },
+  { value: "atyrau", label: "Атырау" },
+  { value: "karaganda", label: "Караганда" }
+];
+
+const IMPORT_MARKS = [
+  { value: "", label: "Все марки" },
+  { value: "audi", label: "Audi" },
+  { value: "bmw", label: "BMW" },
+  { value: "chevrolet", label: "Chevrolet" },
+  { value: "daewoo", label: "Daewoo" },
+  { value: "honda", label: "Honda" },
+  { value: "hyundai", label: "Hyundai" },
+  { value: "infiniti", label: "Infiniti" },
+  { value: "kia", label: "Kia" },
+  { value: "lexus", label: "Lexus" },
+  { value: "mazda", label: "Mazda" },
+  { value: "mercedes-benz", label: "Mercedes-Benz" },
+  { value: "mitsubishi", label: "Mitsubishi" },
+  { value: "nissan", label: "Nissan" },
+  { value: "opel", label: "Opel" },
+  { value: "renault", label: "Renault" },
+  { value: "subaru", label: "Subaru" },
+  { value: "toyota", label: "Toyota" },
+  { value: "volkswagen", label: "Volkswagen" },
+  { value: "vaz", label: "ВАЗ (Lada)" },
+  { value: "gaz", label: "ГАЗ" },
+  { value: "skoda", label: "Skoda" },
+  { value: "ford", label: "Ford" },
+  { value: "uaz", label: "УАЗ" },
+  { value: "changan", label: "Changan" },
+  { value: "zaz", label: "ЗАЗ" },
+  { value: "chery", label: "Chery" },
+  { value: "geely", label: "Geely" },
+  { value: "ravon", label: "Ravon" },
+  { value: "suzuki", label: "Suzuki" },
+  { value: "ssang-yong", label: "SsangYong" },
+  { value: "jeep", label: "Jeep" },
+  { value: "exeed", label: "EXEED" },
+  { value: "byd", label: "BYD" },
+  { value: "gac", label: "GAC" },
+  { value: "dodge", label: "Dodge" },
+  { value: "faw", label: "FAW" },
+  { value: "jetour", label: "Jetour" },
+  { value: "land-rover", label: "Land Rover" },
+  { value: "saab", label: "Saab" },
+  { value: "cadillac", label: "Cadillac" }
+];
+
+const IMPORT_BODIES = [
+  { value: "", label: "Любой кузов" },
+  { value: "11", label: "седан" },
+  { value: "12", label: "универсал" },
+  { value: "13", label: "хэтчбек" },
+  { value: "14", label: "купе" },
+  { value: "15", label: "кабриолет" },
+  { value: "17", label: "микровэн" },
+  { value: "18", label: "фургон" },
+  { value: "21", label: "внедорожник" },
+  { value: "22", label: "пикап" },
+  { value: "23", label: "кроссовер" },
+  { value: "31", label: "минивэн" },
+  { value: "32", label: "микроавтобус" },
+  { value: "35", label: "лифтбек" }
+];
+
+const IMPORT_TRANSMISSIONS = [
+  { value: "", label: "Любая КПП" },
+  { value: "1", label: "механика" },
+  { value: "2", label: "автомат" },
+  { value: "3", label: "типтроник" },
+  { value: "4", label: "вариатор" },
+  { value: "5", label: "робот" }
+];
+
 const state = {
   listings: defaultListings.map(normalizeRow),
   renderedListings: [],
@@ -84,6 +163,12 @@ const elements = {
   maxPriceInput: document.getElementById("max-price-input"),
   citySelect: document.getElementById("city-select"),
   sortSelect: document.getElementById("sort-select"),
+  importCitySelect: document.getElementById("import-city-select"),
+  importMarkSelect: document.getElementById("import-mark-select"),
+  importBodySelect: document.getElementById("import-body-select"),
+  importTransmissionSelect: document.getElementById("import-transmission-select"),
+  importPriceFromInput: document.getElementById("import-price-from-input"),
+  importPriceToInput: document.getElementById("import-price-to-input"),
   kolesaUrlInput: document.getElementById("kolesa-url-input"),
   importLimitSelect: document.getElementById("import-limit-select"),
   importKolesaBtn: document.getElementById("import-kolesa-btn"),
@@ -207,6 +292,12 @@ function setImportBusy(isBusy) {
   elements.importAktauBtn.disabled = isBusy;
   elements.importLimitSelect.disabled = isBusy;
   elements.kolesaUrlInput.disabled = isBusy;
+  elements.importCitySelect.disabled = isBusy;
+  elements.importMarkSelect.disabled = isBusy;
+  elements.importBodySelect.disabled = isBusy;
+  elements.importTransmissionSelect.disabled = isBusy;
+  elements.importPriceFromInput.disabled = isBusy;
+  elements.importPriceToInput.disabled = isBusy;
   elements.importKolesaBtn.textContent = isBusy ? "Загрузка..." : "Импортировать";
 }
 
@@ -216,6 +307,62 @@ function getImportLimit() {
     return 100;
   }
   return Math.min(Math.max(Math.round(value), 20), 300);
+}
+
+function fillSelectOptions(element, options, selectedValue = "") {
+  element.innerHTML = "";
+  options.forEach(optionData => {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    element.append(option);
+  });
+  element.value = selectedValue;
+}
+
+function populateImportFilters() {
+  fillSelectOptions(elements.importCitySelect, IMPORT_CITIES, "aktau");
+  fillSelectOptions(elements.importMarkSelect, IMPORT_MARKS, "");
+  fillSelectOptions(elements.importBodySelect, IMPORT_BODIES, "");
+  fillSelectOptions(elements.importTransmissionSelect, IMPORT_TRANSMISSIONS, "");
+}
+
+function syncImportUrlPreview() {
+  if (elements.kolesaUrlInput.dataset.manual === "true") {
+    return;
+  }
+  elements.kolesaUrlInput.value = buildImportUrlFromFilters();
+}
+
+function buildImportUrlFromFilters() {
+  const city = elements.importCitySelect.value || "aktau";
+  const mark = elements.importMarkSelect.value;
+  const body = elements.importBodySelect.value;
+  const transmission = elements.importTransmissionSelect.value;
+  const priceFrom = number(elements.importPriceFromInput.value);
+  const priceTo = number(elements.importPriceToInput.value);
+
+  let url = `https://kolesa.kz/cars/${city}/`;
+  if (mark) {
+    url += `${mark}/`;
+  }
+
+  const params = new URLSearchParams();
+  if (body) {
+    params.set("auto-car-body", body);
+  }
+  if (transmission) {
+    params.set("auto-car-transm", transmission);
+  }
+  if (priceFrom) {
+    params.set("price[from]", String(priceFrom));
+  }
+  if (priceTo) {
+    params.set("price[to]", String(priceTo));
+  }
+
+  const query = params.toString();
+  return query ? `${url}?${query}` : url;
 }
 
 function isAuthenticated() {
@@ -1409,7 +1556,7 @@ async function loadListingsFromServer() {
 }
 
 async function importFromKolesa() {
-  const url = elements.kolesaUrlInput.value.trim();
+  const url = elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters();
   await importFromKolesaUrl(url, getImportLimit());
 }
 
@@ -1510,9 +1657,30 @@ elements.profileSelect.addEventListener("change", event => {
 elements.fileInput.addEventListener("change", handleFileUpload);
 elements.importKolesaBtn.addEventListener("click", importFromKolesa);
 elements.importAktauBtn.addEventListener("click", () => {
-  const aktauUrl = "https://kolesa.kz/cars/aktau/";
-  elements.kolesaUrlInput.value = aktauUrl;
-  void importFromKolesaUrl(aktauUrl, getImportLimit());
+  elements.importCitySelect.value = "aktau";
+  elements.kolesaUrlInput.dataset.manual = "false";
+  syncImportUrlPreview();
+  void importFromKolesaUrl(buildImportUrlFromFilters(), getImportLimit());
+});
+[
+  elements.importCitySelect,
+  elements.importMarkSelect,
+  elements.importBodySelect,
+  elements.importTransmissionSelect,
+  elements.importPriceFromInput,
+  elements.importPriceToInput
+].forEach(element => {
+  element.addEventListener("input", () => {
+    elements.kolesaUrlInput.dataset.manual = "false";
+    syncImportUrlPreview();
+  });
+  element.addEventListener("change", () => {
+    elements.kolesaUrlInput.dataset.manual = "false";
+    syncImportUrlPreview();
+  });
+});
+elements.kolesaUrlInput.addEventListener("input", () => {
+  elements.kolesaUrlInput.dataset.manual = elements.kolesaUrlInput.value.trim() ? "true" : "false";
 });
 elements.modalCloseBtn.addEventListener("click", closeListingDetails);
 elements.modalBackdrop.addEventListener("click", closeListingDetails);
@@ -1596,6 +1764,9 @@ document.addEventListener("keydown", event => {
 });
 
 populateCities();
+populateImportFilters();
+elements.kolesaUrlInput.dataset.manual = "false";
+syncImportUrlPreview();
 updateComparePanel();
 Promise.all([loadAppState(), loadListingsFromServer()]).finally(() => {
   render();
