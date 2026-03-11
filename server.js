@@ -682,7 +682,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
-  const safePath = pathname === "/" ? "/index.html" : pathname;
+  const safePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const resolvedPath = path.normalize(path.join(ROOT, safePath));
   if (!resolvedPath.startsWith(ROOT)) {
     sendText(response, 403, "Forbidden");
