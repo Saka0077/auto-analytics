@@ -553,6 +553,37 @@ th {
   letter-spacing: 0.08em;
 }
 
+.table-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.table-sort-btn:hover {
+  color: var(--text);
+}
+
+.table-sort-btn.is-active {
+  color: var(--text);
+}
+
+.sort-indicator {
+  min-width: 10px;
+  color: var(--muted);
+}
+
+.table-sort-btn.is-active .sort-indicator {
+  color: var(--text);
+}
+
 tbody tr:hover {
   background: #fafafa;
 }
@@ -821,9 +852,20 @@ a:hover {
   align-items: center;
 }
 
+.breakdown-meta {
+  display: grid;
+  gap: 4px;
+}
+
 .breakdown-item span:first-child {
   color: var(--muted);
   font-size: 13px;
+}
+
+.breakdown-meta small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .breakdown-track {

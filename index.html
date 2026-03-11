@@ -21,7 +21,7 @@
       </div>
       <div class="hero-card">
         <div class="metric">
-          <span class="metric-label">Лучший вариант</span>
+          <span class="metric-label">Лучшее цена/качество</span>
           <strong id="best-title">Нет данных</strong>
         </div>
         <div class="metric-grid">
@@ -30,7 +30,7 @@
             <strong id="best-price">-</strong>
           </div>
           <div>
-            <span class="metric-label">Рейтинг</span>
+            <span class="metric-label">Цена/качество</span>
             <strong id="best-score">-</strong>
           </div>
         </div>
@@ -206,7 +206,7 @@
         <label class="field">
           <span>Сортировка</span>
           <select id="sort-select">
-            <option value="score">Сначала лучшие</option>
+            <option value="score">Лучшее цена/качество</option>
             <option value="credit-desc">Лучшие в кредит</option>
             <option value="liquidity-desc">Ликвидные</option>
             <option value="fresh-desc">Сначала свежие</option>
@@ -369,7 +369,7 @@
         <div class="top-grid">
           <div class="top-card">
             <div class="panel-head">
-              <h2>Топ 5 лучших</h2>
+              <h2>Топ 5 цена/качество</h2>
             </div>
             <div id="top-score-list" class="top-list"></div>
           </div>
@@ -405,7 +405,7 @@
 
         <div class="chart-card">
           <div class="panel-head">
-            <h2>Рейтинг объявлений</h2>
+            <h2>Цена/качество</h2>
           </div>
           <div id="bars" class="bars"></div>
         </div>
@@ -420,16 +420,44 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead>
+              <thead id="results-head">
                 <tr>
                   <th>Фото</th>
-                  <th>Машина</th>
-                  <th>Цена</th>
-                  <th>Год</th>
-                  <th>Дата</th>
-                  <th>Пробег</th>
-                  <th>Влад.</th>
-                  <th>Рейтинг</th>
+                  <th>
+                    <button class="table-sort-btn" type="button" data-sort-key="title">
+                      Машина <span class="sort-indicator">-</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="table-sort-btn" type="button" data-sort-key="price">
+                      Цена <span class="sort-indicator">-</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="table-sort-btn" type="button" data-sort-key="year">
+                      Год <span class="sort-indicator">-</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="table-sort-btn" type="button" data-sort-key="publicationDate">
+                      Дата <span class="sort-indicator">-</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="table-sort-btn" type="button" data-sort-key="mileage">
+                      Пробег <span class="sort-indicator">-</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="table-sort-btn" type="button" data-sort-key="owners">
+                      Влад. <span class="sort-indicator">-</span>
+                    </button>
+                  </th>
+                  <th>
+                    <button class="table-sort-btn" type="button" data-sort-key="score">
+                      Цена/кач. <span class="sort-indicator">-</span>
+                    </button>
+                  </th>
                   <th>Ссылка</th>
                 </tr>
               </thead>
@@ -462,7 +490,7 @@
 
         <div class="modal-sections">
           <section class="modal-section">
-            <h3>Почему такой рейтинг</h3>
+            <h3>Почему это хороший вариант</h3>
             <div id="modal-breakdown" class="breakdown-list"></div>
           </section>
 

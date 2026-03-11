@@ -133,6 +133,10 @@ const IMPORT_TRANSMISSIONS = [
 const state = {
   listings: defaultListings.map(normalizeRow),
   renderedListings: [],
+  tableSort: {
+    key: "",
+    direction: "asc"
+  },
   selectedListingId: null,
   compareIds: [],
   compareWinnerId: null,
@@ -206,6 +210,7 @@ const elements = {
   openCompareBtn: document.getElementById("open-compare-btn"),
   clearCompareBtn: document.getElementById("clear-compare-btn"),
   bars: document.getElementById("bars"),
+  resultsHead: document.getElementById("results-head"),
   resultsBody: document.getElementById("results-body"),
   resultsCount: document.getElementById("results-count"),
   bulkCheckBtn: document.getElementById("bulk-check-btn"),
@@ -248,6 +253,99 @@ const elements = {
   exportCompareCsvBtn: document.getElementById("export-compare-csv-btn"),
   exportComparePdfBtn: document.getElementById("export-compare-pdf-btn")
 };
+
+function normalizeSortValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const timestamp = Date.parse(value);
+    if (Number.isFinite(timestamp)) {
+      return timestamp;
+    }
+    return value.toLowerCase();
+  }
+
+  return value;
+}
+
+function getTableSortValue(item, key) {
+  switch (key) {
+    case "title":
+      return item.title || "";
+    case "price":
+      return item.price;
+    case "year":
+      return item.year;
+    case "publicationDate":
+      return item.publicationDate || item.lastUpdate || item.lastCheckedAt || "";
+    case "mileage":
+      return item.mileage;
+    case "owners":
+      return item.owners;
+    case "score":
+      return item.score;
+    default:
+      return item[key];
+  }
+}
+
+function applyTableSort(listings) {
+  const { key, direction } = state.tableSort;
+  if (!key) {
+    return listings;
+  }
+
+  const multiplier = direction === "desc" ? -1 : 1;
+  listings.sort((left, right) => {
+    const leftValue = normalizeSortValue(getTableSortValue(left, key));
+    const rightValue = normalizeSortValue(getTableSortValue(right, key));
+
+    if (leftValue === rightValue) {
+      return 0;
+    }
+
+    if (leftValue === null) {
+      return 1;
+    }
+
+    if (rightValue === null) {
+      return -1;
+    }
+
+    if (leftValue > rightValue) {
+      return 1 * multiplier;
+    }
+
+    if (leftValue < rightValue) {
+      return -1 * multiplier;
+    }
+
+    return 0;
+  });
+
+  return listings;
+}
+
+function renderTableSortHeaders() {
+  if (!elements.resultsHead) {
+    return;
+  }
+
+  const buttons = elements.resultsHead.querySelectorAll("[data-sort-key]");
+  buttons.forEach(button => {
+    const isActive = button.dataset.sortKey === state.tableSort.key;
+    const indicator = button.querySelector(".sort-indicator");
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    if (indicator) {
+      indicator.textContent = isActive
+        ? (state.tableSort.direction === "asc" ? "↑" : "↓")
+        : "-";
+    }
+  });
+}
 
 function createListingId(item) {
   return [
@@ -381,6 +479,14 @@ function formatPrice(value) {
 
 function formatMileage(value) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(value)) + " км";
+}
+
+function formatScore(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function formatScorePercent(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
 }
 
 function formatPercent(value) {
@@ -939,16 +1045,24 @@ function scoreListings(listings) {
         ((item.description || "").length < 80 ? 0.1 : 0)
       )
     );
-    const score =
-      priceScore * 0.30 +
-      yearScore * 0.18 +
-      mileageScore * 0.14 +
+    const sellerTrustScore = Math.max(0, 1 - resellerScore);
+    const qualityScore =
+      yearScore * 0.22 +
+      mileageScore * 0.2 +
       ownersScore * 0.08 +
-      marketScore * 0.12 +
+      freshnessScore * 0.12 +
+      photoScore * 0.08 +
+      riskSafetyScore * 0.22 +
+      sellerTrustScore * 0.08;
+    const valueScore =
+      priceScore * 0.48 +
+      marketScore * 0.34 +
       freshnessScore * 0.08 +
-      photoScore * 0.04 +
-      riskSafetyScore * 0.06 -
-      sellerPenalty;
+      sellerTrustScore * 0.1;
+    const score =
+      valueScore * 0.56 +
+      qualityScore * 0.44 -
+      sellerPenalty * 0.35;
     const dealScore =
       priceScore * 0.40 +
       marketScore * 0.35 +
@@ -982,6 +1096,8 @@ function scoreListings(listings) {
     return {
       ...item,
       score: Number(Math.max(0, Math.min(1, score)).toFixed(4)),
+      qualityScore: Number(qualityScore.toFixed(4)),
+      valueScore: Number(valueScore.toFixed(4)),
       dealScore: Number(dealScore.toFixed(4)),
       liquidityScore: Number(liquidityScore.toFixed(4)),
       creditScore: Number(creditScore.toFixed(4)),
@@ -990,12 +1106,15 @@ function scoreListings(listings) {
       badScore: Number(badScore.toFixed(4)),
       scoreParts: {
         price: Number(priceScore.toFixed(4)),
+        quality: Number(qualityScore.toFixed(4)),
         year: Number(yearScore.toFixed(4)),
         mileage: Number(mileageScore.toFixed(4)),
         owners: Number(ownersScore.toFixed(4)),
         market: Number(marketScore.toFixed(4)),
         freshness: Number(freshnessScore.toFixed(4)),
-        risk: Number(riskSafetyScore.toFixed(4))
+        risk: Number(riskSafetyScore.toFixed(4)),
+        photos: Number(photoScore.toFixed(4)),
+        seller: Number(sellerTrustScore.toFixed(4))
       }
     };
   });
@@ -1151,7 +1270,7 @@ function getFilteredListings() {
       break;
   }
 
-  return results;
+  return applyTableSort(results);
 }
 
 function renderStats(listings) {
@@ -1186,7 +1305,7 @@ function renderStats(listings) {
     : "-";
   elements.bestTitle.textContent = best.title;
   elements.bestPrice.textContent = formatPrice(best.price);
-  elements.bestScore.textContent = best.score.toFixed(2);
+  elements.bestScore.textContent = formatScore(best.score);
 }
 
 function renderBars(listings) {
@@ -1259,20 +1378,21 @@ function renderTopLists(listings) {
           <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)} · ${formatShortDate(item.publicationDate)}</div>
           <div class="top-item-badges">${renderListingBadges(item)}</div>
         </div>
-        <div class="top-item-value">${item[valueKey].toFixed(2)} ${valueLabel}</div>
+        <div class="top-item-value">${formatScore(item[valueKey])} ${valueLabel}</div>
       `;
       target.append(row);
     });
   };
 
-  renderList(elements.topScoreList, topByScore, "score", "score");
-  renderList(elements.topDealList, topByDeal, "dealScore", "deal");
+  renderList(elements.topScoreList, topByScore, "score", "ц/к");
+  renderList(elements.topDealList, topByDeal, "dealScore", "выгода");
   renderList(elements.topFreshList, topByFresh, "freshnessScore", "fresh");
   renderList(elements.topBadList, topBad, "badScore", "bad");
   renderList(elements.topCreditList, topCredit, "creditScore", "credit");
 }
 
 function renderTable(listings) {
+  renderTableSortHeaders();
   elements.resultsBody.innerHTML = "";
   elements.resultsCount.textContent = `${listings.length} результатов`;
 
@@ -1299,7 +1419,7 @@ function renderTable(listings) {
       <td>${formatShortDate(item.publicationDate)}</td>
       <td>${item.mileage ? formatMileage(item.mileage) : "-"}</td>
       <td>${item.owners ?? "-"}</td>
-      <td><span class="score-badge">${item.score.toFixed(2)}</span></td>
+      <td><span class="score-badge">${formatScore(item.score)}</span></td>
       <td>${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Открыть</a>` : "-"}</td>
     `;
     elements.resultsBody.append(row);
@@ -1350,13 +1470,64 @@ function renderMarketFacts(item) {
   return [];
 }
 
+function getBreakdownComment(label, value, item) {
+  if (label === "Рынок" && Number.isFinite(item.marketDifferencePercent)) {
+    if (item.marketDifferencePercent >= 10) {
+      return `ниже рынка на ${formatPercent(item.marketDifferencePercent)}`;
+    }
+    if (item.marketDifferencePercent <= -10) {
+      return `выше рынка на ${formatPercent(Math.abs(item.marketDifferencePercent))}`;
+    }
+    return "около средней цены по рынку";
+  }
+
+  if (label === "Цена") {
+    return `текущая цена ${formatPrice(item.price)}`;
+  }
+
+  if (label === "Качество") {
+    return value >= 0.7 ? "сильное общее состояние по данным объявления" : value >= 0.45 ? "средний уровень по качеству" : "есть слабые сигналы по качеству";
+  }
+
+  if (label === "Год") {
+    return item.year ? `${item.year} год` : "год не указан";
+  }
+
+  if (label === "Пробег") {
+    return item.mileage ? formatMileage(item.mileage) : "пробег не указан";
+  }
+
+  if (label === "Владельцы") {
+    return item.owners ? `${item.owners}` : "нет данных";
+  }
+
+  if (label === "Свежесть") {
+    return item.publicationDate ? `публикация ${formatShortDate(item.publicationDate)}` : "дата не указана";
+  }
+
+  if (label === "Риск") {
+    return Number.isFinite(item.riskScore) ? `${Math.round(item.riskScore)}/100 риска` : "риск по объявлению средний";
+  }
+
+  if (label === "Фото") {
+    return item.photoCount ? `${item.photoCount} фото` : "мало данных по фото";
+  }
+
+  if (label === "Продавец") {
+    return item.isUsedCarDealer ? "похоже на автосалон или перекупа" : "ближе к частному продавцу";
+  }
+
+  return value >= 0.72 ? "сильная сторона" : value >= 0.45 ? "нейтрально" : "слабое место";
+}
+
 function renderListingFacts(item) {
   const actualityMeta = getActualityMeta(item);
   elements.modalFacts.innerHTML = [
     renderFact("Статус", actualityMeta.label),
     renderFact("Проверено", formatDateTime(item.lastCheckedAt)),
-    renderFact("Рейтинг", item.score.toFixed(2)),
-    renderFact("Выгода", item.dealScore.toFixed(2)),
+    renderFact("Цена/качество", formatScore(item.score)),
+    renderFact("Качество", formatScore(item.qualityScore)),
+    renderFact("Выгода", formatScore(item.dealScore)),
     ...renderMarketFacts(item),
     renderFact("Дата публикации", formatShortDate(item.publicationDate)),
     renderFact("Год", item.year ?? "-"),
@@ -2071,8 +2242,8 @@ function pickBestComparedListing() {
     if (b.score !== a.score) {
       return b.score - a.score;
     }
-    if (b.dealScore !== a.dealScore) {
-      return b.dealScore - a.dealScore;
+    if (b.qualityScore !== a.qualityScore) {
+      return b.qualityScore - a.qualityScore;
     }
     return a.price - b.price;
   })[0];
@@ -2114,6 +2285,7 @@ function exportComparedAsCsv() {
       "owners",
       "city",
       "score",
+      "qualityScore",
       "dealScore",
       "engineVolume",
       "source",
@@ -2127,8 +2299,9 @@ function exportComparedAsCsv() {
       item.mileage ?? "",
       item.owners ?? "",
       item.city || "",
-      item.score.toFixed(2),
-      item.dealScore.toFixed(2),
+      formatScore(item.score),
+      formatScore(item.qualityScore),
+      formatScore(item.dealScore),
       item.engineVolume ?? "",
       item.source || "",
       item.url || "",
@@ -2175,8 +2348,9 @@ function exportComparedAsPdf() {
         <div><span>Год</span><strong>${item.year ?? "-"}</strong></div>
         <div><span>Пробег</span><strong>${item.mileage ? formatMileage(item.mileage) : "-"}</strong></div>
         <div><span>Владельцы</span><strong>${item.owners ?? "-"}</strong></div>
-        <div><span>Рейтинг</span><strong>${item.score.toFixed(2)}</strong></div>
-        <div><span>Выгода</span><strong>${item.dealScore.toFixed(2)}</strong></div>
+        <div><span>Цена/качество</span><strong>${formatScore(item.score)}</strong></div>
+        <div><span>Качество</span><strong>${formatScore(item.qualityScore)}</strong></div>
+        <div><span>Выгода</span><strong>${formatScore(item.dealScore)}</strong></div>
       </div>
       <p>${escapeHtml(item.description || "Описание не указано.")}</p>
       <p class="url">${escapeHtml(item.url || "")}</p>
@@ -2233,8 +2407,9 @@ function renderCompareCard(item) {
           <div class="compare-spec"><span>Год</span><strong>${item.year ?? "-"}</strong></div>
           <div class="compare-spec"><span>Пробег</span><strong>${item.mileage ? formatMileage(item.mileage) : "-"}</strong></div>
           <div class="compare-spec"><span>Владельцы</span><strong>${item.owners ?? "-"}</strong></div>
-          <div class="compare-spec"><span>Рейтинг</span><strong>${item.score.toFixed(2)}</strong></div>
-          <div class="compare-spec"><span>Выгода</span><strong>${item.dealScore.toFixed(2)}</strong></div>
+          <div class="compare-spec"><span>Цена/качество</span><strong>${formatScore(item.score)}</strong></div>
+          <div class="compare-spec"><span>Качество</span><strong>${formatScore(item.qualityScore)}</strong></div>
+          <div class="compare-spec"><span>Выгода</span><strong>${formatScore(item.dealScore)}</strong></div>
           <div class="compare-spec"><span>Двигатель</span><strong>${item.engineVolume ? `${item.engineVolume} л` : "-"}</strong></div>
         </div>
         <p class="compare-description">${escapeHtml(item.description || "Описание не указано.")}</p>
@@ -2287,25 +2462,37 @@ function openListingDetails(listingId) {
 
   const parts = item.scoreParts || {
     price: 0.5,
+    quality: 0.5,
     year: 0.5,
     mileage: 0.5,
-    owners: 0.5
+    owners: 0.5,
+    market: 0.5,
+    freshness: 0.5,
+    risk: 0.5,
+    photos: 0.5,
+    seller: 0.5
   };
 
   elements.modalBreakdown.innerHTML = [
+    ["Качество", parts.quality],
     ["Цена", parts.price],
+    ["Рынок", parts.market],
     ["Год", parts.year],
     ["Пробег", parts.mileage],
     ["Владельцы", parts.owners],
-    ["Рынок", parts.market],
     ["Свежесть", parts.freshness],
-    ["Риск", parts.risk]
+    ["Риск", parts.risk],
+    ["Фото", parts.photos],
+    ["Продавец", parts.seller]
   ]
     .map(([label, value]) => `
       <div class="breakdown-item">
-        <span>${escapeHtml(label)}</span>
+        <div class="breakdown-meta">
+          <span>${escapeHtml(label)}</span>
+          <small>${escapeHtml(getBreakdownComment(label, Number(value), item))}</small>
+        </div>
         <div class="breakdown-track"><div class="breakdown-fill" style="width:${Math.max(Number(value) * 100, 4)}%"></div></div>
-        <strong>${Number(value).toFixed(2)}</strong>
+        <strong>${formatScorePercent(value)}</strong>
       </div>
     `)
     .join("");
@@ -2643,6 +2830,22 @@ elements.clearCompareBtn.addEventListener("click", () => {
 });
 elements.compareCloseBtn.addEventListener("click", closeCompareModal);
 elements.compareBackdrop.addEventListener("click", closeCompareModal);
+elements.resultsHead.addEventListener("click", event => {
+  const button = event.target.closest("[data-sort-key]");
+  if (!button) {
+    return;
+  }
+
+  const nextKey = button.dataset.sortKey;
+  if (state.tableSort.key === nextKey) {
+    state.tableSort.direction = state.tableSort.direction === "asc" ? "desc" : "asc";
+  } else {
+    state.tableSort.key = nextKey;
+    state.tableSort.direction = "asc";
+  }
+
+  render();
+});
 elements.resultsBody.addEventListener("click", event => {
   if (event.target.closest("a")) {
     return;
