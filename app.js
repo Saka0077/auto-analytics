@@ -521,7 +521,8 @@ function getAllScoredListings() {
 
 function renderThumb(imageUrl, className = "thumb") {
   if (imageUrl) {
-    return `<div class="${className}"><img src="${escapeHtml(imageUrl)}" alt="Фото авто" loading="lazy"></div>`;
+    const proxied = `/api/image?url=${encodeURIComponent(imageUrl)}`;
+    return `<div class="${className}"><img src="${proxied}" alt="Фото авто" loading="lazy"></div>`;
   }
 
   return `<div class="${className} thumb--empty">нет фото</div>`;

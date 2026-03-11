@@ -398,6 +398,34 @@ function serveStaticFile(filePath, response) {
   fs.createReadStream(filePath).pipe(response);
 }
 
+async function proxyRemoteImage(imageUrl, response) {
+  try {
+    const remoteUrl = new URL(imageUrl);
+    const remoteResponse = await fetch(remoteUrl.toString(), {
+      headers: {
+        "User-Agent": "Mozilla/5.0 AutoAnalytics/1.0",
+        "Referer": "https://kolesa.kz/",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+      }
+    });
+
+    if (!remoteResponse.ok) {
+      sendText(response, 404, "Image not found");
+      return;
+    }
+
+    response.writeHead(200, {
+      "Content-Type": remoteResponse.headers.get("content-type") || "image/jpeg",
+      "Cache-Control": "public, max-age=3600"
+    });
+
+    const arrayBuffer = await remoteResponse.arrayBuffer();
+    response.end(Buffer.from(arrayBuffer));
+  } catch (error) {
+    sendText(response, 400, "Bad image request");
+  }
+}
+
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
   const pathname = decodeURIComponent(requestUrl.pathname);
@@ -679,6 +707,17 @@ const server = http.createServer(async (request, response) => {
       console.error("Kolesa import failed:", error);
       sendJson(response, 400, { error: message, detail: String(error.message || error) });
     }
+    return;
+  }
+
+  if (pathname === "/api/image" && request.method === "GET") {
+    const imageUrl = requestUrl.searchParams.get("url") || "";
+    if (!imageUrl) {
+      sendText(response, 400, "Missing url");
+      return;
+    }
+
+    await proxyRemoteImage(imageUrl, response);
     return;
   }
 
