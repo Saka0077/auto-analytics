@@ -84,6 +84,7 @@ const elements = {
   citySelect: document.getElementById("city-select"),
   sortSelect: document.getElementById("sort-select"),
   kolesaUrlInput: document.getElementById("kolesa-url-input"),
+  importLimitSelect: document.getElementById("import-limit-select"),
   importKolesaBtn: document.getElementById("import-kolesa-btn"),
   importAktauBtn: document.getElementById("import-aktau-btn"),
   fileInput: document.getElementById("file-input"),
@@ -195,7 +196,18 @@ function setStatus(text) {
 
 function setImportBusy(isBusy) {
   elements.importKolesaBtn.disabled = isBusy;
+  elements.importAktauBtn.disabled = isBusy;
+  elements.importLimitSelect.disabled = isBusy;
+  elements.kolesaUrlInput.disabled = isBusy;
   elements.importKolesaBtn.textContent = isBusy ? "Загрузка..." : "Импортировать";
+}
+
+function getImportLimit() {
+  const value = Number(elements.importLimitSelect.value);
+  if (!Number.isFinite(value) || value <= 0) {
+    return 100;
+  }
+  return Math.min(Math.max(Math.round(value), 20), 300);
 }
 
 function isAuthenticated() {
@@ -1283,10 +1295,10 @@ async function loadListingsFromServer() {
 
 async function importFromKolesa() {
   const url = elements.kolesaUrlInput.value.trim();
-  await importFromKolesaUrl(url);
+  await importFromKolesaUrl(url, getImportLimit());
 }
 
-async function importFromKolesaUrl(url) {
+async function importFromKolesaUrl(url, limit = getImportLimit()) {
   const trimmedUrl = String(url || "").trim();
   if (!trimmedUrl) {
     window.alert("Вставь ссылку Kolesa.");
@@ -1294,7 +1306,7 @@ async function importFromKolesaUrl(url) {
   }
 
   setImportBusy(true);
-  setStatus("Источник: импорт с Kolesa...");
+  setStatus(`Источник: импорт с Kolesa, цель ${limit} объявлений...`);
 
   try {
     const response = await fetch("/api/import/kolesa", {
@@ -1302,7 +1314,7 @@ async function importFromKolesaUrl(url) {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ url: trimmedUrl, save: true })
+      body: JSON.stringify({ url: trimmedUrl, save: true, limit })
     });
 
     const payload = await response.json();
@@ -1320,7 +1332,8 @@ async function importFromKolesaUrl(url) {
     if (isAuthenticated()) {
       void saveAppState();
     }
-    setStatus(`Источник: Kolesa, загружено ${state.listings.length}`);
+    const pagesLoaded = Number(payload.pagesLoaded) || 1;
+    setStatus(`Источник: Kolesa, загружено ${state.listings.length} с ${pagesLoaded} стр.`);
   } catch (error) {
     window.alert(error.message || "Не удалось импортировать данные.");
     setStatus("Источник: ошибка импорта");
@@ -1384,7 +1397,7 @@ elements.importKolesaBtn.addEventListener("click", importFromKolesa);
 elements.importAktauBtn.addEventListener("click", () => {
   const aktauUrl = "https://kolesa.kz/cars/aktau/";
   elements.kolesaUrlInput.value = aktauUrl;
-  void importFromKolesaUrl(aktauUrl);
+  void importFromKolesaUrl(aktauUrl, getImportLimit());
 });
 elements.modalCloseBtn.addEventListener("click", closeListingDetails);
 elements.modalBackdrop.addEventListener("click", closeListingDetails);

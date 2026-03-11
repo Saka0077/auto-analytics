@@ -328,8 +328,38 @@ function extractImage(card) {
   return src.trim();
 }
 
-async function fetchKolesaListings(sourceUrl) {
-  const parsedUrl = new URL(sourceUrl);
+function uniqueListings(listings) {
+  const seen = new Set();
+  return listings.filter(item => {
+    const key = item.url || `${item.title}|${item.price}|${item.city}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function clampImportLimit(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return 100;
+  }
+  return Math.min(Math.max(Math.round(parsed), 20), 300);
+}
+
+function buildKolesaPageUrl(sourceUrl, page) {
+  const pageUrl = new URL(sourceUrl);
+  if (page <= 1) {
+    pageUrl.searchParams.delete("page");
+  } else {
+    pageUrl.searchParams.set("page", String(page));
+  }
+  return pageUrl.toString();
+}
+
+async function fetchKolesaPage(pageUrl) {
+  const parsedUrl = new URL(pageUrl);
   if (!parsedUrl.hostname.endsWith("kolesa.kz")) {
     throw new Error("unsupported-host");
   }
@@ -384,6 +414,41 @@ async function fetchKolesaListings(sourceUrl) {
   });
 
   return normalizeListings(items);
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchKolesaListings(sourceUrl, limit = 100) {
+  const safeLimit = clampImportLimit(limit);
+  const maxPages = Math.ceil(safeLimit / 20) + 2;
+  const pages = [];
+  let combined = [];
+
+  for (let page = 1; page <= maxPages && combined.length < safeLimit; page += 1) {
+    const pageUrl = buildKolesaPageUrl(sourceUrl, page);
+    const pageItems = await fetchKolesaPage(pageUrl);
+    if (!pageItems.length) {
+      break;
+    }
+
+    pages.push(pageUrl);
+    combined = uniqueListings([...combined, ...pageItems]);
+
+    if (pageItems.length < 20) {
+      break;
+    }
+
+    if (combined.length < safeLimit) {
+      await wait(250);
+    }
+  }
+
+  return {
+    items: combined.slice(0, safeLimit),
+    pagesLoaded: pages.length
+  };
 }
 
 function serveStaticFile(filePath, response) {
@@ -676,13 +741,15 @@ const server = http.createServer(async (request, response) => {
       const payload = await parseRequestBody(request);
       const sourceUrl = String(payload.url || "").trim();
       const save = payload.save !== false;
+      const limit = clampImportLimit(payload.limit);
 
       if (!sourceUrl) {
         sendJson(response, 400, { error: "Нужна ссылка на поиск или список объявлений Kolesa." });
         return;
       }
 
-      const listings = await fetchKolesaListings(sourceUrl);
+      const result = await fetchKolesaListings(sourceUrl, limit);
+      const listings = result.items;
       if (!listings.length) {
         sendJson(response, 404, { error: "Не удалось найти объявления на странице." });
         return;
@@ -696,6 +763,8 @@ const server = http.createServer(async (request, response) => {
         ok: true,
         source: "kolesa.kz",
         sourceUrl,
+        limit,
+        pagesLoaded: result.pagesLoaded,
         count: listings.length,
         items: listings
       });
