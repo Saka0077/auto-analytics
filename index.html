@@ -384,6 +384,29 @@
           </section>
 
           <section class="modal-section">
+            <h3>VIN и проверка</h3>
+            <div class="vin-box">
+              <label class="field">
+                <span>VIN</span>
+                <input id="modal-vin-input" type="text" placeholder="Например: JTJHK31U...">
+              </label>
+              <label class="field">
+                <span>Заметка по истории авто</span>
+                <textarea id="modal-vin-note-input" rows="4" placeholder="Штрафы, залоги, ДТП, владельцы, свои заметки"></textarea>
+              </label>
+              <div class="vin-actions">
+                <button id="modal-vin-save-btn" class="ghost-btn" type="button">Сохранить VIN</button>
+                <button id="modal-vin-copy-btn" class="ghost-btn" type="button">Копировать VIN</button>
+              </div>
+              <div class="vin-links">
+                <a id="modal-vin-egov-link" class="ghost-btn vin-link" href="https://egov.kz/cms/ru/news/service_vehicle_history" target="_blank" rel="noreferrer">eGov История авто</a>
+                <a id="modal-vin-kolesa-link" class="ghost-btn vin-link" href="https://kolesa.kz/content/news/na-kolesa-kz-v-obyavleniyah-o-prodazhe-poyavilas-istoriya-avto/" target="_blank" rel="noreferrer">Kolesa История авто</a>
+              </div>
+              <p id="modal-vin-status" class="muted">VIN можно сохранить для этого объявления и потом использовать для официальной проверки.</p>
+            </div>
+          </section>
+
+          <section class="modal-section">
             <h3>Описание</h3>
             <p id="modal-description" class="modal-description">Нет описания.</p>
           </section>

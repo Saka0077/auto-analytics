@@ -216,6 +216,13 @@ const elements = {
   modalFacts: document.getElementById("modal-facts"),
   modalBreakdown: document.getElementById("modal-breakdown"),
   modalSignals: document.getElementById("modal-signals"),
+  modalVinInput: document.getElementById("modal-vin-input"),
+  modalVinNoteInput: document.getElementById("modal-vin-note-input"),
+  modalVinSaveBtn: document.getElementById("modal-vin-save-btn"),
+  modalVinCopyBtn: document.getElementById("modal-vin-copy-btn"),
+  modalVinStatus: document.getElementById("modal-vin-status"),
+  modalVinEgovLink: document.getElementById("modal-vin-egov-link"),
+  modalVinKolesaLink: document.getElementById("modal-vin-kolesa-link"),
   modalDescription: document.getElementById("modal-description"),
   modalLink: document.getElementById("modal-link"),
   modalFavoriteBtn: document.getElementById("modal-favorite-btn"),
@@ -262,6 +269,15 @@ function booleanValue(value) {
   return value === true || value === "true" || value === 1 || value === "1";
 }
 
+function normalizeVin(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function isValidVin(value) {
+  const vin = normalizeVin(value);
+  return vin.length === 17 && !/[IOQ]/.test(vin);
+}
+
 function normalizeRow(item) {
   return {
     id: item.id || createListingId(item),
@@ -277,6 +293,8 @@ function normalizeRow(item) {
     source: item.source || "",
     brand: item.brand || "",
     model: item.model || "",
+    vin: normalizeVin(item.vin),
+    vinNote: item.vin_note || item.vinNote || "",
     advertId: item.advert_id || item.advertId || "",
     engineVolume: optionalPositiveNumber(item.engine_volume ?? item.engineVolume),
     publicationDate: item.publication_date || item.publicationDate || "",
@@ -1213,6 +1231,7 @@ function renderListingFacts(item) {
     renderFact("Год", item.year ?? "-"),
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
     renderFact("Владельцы", item.owners ?? "-"),
+    renderFact("VIN", item.vin || "-"),
     renderFact("Марка", item.brand || "-"),
     renderFact("Модель", item.model || "-"),
     renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
@@ -1293,6 +1312,22 @@ function renderSignals(item) {
   }
 
   return `<ul class="signal-list">${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`;
+}
+
+function renderVinStatusText(item) {
+  if (item.vin) {
+    return isValidVin(item.vin)
+      ? `VIN сохранён: ${item.vin}`
+      : "VIN сохранён, но выглядит некорректно.";
+  }
+
+  return "VIN можно сохранить для этого объявления и потом использовать для официальной проверки.";
+}
+
+function updateVinUi(item) {
+  elements.modalVinInput.value = item?.vin || "";
+  elements.modalVinNoteInput.value = item?.vinNote || "";
+  elements.modalVinStatus.textContent = renderVinStatusText(item || {});
 }
 
 function getActualListingsCount(listings = state.listings) {
@@ -1387,6 +1422,7 @@ async function checkListingActuality(listingId, { silent = false } = {}) {
       renderListingFacts(updated);
       renderListingBreakdown(updated);
       elements.modalSignals.innerHTML = renderSignals(updated);
+      updateVinUi(updated);
       elements.modalSource.textContent = updated.source || "Карточка объявления";
     }
 
@@ -1495,6 +1531,69 @@ async function bulkCheckRenderedListings() {
   } finally {
     elements.bulkCheckBtn.disabled = false;
     elements.bulkCheckBtn.textContent = "Проверить текущие";
+  }
+}
+
+async function saveVinForSelectedListing() {
+  const item = getListingById(state.selectedListingId);
+  if (!item) {
+    return;
+  }
+
+  const vin = normalizeVin(elements.modalVinInput.value);
+  const vinNote = elements.modalVinNoteInput.value.trim();
+
+  if (vin && !isValidVin(vin)) {
+    window.alert("VIN должен содержать 17 символов без I, O и Q.");
+    return;
+  }
+
+  elements.modalVinSaveBtn.disabled = true;
+  elements.modalVinStatus.textContent = "Сохраняем VIN...";
+
+  try {
+    const response = await fetch("/api/listings/vin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        url: item.url,
+        advertId: item.advertId,
+        vin,
+        vinNote
+      })
+    });
+
+    const payload = await response.json();
+    if (!response.ok || !payload.item) {
+      throw new Error(payload.error || "Save failed");
+    }
+
+    replaceListing(payload.item);
+    const updated = getListingById(item.id) || normalizeRow(payload.item);
+    updateVinUi(updated);
+    render();
+    setStatus(vin ? "Источник: VIN сохранён" : "Источник: VIN очищен");
+  } catch (error) {
+    elements.modalVinStatus.textContent = error.message || "Не удалось сохранить VIN.";
+  } finally {
+    elements.modalVinSaveBtn.disabled = false;
+  }
+}
+
+async function copySelectedVin() {
+  const vin = normalizeVin(elements.modalVinInput.value);
+  if (!vin) {
+    window.alert("Сначала введи VIN.");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(vin);
+    elements.modalVinStatus.textContent = `VIN скопирован: ${vin}`;
+  } catch (error) {
+    elements.modalVinStatus.textContent = "Не удалось скопировать VIN.";
   }
 }
 
@@ -2060,6 +2159,7 @@ function openListingDetails(listingId) {
 
   elements.modalDescription.textContent = item.description || "Описание не указано.";
   elements.modalSignals.innerHTML = renderSignals(item);
+  updateVinUi(item);
 
   if (item.url) {
     elements.modalLink.href = item.url;
@@ -2340,6 +2440,14 @@ elements.modalCheckBtn.addEventListener("click", () => {
     void checkListingActuality(state.selectedListingId);
   }
 });
+elements.modalVinSaveBtn.addEventListener("click", () => {
+  if (state.selectedListingId) {
+    void saveVinForSelectedListing();
+  }
+});
+elements.modalVinCopyBtn.addEventListener("click", () => {
+  void copySelectedVin();
+});
 elements.bulkCheckBtn.addEventListener("click", () => {
   void bulkCheckRenderedListings();
 });
@@ -2371,7 +2479,9 @@ elements.resultsBody.addEventListener("click", event => {
 });
 [
   elements.topScoreList,
-  elements.topDealList
+  elements.topDealList,
+  elements.topFreshList,
+  elements.topBadList
 ].forEach(container => {
   container.addEventListener("click", event => {
     const item = event.target.closest("[data-id]");

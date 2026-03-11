@@ -110,6 +110,16 @@ function pickDefined(...values) {
   return null;
 }
 
+function normalizeVin(value) {
+  const vin = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return vin;
+}
+
+function isValidVin(value) {
+  const vin = normalizeVin(value);
+  return vin.length === 17 && !/[IOQ]/.test(vin);
+}
+
 function resolveActualityStatus(item) {
   const status = normalizeActualityStatus(item.actuality_status);
   if (status === "archived" || status === "unavailable") {
@@ -190,6 +200,8 @@ function normalizeListings(rows) {
       source: String(item.source || "").trim(),
       brand: String(item.brand || "").trim(),
       model: String(item.model || "").trim(),
+      vin: normalizeVin(item.vin),
+      vin_note: String(item.vin_note || "").trim(),
       advert_id: String(item.advert_id || extractAdvertIdFromUrl(item.url)).trim(),
       engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null,
       publication_date: String(item.publication_date || "").trim(),
@@ -1323,6 +1335,53 @@ const server = http.createServer(async (request, response) => {
           ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
           : "Не удалось проверить актуальность объявления.";
       sendJson(response, 400, { error: message, detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname === "/api/listings/vin" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const targetUrl = String(payload.url || "").trim();
+      const advertId = String(payload.advertId || "").trim();
+      const vin = normalizeVin(payload.vin);
+      const vinNote = String(payload.vinNote || "").trim().slice(0, 1000);
+
+      if (!targetUrl && !advertId) {
+        sendJson(response, 400, { error: "Нужен url или advertId объявления." });
+        return;
+      }
+
+      if (vin && !isValidVin(vin)) {
+        sendJson(response, 400, { error: "VIN должен содержать 17 символов без I, O и Q." });
+        return;
+      }
+
+      const listings = readListings();
+      let updated = null;
+      const updatedListings = listings.map(item => {
+        const matches = (targetUrl && item.url === targetUrl) || (advertId && String(item.advert_id || "") === advertId);
+        if (!matches) {
+          return item;
+        }
+
+        updated = {
+          ...item,
+          vin,
+          vin_note: vinNote
+        };
+        return updated;
+      });
+
+      if (!updated) {
+        sendJson(response, 404, { error: "Объявление не найдено." });
+        return;
+      }
+
+      writeListings(updatedListings);
+      sendJson(response, 200, { ok: true, item: readListings().find(item => item.url === updated.url) || updated });
+    } catch (error) {
+      sendJson(response, 400, { error: "Не удалось сохранить VIN." });
     }
     return;
   }
