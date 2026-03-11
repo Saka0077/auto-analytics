@@ -87,6 +87,8 @@ function normalizeListings(rows) {
       description: String(item.description || "").trim(),
       source: String(item.source || "").trim(),
       engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null,
+      publication_date: String(item.publication_date || "").trim(),
+      last_update: String(item.last_update || "").trim(),
       avg_price: Number(item.avg_price) > 0 ? Number(item.avg_price) : null,
       market_difference: Number.isFinite(Number(item.market_difference)) ? Number(item.market_difference) : null,
       market_difference_percent: Number.isFinite(Number(item.market_difference_percent))
@@ -383,6 +385,72 @@ function extractAssignedJsonObject(html, marker) {
   return null;
 }
 
+function extractAssignedJsonObjects(html, marker) {
+  const objects = [];
+  let searchFrom = 0;
+
+  while (searchFrom < html.length) {
+    const startIndex = html.indexOf(marker, searchFrom);
+    if (startIndex === -1) {
+      break;
+    }
+
+    const jsonStart = html.indexOf("{", startIndex);
+    if (jsonStart === -1) {
+      break;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let isEscaped = false;
+
+    for (let index = jsonStart; index < html.length; index += 1) {
+      const char = html[index];
+
+      if (inString) {
+        if (isEscaped) {
+          isEscaped = false;
+        } else if (char === "\\") {
+          isEscaped = true;
+        } else if (char === "\"") {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === "\"") {
+        inString = true;
+        continue;
+      }
+
+      if (char === "{") {
+        depth += 1;
+        continue;
+      }
+
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          objects.push(html.slice(jsonStart, index + 1));
+          searchFrom = index + 1;
+          break;
+        }
+      }
+    }
+
+    if (searchFrom <= startIndex) {
+      break;
+    }
+  }
+
+  return objects;
+}
+
+function extractAdvertIdFromUrl(url) {
+  const match = String(url || "").match(/\/a\/show\/(\d+)/);
+  return match ? String(match[1]) : "";
+}
+
 async function fetchKolesaPriceInsight(advertUrl) {
   const parsedUrl = new URL(advertUrl);
   if (!parsedUrl.hostname.endsWith("kolesa.kz")) {
@@ -481,6 +549,18 @@ async function fetchKolesaPage(pageUrl) {
 
   const html = await response.text();
   const $ = cheerio.load(html);
+  const listingMeta = new Map();
+  extractAssignedJsonObjects(html, "listing.items.push(").forEach(jsonText => {
+    try {
+      const item = JSON.parse(jsonText);
+      const advertId = String(item?.id || extractAdvertIdFromUrl(item?.url));
+      if (advertId) {
+        listingMeta.set(advertId, item);
+      }
+    } catch (error) {
+      // Ignore malformed listing payloads and keep parsing cards from DOM.
+    }
+  });
   const items = [];
 
   $(".a-card.js__a-card").each((_, element) => {
@@ -497,6 +577,14 @@ async function fetchKolesaPage(pageUrl) {
     const mileage = extractMileage(description);
     const engineVolume = extractEngineVolume(description);
     const city = extractCityFromAlt(alt);
+    const advertId = extractAdvertIdFromUrl(href);
+    const meta = advertId ? listingMeta.get(advertId) : null;
+    const avgPrice = Number(meta?.attributes?.avgPrice) || 0;
+    const unitPrice = Number(meta?.unitPrice) || price;
+    const marketDifference = avgPrice && unitPrice ? avgPrice - unitPrice : null;
+    const marketDifferencePercent = avgPrice && unitPrice
+      ? Number(((marketDifference / avgPrice) * 100).toFixed(2))
+      : null;
 
     if (!title || !price) {
       return;
@@ -513,7 +601,12 @@ async function fetchKolesaPage(pageUrl) {
       url: href.startsWith("http") ? href : `https://kolesa.kz${href}`,
       image,
       description,
-      source: "kolesa.kz"
+      source: "kolesa.kz",
+      publication_date: String(meta?.publicationDate || ""),
+      last_update: String(meta?.lastUpdate || ""),
+      avg_price: avgPrice || null,
+      market_difference: marketDifference,
+      market_difference_percent: marketDifferencePercent
     });
   });
 

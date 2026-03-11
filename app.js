@@ -168,6 +168,7 @@ const elements = {
   importBodySelect: document.getElementById("import-body-select"),
   importTransmissionSelect: document.getElementById("import-transmission-select"),
   importCustomSelect: document.getElementById("import-custom-select"),
+  importNeedRepairSelect: document.getElementById("import-need-repair-select"),
   importPriceFromInput: document.getElementById("import-price-from-input"),
   importPriceToInput: document.getElementById("import-price-to-input"),
   kolesaUrlInput: document.getElementById("kolesa-url-input"),
@@ -262,6 +263,8 @@ function normalizeRow(item) {
     description: item.description || "",
     source: item.source || "",
     engineVolume: optionalPositiveNumber(item.engine_volume ?? item.engineVolume),
+    publicationDate: item.publication_date || item.publicationDate || "",
+    lastUpdate: item.last_update || item.lastUpdate || "",
     avgPrice: optionalPositiveNumber(item.avg_price ?? item.avgPrice),
     marketDifference: number(item.market_difference ?? item.marketDifference),
     marketDifferencePercent: number(item.market_difference_percent ?? item.marketDifferencePercent)
@@ -284,6 +287,22 @@ function formatPercent(value) {
   return `${Math.abs(Number(value || 0)).toFixed(1)}%`;
 }
 
+function formatShortDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "short"
+  }).format(date);
+}
+
 function setStatus(text) {
   elements.syncStatus.textContent = text;
 }
@@ -298,6 +317,7 @@ function setImportBusy(isBusy) {
   elements.importBodySelect.disabled = isBusy;
   elements.importTransmissionSelect.disabled = isBusy;
   elements.importCustomSelect.disabled = isBusy;
+  elements.importNeedRepairSelect.disabled = isBusy;
   elements.importPriceFromInput.disabled = isBusy;
   elements.importPriceToInput.disabled = isBusy;
   elements.importKolesaBtn.textContent = isBusy ? "Загрузка..." : "Импортировать";
@@ -342,6 +362,7 @@ function buildImportUrlFromFilters() {
   const body = elements.importBodySelect.value;
   const transmission = elements.importTransmissionSelect.value;
   const custom = elements.importCustomSelect.value;
+  const needRepair = elements.importNeedRepairSelect.value;
   const priceFrom = number(elements.importPriceFromInput.value);
   const priceTo = number(elements.importPriceToInput.value);
 
@@ -359,6 +380,9 @@ function buildImportUrlFromFilters() {
   }
   if (custom) {
     params.set("auto-custom", custom);
+  }
+  if (needRepair) {
+    params.set("need-repair", needRepair);
   }
   if (priceFrom) {
     params.set("price[from]", String(priceFrom));
@@ -728,7 +752,7 @@ function renderTopLists(listings) {
         ${renderThumb(item.image, "thumb thumb--small")}
         <div>
           <div class="top-item-title">${escapeHtml(item.title)}</div>
-          <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)}</div>
+          <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)} · ${formatShortDate(item.publicationDate)}</div>
         </div>
         <div class="top-item-value">${item[valueKey].toFixed(2)} ${valueLabel}</div>
       `;
@@ -746,7 +770,7 @@ function renderTable(listings) {
 
   if (!listings.length) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td colspan="8">Ничего не найдено по текущим фильтрам.</td>`;
+    row.innerHTML = `<td colspan="9">Ничего не найдено по текущим фильтрам.</td>`;
     elements.resultsBody.append(row);
     return;
   }
@@ -760,6 +784,7 @@ function renderTable(listings) {
       <td><strong>${escapeHtml(item.title)}</strong><br><span class="muted">${escapeHtml(item.city || "")}</span></td>
       <td>${formatPrice(item.price)}</td>
       <td>${item.year ?? "-"}</td>
+      <td>${formatShortDate(item.publicationDate)}</td>
       <td>${item.mileage ? formatMileage(item.mileage) : "-"}</td>
       <td>${item.owners ?? "-"}</td>
       <td><span class="score-badge">${item.score.toFixed(2)}</span></td>
@@ -818,6 +843,7 @@ function renderListingFacts(item) {
     renderFact("Рейтинг", item.score.toFixed(2)),
     renderFact("Выгода", item.dealScore.toFixed(2)),
     ...renderMarketFacts(item),
+    renderFact("Дата публикации", formatShortDate(item.publicationDate)),
     renderFact("Год", item.year ?? "-"),
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
     renderFact("Владельцы", item.owners ?? "-"),
@@ -1674,6 +1700,7 @@ elements.importAktauBtn.addEventListener("click", () => {
   elements.importBodySelect,
   elements.importTransmissionSelect,
   elements.importCustomSelect,
+  elements.importNeedRepairSelect,
   elements.importPriceFromInput,
   elements.importPriceToInput
 ].forEach(element => {
