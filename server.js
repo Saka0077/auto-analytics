@@ -110,6 +110,17 @@ function pickDefined(...values) {
   return null;
 }
 
+function normalizeRepairState(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "1" || normalized === "yes" || normalized === "true") {
+    return "yes";
+  }
+  if (normalized === "2" || normalized === "no" || normalized === "false") {
+    return "no";
+  }
+  return "unknown";
+}
+
 function normalizeVin(value) {
   const vin = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   return vin;
@@ -202,6 +213,7 @@ function normalizeListings(rows) {
       model: String(item.model || "").trim(),
       vin: normalizeVin(item.vin),
       vin_note: String(item.vin_note || "").trim(),
+      repair_state: normalizeRepairState(item.repair_state),
       advert_id: String(item.advert_id || extractAdvertIdFromUrl(item.url)).trim(),
       engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null,
       publication_date: String(item.publication_date || "").trim(),
@@ -898,6 +910,8 @@ async function fetchKolesaListings(sourceUrl, limit = 100) {
   const maxPages = Math.ceil(safeLimit / 20) + 2;
   const pages = [];
   let combined = [];
+  const parsedSourceUrl = new URL(sourceUrl);
+  const repairState = normalizeRepairState(parsedSourceUrl.searchParams.get("need-repair"));
 
   for (let page = 1; page <= maxPages && combined.length < safeLimit; page += 1) {
     const pageUrl = buildKolesaPageUrl(sourceUrl, page);
@@ -919,7 +933,10 @@ async function fetchKolesaListings(sourceUrl, limit = 100) {
   }
 
   return {
-    items: combined.slice(0, safeLimit),
+    items: combined.slice(0, safeLimit).map(item => ({
+      ...item,
+      repair_state: item.repair_state && item.repair_state !== "unknown" ? item.repair_state : repairState
+    })),
     pagesLoaded: pages.length
   };
 }

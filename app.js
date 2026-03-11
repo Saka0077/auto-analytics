@@ -165,6 +165,7 @@ const elements = {
   markFilterSelect: document.getElementById("mark-filter-select"),
   modelFilterSelect: document.getElementById("model-filter-select"),
   creditFilterSelect: document.getElementById("credit-filter-select"),
+  repairFilterSelect: document.getElementById("repair-filter-select"),
   sortSelect: document.getElementById("sort-select"),
   showInactiveToggle: document.getElementById("show-inactive-toggle"),
   importCitySelect: document.getElementById("import-city-select"),
@@ -278,6 +279,17 @@ function isValidVin(value) {
   return vin.length === 17 && !/[IOQ]/.test(vin);
 }
 
+function normalizeRepairState(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "1" || normalized === "yes" || normalized === "true") {
+    return "yes";
+  }
+  if (normalized === "2" || normalized === "no" || normalized === "false") {
+    return "no";
+  }
+  return "unknown";
+}
+
 function normalizeRow(item) {
   return {
     id: item.id || createListingId(item),
@@ -295,6 +307,7 @@ function normalizeRow(item) {
     model: item.model || "",
     vin: normalizeVin(item.vin),
     vinNote: item.vin_note || item.vinNote || "",
+    repairState: normalizeRepairState(item.repair_state ?? item.repairState),
     advertId: item.advert_id || item.advertId || "",
     engineVolume: optionalPositiveNumber(item.engine_volume ?? item.engineVolume),
     publicationDate: item.publication_date || item.publicationDate || "",
@@ -499,6 +512,17 @@ function getMarketBadge(item) {
   return "";
 }
 
+function getRepairStateLabel(item) {
+  switch (normalizeRepairState(item?.repairState)) {
+    case "yes":
+      return "Не на ходу";
+    case "no":
+      return "Не аварийная";
+    default:
+      return "";
+  }
+}
+
 function renderListingBadges(item) {
   const badges = [renderActualityBadge(item)];
   const promotion = getPromotionLabel(item);
@@ -519,6 +543,11 @@ function renderListingBadges(item) {
 
   if (market) {
     badges.push(`<span class="status-badge status-badge--deal">${escapeHtml(market)}</span>`);
+  }
+
+  const repairState = getRepairStateLabel(item);
+  if (repairState) {
+    badges.push(`<span class="status-badge status-badge--repair">${escapeHtml(repairState)}</span>`);
   }
 
   if (freshness.label) {
@@ -989,6 +1018,7 @@ function getFilteredListings() {
   const mark = elements.markFilterSelect.value;
   const model = elements.modelFilterSelect.value;
   const credit = elements.creditFilterSelect.value;
+  const repair = elements.repairFilterSelect.value;
   const sort = elements.sortSelect.value;
   const showInactive = elements.showInactiveToggle.checked;
 
@@ -1001,7 +1031,8 @@ function getFilteredListings() {
     const markMatch = !mark || item.brand === mark;
     const modelMatch = !model || item.model === model;
     const creditMatch = !credit || (credit === "yes" ? item.creditAvailable : !item.creditAvailable);
-    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch && markMatch && modelMatch && creditMatch;
+    const repairMatch = !repair || item.repairState === repair;
+    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch && markMatch && modelMatch && creditMatch && repairMatch;
   });
 
   switch (sort) {
@@ -1231,6 +1262,7 @@ function renderListingFacts(item) {
     renderFact("Год", item.year ?? "-"),
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
     renderFact("Владельцы", item.owners ?? "-"),
+    renderFact("Состояние", getRepairStateLabel(item) || "Неизвестно"),
     renderFact("VIN", item.vin || "-"),
     renderFact("Марка", item.brand || "-"),
     renderFact("Модель", item.model || "-"),
@@ -2219,6 +2251,7 @@ function resetFilters() {
   elements.markFilterSelect.value = "";
   elements.modelFilterSelect.value = "";
   elements.creditFilterSelect.value = "";
+  elements.repairFilterSelect.value = "";
   elements.sortSelect.value = "score";
   elements.showInactiveToggle.checked = false;
   render();
@@ -2370,6 +2403,7 @@ async function handleFileUpload(event) {
   elements.citySelect,
   elements.modelFilterSelect,
   elements.creditFilterSelect,
+  elements.repairFilterSelect,
   elements.sortSelect,
   elements.showInactiveToggle
 ].forEach(element => {

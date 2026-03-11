@@ -627,6 +627,11 @@ tbody tr.is-clickable {
   color: #047857;
 }
 
+.status-badge--repair {
+  background: rgba(185, 28, 28, 0.12);
+  color: #b91c1c;
+}
+
 a {
   color: var(--accent);
   text-decoration: none;
