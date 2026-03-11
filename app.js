@@ -193,6 +193,7 @@ const elements = {
   bars: document.getElementById("bars"),
   resultsBody: document.getElementById("results-body"),
   resultsCount: document.getElementById("results-count"),
+  bulkCheckBtn: document.getElementById("bulk-check-btn"),
   topScoreList: document.getElementById("top-score-list"),
   topDealList: document.getElementById("top-deal-list"),
   bestTitle: document.getElementById("best-title"),
@@ -380,6 +381,10 @@ function renderActualityBadge(item) {
 
 function setStatus(text) {
   elements.syncStatus.textContent = text;
+}
+
+function wait(ms) {
+  return new Promise(resolve => window.setTimeout(resolve, ms));
 }
 
 function setImportBusy(isBusy) {
@@ -1073,6 +1078,94 @@ async function checkListingActuality(listingId, { silent = false } = {}) {
       elements.modalCheckBtn.disabled = false;
       elements.modalCheckBtn.textContent = "Проверить актуальность";
     }
+  }
+}
+
+async function bulkCheckRenderedListings() {
+  const targets = state.renderedListings.filter(isKolesaListing);
+  if (!targets.length) {
+    window.alert("В текущем списке нет объявлений Kolesa для проверки.");
+    return;
+  }
+
+  elements.bulkCheckBtn.disabled = true;
+  elements.bulkCheckBtn.textContent = `Проверка 0/${targets.length}`;
+  setStatus(`Источник: перепроверка ${targets.length} объявлений...`);
+
+  let checked = 0;
+  let active = 0;
+  let stale = 0;
+  let archived = 0;
+  let unavailable = 0;
+  let failed = 0;
+
+  try {
+    for (const item of targets) {
+      try {
+        const response = await fetch("/api/listings/check", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ url: item.url })
+        });
+
+        const payload = await response.json();
+        if (!response.ok || !payload.item) {
+          throw new Error(payload.error || "Check failed");
+        }
+
+        replaceListing(payload.item);
+        const updated = normalizeRow(payload.item);
+        switch (updated.actualityStatus) {
+          case "stale":
+            stale += 1;
+            break;
+          case "archived":
+            archived += 1;
+            break;
+          case "unavailable":
+            unavailable += 1;
+            break;
+          default:
+            active += 1;
+            break;
+        }
+      } catch (error) {
+        failed += 1;
+      }
+
+      checked += 1;
+      elements.bulkCheckBtn.textContent = `Проверка ${checked}/${targets.length}`;
+      setStatus(`Источник: перепроверка ${checked}/${targets.length} объявлений...`);
+
+      if (checked % 5 === 0 || checked === targets.length) {
+        populateCities();
+        render();
+
+        if (state.selectedListingId) {
+          const selected = getListingById(state.selectedListingId);
+          if (selected && !elements.detailModal.hidden) {
+            elements.modalTitle.textContent = selected.title;
+            elements.modalPrice.textContent = formatPrice(selected.price);
+            elements.modalCity.textContent = selected.city || "-";
+            renderListingFacts(selected);
+            renderListingBreakdown(selected);
+          }
+        }
+      }
+
+      if (checked < targets.length) {
+        await wait(150);
+      }
+    }
+
+    setStatus(
+      `Источник: проверено ${checked}. Активно ${active}, не подтверждено ${stale}, архив ${archived}, недоступно ${unavailable}, ошибок ${failed}.`
+    );
+  } finally {
+    elements.bulkCheckBtn.disabled = false;
+    elements.bulkCheckBtn.textContent = "Проверить текущие";
   }
 }
 
@@ -1897,6 +1990,9 @@ elements.modalCheckBtn.addEventListener("click", () => {
   if (state.selectedListingId) {
     void checkListingActuality(state.selectedListingId);
   }
+});
+elements.bulkCheckBtn.addEventListener("click", () => {
+  void bulkCheckRenderedListings();
 });
 elements.pickBestCompareBtn.addEventListener("click", () => {
   const winner = pickBestComparedListing();

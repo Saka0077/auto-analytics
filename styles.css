@@ -127,6 +127,12 @@ h1 {
   font-size: 18px;
 }
 
+.panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .field,
 .upload-box,
 .hint-box,
@@ -219,6 +225,11 @@ select:focus {
   border-radius: 999px;
   cursor: pointer;
   color: var(--text);
+}
+
+.ghost-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .primary-btn {
