@@ -86,7 +86,12 @@ function normalizeListings(rows) {
       image: String(item.image || "").trim(),
       description: String(item.description || "").trim(),
       source: String(item.source || "").trim(),
-      engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null
+      engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null,
+      avg_price: Number(item.avg_price) > 0 ? Number(item.avg_price) : null,
+      market_difference: Number.isFinite(Number(item.market_difference)) ? Number(item.market_difference) : null,
+      market_difference_percent: Number.isFinite(Number(item.market_difference_percent))
+        ? Number(item.market_difference_percent)
+        : null
     }))
     .filter(item => item.title && item.price > 0);
 }
@@ -326,6 +331,105 @@ function extractImage(card) {
     card.find("img").first().attr("src") ||
     "";
   return src.trim();
+}
+
+function extractAssignedJsonObject(html, marker) {
+  const startIndex = html.indexOf(marker);
+  if (startIndex === -1) {
+    return null;
+  }
+
+  const jsonStart = html.indexOf("{", startIndex);
+  if (jsonStart === -1) {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let isEscaped = false;
+
+  for (let index = jsonStart; index < html.length; index += 1) {
+    const char = html[index];
+
+    if (inString) {
+      if (isEscaped) {
+        isEscaped = false;
+      } else if (char === "\\") {
+        isEscaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return html.slice(jsonStart, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+async function fetchKolesaPriceInsight(advertUrl) {
+  const parsedUrl = new URL(advertUrl);
+  if (!parsedUrl.hostname.endsWith("kolesa.kz")) {
+    throw new Error("unsupported-host");
+  }
+
+  const response = await fetch(parsedUrl.toString(), {
+    headers: {
+      "User-Agent": "Mozilla/5.0 AutoAnalytics/1.0",
+      "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`fetch-failed-${response.status}`);
+  }
+
+  const html = await response.text();
+  const jsonText = extractAssignedJsonObject(html, "window.digitalData =");
+  if (!jsonText) {
+    throw new Error("digital-data-not-found");
+  }
+
+  const digitalData = JSON.parse(jsonText);
+  const product = digitalData?.product || {};
+  const avgPrice = Number(product?.attributes?.avgPrice) || 0;
+  const currentPrice = Number(product?.unitPrice) || 0;
+
+  if (!avgPrice || !currentPrice) {
+    throw new Error("avg-price-not-found");
+  }
+
+  const marketDifference = avgPrice - currentPrice;
+  const marketDifferencePercent = avgPrice
+    ? Number(((marketDifference / avgPrice) * 100).toFixed(2))
+    : null;
+
+  return {
+    avgPrice,
+    currentPrice,
+    marketDifference,
+    marketDifferencePercent,
+    marketPosition: marketDifference > 0 ? "below" : marketDifference < 0 ? "above" : "equal",
+    brand: String(product?.attributes?.brand || ""),
+    model: String(product?.attributes?.model || ""),
+    city: String(product?.city || "")
+  };
 }
 
 function uniqueListings(listings) {
@@ -774,6 +878,26 @@ const server = http.createServer(async (request, response) => {
           ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
           : "Не удалось импортировать объявления с Kolesa.";
       console.error("Kolesa import failed:", error);
+      sendJson(response, 400, { error: message, detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname === "/api/kolesa/price-insight" && request.method === "GET") {
+    const advertUrl = requestUrl.searchParams.get("url") || "";
+    if (!advertUrl) {
+      sendJson(response, 400, { error: "Нужен url объявления." });
+      return;
+    }
+
+    try {
+      const insight = await fetchKolesaPriceInsight(advertUrl);
+      sendJson(response, 200, { ok: true, ...insight, url: advertUrl });
+    } catch (error) {
+      const message =
+        error.message === "unsupported-host"
+          ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
+          : "Не удалось получить аналитику цены по объявлению.";
       sendJson(response, 400, { error: message, detail: String(error.message || error) });
     }
     return;

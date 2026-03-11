@@ -62,7 +62,8 @@ const state = {
   activeProfileId: "default",
   profiles: [{ id: "default", name: "Основной" }],
   authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
-  currentUser: null
+  currentUser: null,
+  listingInsights: {}
 };
 
 const elements = {
@@ -174,7 +175,10 @@ function normalizeRow(item) {
     image: item.image || "",
     description: item.description || "",
     source: item.source || "",
-    engineVolume: optionalPositiveNumber(item.engine_volume ?? item.engineVolume)
+    engineVolume: optionalPositiveNumber(item.engine_volume ?? item.engineVolume),
+    avgPrice: optionalPositiveNumber(item.avg_price ?? item.avgPrice),
+    marketDifference: number(item.market_difference ?? item.marketDifference),
+    marketDifferencePercent: number(item.market_difference_percent ?? item.marketDifferencePercent)
   };
 }
 
@@ -188,6 +192,10 @@ function formatPrice(value) {
 
 function formatMileage(value) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(value)) + " км";
+}
+
+function formatPercent(value) {
+  return `${Math.abs(Number(value || 0)).toFixed(1)}%`;
 }
 
 function setStatus(text) {
@@ -615,6 +623,121 @@ function renderFact(label, value) {
       <strong>${escapeHtml(value)}</strong>
     </div>
   `;
+}
+
+function renderMarketFacts(item) {
+  if (item.avgPrice) {
+    const difference = item.marketDifference ?? (item.avgPrice - item.price);
+    const percent = item.marketDifferencePercent ?? (item.avgPrice ? ((difference / item.avgPrice) * 100) : 0);
+    const label = difference > 0
+      ? "Ниже рынка"
+      : difference < 0
+        ? "Выше рынка"
+        : "По рынку";
+    const value = difference === 0
+      ? "почти без отклонения"
+      : `${formatPrice(Math.abs(difference))} · ${formatPercent(percent)}`;
+
+    return [
+      renderFact("Средняя цена Kolesa", formatPrice(item.avgPrice)),
+      renderFact(label, value)
+    ];
+  }
+
+  const insightState = item.url ? state.listingInsights[item.url] : null;
+  if (insightState?.status === "loading") {
+    return [renderFact("Средняя цена Kolesa", "загрузка...")];
+  }
+
+  if (insightState?.status === "error") {
+    return [renderFact("Средняя цена Kolesa", "не удалось получить")];
+  }
+
+  if (item.source === "kolesa.kz" && item.url.includes("/a/show/")) {
+    return [renderFact("Средняя цена Kolesa", "анализируется...")];
+  }
+
+  return [];
+}
+
+function renderListingFacts(item) {
+  elements.modalFacts.innerHTML = [
+    renderFact("Рейтинг", item.score.toFixed(2)),
+    renderFact("Выгода", item.dealScore.toFixed(2)),
+    ...renderMarketFacts(item),
+    renderFact("Год", item.year ?? "-"),
+    renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
+    renderFact("Владельцы", item.owners ?? "-"),
+    renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
+    renderFact("Цена", formatPrice(item.price)),
+    renderFact("Город", item.city || "-")
+  ].join("");
+}
+
+function applyListingInsight(listingId, insight) {
+  const mergeInsight = item => {
+    if (!item || item.id !== listingId) {
+      return item;
+    }
+
+    return {
+      ...item,
+      avgPrice: optionalPositiveNumber(insight.avgPrice),
+      marketDifference: number(insight.marketDifference),
+      marketDifferencePercent: number(insight.marketDifferencePercent)
+    };
+  };
+
+  state.listings = state.listings.map(mergeInsight);
+  state.renderedListings = state.renderedListings.map(mergeInsight);
+}
+
+async function loadKolesaPriceInsight(item) {
+  if (!item || item.avgPrice || !item.url || !item.url.includes("/a/show/") || item.source !== "kolesa.kz") {
+    return;
+  }
+
+  const cached = state.listingInsights[item.url];
+  if (cached?.status === "loading" || cached?.status === "loaded") {
+    return;
+  }
+
+  state.listingInsights[item.url] = { status: "loading" };
+  if (state.selectedListingId === item.id) {
+    renderListingFacts(item);
+  }
+
+  try {
+    const response = await fetch(`/api/kolesa/price-insight?url=${encodeURIComponent(item.url)}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Insight failed");
+    }
+
+    const insight = {
+      avgPrice: payload.avgPrice,
+      marketDifference: payload.marketDifference,
+      marketDifferencePercent: payload.marketDifferencePercent
+    };
+    state.listingInsights[item.url] = {
+      status: "loaded",
+      ...insight
+    };
+    applyListingInsight(item.id, insight);
+
+    if (state.selectedListingId === item.id) {
+      const updatedItem = getListingById(item.id);
+      if (updatedItem) {
+        renderListingFacts(updatedItem);
+      }
+    }
+  } catch (error) {
+    state.listingInsights[item.url] = { status: "error" };
+    if (state.selectedListingId === item.id) {
+      const updatedItem = getListingById(item.id) || item;
+      renderListingFacts(updatedItem);
+    }
+  }
 }
 
 function getListingById(listingId) {
@@ -1149,16 +1272,7 @@ function openListingDetails(listingId) {
   elements.modalTitle.textContent = item.title;
   elements.modalPrice.textContent = formatPrice(item.price);
   elements.modalCity.textContent = item.city || "Без города";
-  elements.modalFacts.innerHTML = [
-    renderFact("Рейтинг", item.score.toFixed(2)),
-    renderFact("Выгода", item.dealScore.toFixed(2)),
-    renderFact("Год", item.year ?? "-"),
-    renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
-    renderFact("Владельцы", item.owners ?? "-"),
-    renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
-    renderFact("Цена", formatPrice(item.price)),
-    renderFact("Город", item.city || "-")
-  ].join("");
+  renderListingFacts(item);
 
   const parts = item.scoreParts || {
     price: 0.5,
@@ -1203,6 +1317,7 @@ function openListingDetails(listingId) {
 
   elements.detailModal.hidden = false;
   document.body.style.overflow = "hidden";
+  void loadKolesaPriceInsight(item);
 }
 
 function closeListingDetails() {
