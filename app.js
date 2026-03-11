@@ -85,6 +85,7 @@ const elements = {
   sortSelect: document.getElementById("sort-select"),
   kolesaUrlInput: document.getElementById("kolesa-url-input"),
   importKolesaBtn: document.getElementById("import-kolesa-btn"),
+  importAktauBtn: document.getElementById("import-aktau-btn"),
   fileInput: document.getElementById("file-input"),
   resetBtn: document.getElementById("reset-btn"),
   totalCount: document.getElementById("total-count"),
@@ -1282,7 +1283,12 @@ async function loadListingsFromServer() {
 
 async function importFromKolesa() {
   const url = elements.kolesaUrlInput.value.trim();
-  if (!url) {
+  await importFromKolesaUrl(url);
+}
+
+async function importFromKolesaUrl(url) {
+  const trimmedUrl = String(url || "").trim();
+  if (!trimmedUrl) {
     window.alert("Вставь ссылку Kolesa.");
     return;
   }
@@ -1296,7 +1302,7 @@ async function importFromKolesa() {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ url, save: true })
+      body: JSON.stringify({ url: trimmedUrl, save: true })
     });
 
     const payload = await response.json();
@@ -1375,6 +1381,11 @@ elements.profileSelect.addEventListener("change", event => {
 });
 elements.fileInput.addEventListener("change", handleFileUpload);
 elements.importKolesaBtn.addEventListener("click", importFromKolesa);
+elements.importAktauBtn.addEventListener("click", () => {
+  const aktauUrl = "https://kolesa.kz/cars/aktau/";
+  elements.kolesaUrlInput.value = aktauUrl;
+  void importFromKolesaUrl(aktauUrl);
+});
 elements.modalCloseBtn.addEventListener("click", closeListingDetails);
 elements.modalBackdrop.addEventListener("click", closeListingDetails);
 elements.modalFavoriteBtn.addEventListener("click", () => {

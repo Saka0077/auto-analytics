@@ -243,6 +243,12 @@ select:focus {
   margin-bottom: 10px;
 }
 
+.import-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .upload-box p,
 .hint-box p {
   margin: 8px 0 0;
@@ -864,6 +870,7 @@ a:hover {
   .field-row,
   .auth-actions,
   .profile-create,
+  .import-actions,
   .compare-panel,
   .modal-facts,
   .modal-sections,
