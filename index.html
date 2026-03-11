@@ -103,10 +103,38 @@
           </select>
         </label>
 
+        <div class="field-row">
+          <label class="field">
+            <span>Марка</span>
+            <select id="mark-filter-select">
+              <option value="">Все марки</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Модель</span>
+            <select id="model-filter-select">
+              <option value="">Все модели</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Кредит</span>
+          <select id="credit-filter-select">
+            <option value="">Неважно</option>
+            <option value="yes">Только с кредитом</option>
+            <option value="no">Только без кредита</option>
+          </select>
+        </label>
+
         <label class="field">
           <span>Сортировка</span>
           <select id="sort-select">
             <option value="score">Сначала лучшие</option>
+            <option value="liquidity-desc">Ликвидные</option>
+            <option value="fresh-desc">Сначала свежие</option>
+            <option value="risk-asc">Меньше риск</option>
             <option value="price-asc">Цена по возрастанию</option>
             <option value="price-desc">Цена по убыванию</option>
             <option value="year-desc">Сначала новее</option>
@@ -270,6 +298,20 @@
               <h2>Топ 5 выгодных</h2>
             </div>
             <div id="top-deal-list" class="top-list"></div>
+          </div>
+
+          <div class="top-card">
+            <div class="panel-head">
+              <h2>Топ 5 свежих</h2>
+            </div>
+            <div id="top-fresh-list" class="top-list"></div>
+          </div>
+
+          <div class="top-card">
+            <div class="panel-head">
+              <h2>Плохие объявления</h2>
+            </div>
+            <div id="top-bad-list" class="top-list"></div>
           </div>
         </div>
 

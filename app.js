@@ -162,6 +162,9 @@ const elements = {
   minYearInput: document.getElementById("min-year-input"),
   maxPriceInput: document.getElementById("max-price-input"),
   citySelect: document.getElementById("city-select"),
+  markFilterSelect: document.getElementById("mark-filter-select"),
+  modelFilterSelect: document.getElementById("model-filter-select"),
+  creditFilterSelect: document.getElementById("credit-filter-select"),
   sortSelect: document.getElementById("sort-select"),
   showInactiveToggle: document.getElementById("show-inactive-toggle"),
   importCitySelect: document.getElementById("import-city-select"),
@@ -196,6 +199,8 @@ const elements = {
   bulkCheckBtn: document.getElementById("bulk-check-btn"),
   topScoreList: document.getElementById("top-score-list"),
   topDealList: document.getElementById("top-deal-list"),
+  topFreshList: document.getElementById("top-fresh-list"),
+  topBadList: document.getElementById("top-bad-list"),
   bestTitle: document.getElementById("best-title"),
   bestPrice: document.getElementById("best-price"),
   bestScore: document.getElementById("best-score"),
@@ -270,6 +275,8 @@ function normalizeRow(item) {
     image: item.image || "",
     description: item.description || "",
     source: item.source || "",
+    brand: item.brand || "",
+    model: item.model || "",
     advertId: item.advert_id || item.advertId || "",
     engineVolume: optionalPositiveNumber(item.engine_volume ?? item.engineVolume),
     publicationDate: item.publication_date || item.publicationDate || "",
@@ -283,6 +290,9 @@ function normalizeRow(item) {
     phoneCount: optionalPositiveNumber(item.phone_count ?? item.phoneCount),
     phonePrefix: item.phone_prefix || item.phonePrefix || "",
     creditAvailable: booleanValue(item.credit_available ?? item.creditAvailable),
+    paidServices: Array.isArray(item.paid_services ?? item.paidServices)
+      ? (item.paid_services ?? item.paidServices).map(value => String(value || "").trim()).filter(Boolean)
+      : [],
     creditMonthlyPayment: optionalPositiveNumber(item.credit_monthly_payment ?? item.creditMonthlyPayment),
     creditDownPayment: optionalPositiveNumber(item.credit_down_payment ?? item.creditDownPayment),
     sellerUserId: item.seller_user_id || item.sellerUserId || "",
@@ -319,6 +329,19 @@ function formatPercent(value) {
 
 function formatYesNo(value) {
   return value ? "Да" : "Нет";
+}
+
+function daysSince(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return Math.max(0, (Date.now() - date.getTime()) / (24 * 60 * 60 * 1000));
 }
 
 function normalizeActualityStatus(value) {
@@ -406,6 +429,85 @@ function shouldAutoCheckActuality(item) {
 function renderActualityBadge(item) {
   const meta = getActualityMeta(item);
   return `<span class="${meta.className}">${meta.label}</span>`;
+}
+
+function getPromotionLabel(item) {
+  const services = item.paidServices || [];
+  if (!services.length) {
+    return "";
+  }
+
+  if (services.some(service => /vip/i.test(service))) {
+    return "VIP";
+  }
+
+  if (services.some(service => /top/i.test(service))) {
+    return "TOP";
+  }
+
+  return services[0];
+}
+
+function getFreshnessMeta(item) {
+  const age = daysSince(item.publicationDate || item.lastUpdate || item.lastCheckedAt);
+  if (age === null) {
+    return { label: "Без даты", className: "status-badge" };
+  }
+
+  if (age <= 2) {
+    return { label: "Свежее", className: "status-badge status-badge--fresh" };
+  }
+
+  if (age >= 21) {
+    return { label: "Давно висит", className: "status-badge status-badge--stale" };
+  }
+
+  return { label: `~${Math.round(age)} дн.`, className: "status-badge" };
+}
+
+function getMarketBadge(item) {
+  if (!Number.isFinite(item.marketDifferencePercent)) {
+    return "";
+  }
+
+  if (item.marketDifferencePercent >= 12) {
+    return "Недооценено";
+  }
+
+  if (item.marketDifferencePercent <= -12) {
+    return "Дорого";
+  }
+
+  return "";
+}
+
+function renderListingBadges(item) {
+  const badges = [renderActualityBadge(item)];
+  const promotion = getPromotionLabel(item);
+  const freshness = getFreshnessMeta(item);
+  const market = getMarketBadge(item);
+
+  if (promotion) {
+    badges.push(`<span class="status-badge status-badge--promotion">${escapeHtml(promotion)}</span>`);
+  }
+
+  if (item.creditAvailable) {
+    badges.push(`<span class="status-badge status-badge--credit">Кредит</span>`);
+  }
+
+  if (item.photoCount) {
+    badges.push(`<span class="status-badge">Фото ${item.photoCount}</span>`);
+  }
+
+  if (market) {
+    badges.push(`<span class="status-badge status-badge--deal">${escapeHtml(market)}</span>`);
+  }
+
+  if (freshness.label) {
+    badges.push(`<span class="${freshness.className}">${escapeHtml(freshness.label)}</span>`);
+  }
+
+  return badges.join("");
 }
 
 function hasDetailEnrichment(item) {
@@ -708,6 +810,14 @@ function scoreListings(listings) {
   const years = listings.map(item => item.year).filter(item => item !== null && item !== undefined);
   const mileages = listings.map(item => item.mileage).filter(item => item !== null && item !== undefined);
   const owners = listings.map(item => item.owners).filter(item => item !== null && item !== undefined);
+  const photoCounts = listings.map(item => item.photoCount).filter(item => item !== null && item !== undefined);
+  const risks = listings.map(item => item.riskScore).filter(item => item !== null && item !== undefined);
+  const freshnessValues = listings
+    .map(item => {
+      const age = daysSince(item.publicationDate || item.lastUpdate || item.lastCheckedAt);
+      return age === null ? null : Math.min(age, 60);
+    })
+    .filter(item => item !== null && item !== undefined);
 
   const bounds = {
     priceMin: Math.min(...prices),
@@ -717,7 +827,13 @@ function scoreListings(listings) {
     mileageMin: mileages.length ? Math.min(...mileages) : null,
     mileageMax: mileages.length ? Math.max(...mileages) : null,
     ownersMin: owners.length ? Math.min(...owners) : null,
-    ownersMax: owners.length ? Math.max(...owners) : null
+    ownersMax: owners.length ? Math.max(...owners) : null,
+    photoMin: photoCounts.length ? Math.min(...photoCounts) : null,
+    photoMax: photoCounts.length ? Math.max(...photoCounts) : null,
+    riskMin: risks.length ? Math.min(...risks) : null,
+    riskMax: risks.length ? Math.max(...risks) : null,
+    freshMin: freshnessValues.length ? Math.min(...freshnessValues) : null,
+    freshMax: freshnessValues.length ? Math.max(...freshnessValues) : null
   };
 
   return listings.map(item => {
@@ -725,25 +841,72 @@ function scoreListings(listings) {
     const yearScore = normalize(item.year, bounds.yearMin, bounds.yearMax);
     const mileageScore = normalize(item.mileage, bounds.mileageMin, bounds.mileageMax, true);
     const ownersScore = normalize(item.owners, bounds.ownersMin, bounds.ownersMax, true);
+    const freshAge = daysSince(item.publicationDate || item.lastUpdate || item.lastCheckedAt);
+    const freshnessScore = normalize(freshAge === null ? null : Math.min(freshAge, 60), bounds.freshMin, bounds.freshMax, true);
+    const photoScore = normalize(item.photoCount, bounds.photoMin, bounds.photoMax);
+    const riskSafetyScore = normalize(item.riskScore, bounds.riskMin, bounds.riskMax, true);
+    const marketScore = Number.isFinite(item.marketDifferencePercent)
+      ? Math.max(0, Math.min(1, (item.marketDifferencePercent + 15) / 30))
+      : 0.5;
+    const sellerPenalty = item.isUsedCarDealer ? 0.2 : 0;
+    const resellerScore = Math.max(
+      0,
+      Math.min(
+        1,
+        (item.isUsedCarDealer ? 0.55 : 0.15) +
+        (Number(item.photoCount || 0) >= 12 ? 0.1 : 0) +
+        ((item.paidServices || []).length >= 1 ? 0.15 : 0) +
+        ((item.phoneCount || 0) >= 2 ? 0.15 : 0) +
+        ((item.description || "").length < 80 ? 0.1 : 0)
+      )
+    );
     const score =
-      priceScore * 0.45 +
-      yearScore * 0.25 +
-      mileageScore * 0.2 +
-      ownersScore * 0.1;
+      priceScore * 0.30 +
+      yearScore * 0.18 +
+      mileageScore * 0.14 +
+      ownersScore * 0.08 +
+      marketScore * 0.12 +
+      freshnessScore * 0.08 +
+      photoScore * 0.04 +
+      riskSafetyScore * 0.06 -
+      sellerPenalty;
     const dealScore =
-      priceScore * 0.65 +
-      yearScore * 0.2 +
-      mileageScore * 0.15;
+      priceScore * 0.40 +
+      marketScore * 0.35 +
+      freshnessScore * 0.1 +
+      yearScore * 0.1 +
+      mileageScore * 0.05;
+    const liquidityScore =
+      marketScore * 0.3 +
+      freshnessScore * 0.25 +
+      photoScore * 0.1 +
+      yearScore * 0.15 +
+      mileageScore * 0.1 +
+      riskSafetyScore * 0.1;
+    const badScore =
+      (item.riskScore !== null ? item.riskScore / 100 : 0.35) * 0.45 +
+      resellerScore * 0.2 +
+      (photoScore ? 1 - photoScore : 0.4) * 0.15 +
+      (Number.isFinite(item.marketDifferencePercent) && item.marketDifferencePercent < 0
+        ? Math.min(Math.abs(item.marketDifferencePercent) / 20, 1)
+        : 0) * 0.2;
 
     return {
       ...item,
-      score: Number(score.toFixed(4)),
+      score: Number(Math.max(0, Math.min(1, score)).toFixed(4)),
       dealScore: Number(dealScore.toFixed(4)),
+      liquidityScore: Number(liquidityScore.toFixed(4)),
+      freshnessScore: Number(freshnessScore.toFixed(4)),
+      resellerScore: Number(resellerScore.toFixed(4)),
+      badScore: Number(badScore.toFixed(4)),
       scoreParts: {
         price: Number(priceScore.toFixed(4)),
         year: Number(yearScore.toFixed(4)),
         mileage: Number(mileageScore.toFixed(4)),
-        owners: Number(ownersScore.toFixed(4))
+        owners: Number(ownersScore.toFixed(4)),
+        market: Number(marketScore.toFixed(4)),
+        freshness: Number(freshnessScore.toFixed(4)),
+        risk: Number(riskSafetyScore.toFixed(4))
       }
     };
   });
@@ -764,11 +927,50 @@ function populateCities() {
   elements.citySelect.value = cities.includes(current) ? current : "";
 }
 
+function populateMarks() {
+  const current = elements.markFilterSelect.value;
+  const marks = [...new Set(state.listings.map(item => item.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  elements.markFilterSelect.innerHTML = '<option value="">Все марки</option>';
+
+  marks.forEach(mark => {
+    const option = document.createElement("option");
+    option.value = mark;
+    option.textContent = mark;
+    elements.markFilterSelect.append(option);
+  });
+
+  elements.markFilterSelect.value = marks.includes(current) ? current : "";
+}
+
+function populateModels() {
+  const current = elements.modelFilterSelect.value;
+  const selectedMark = elements.markFilterSelect.value;
+  const models = [...new Set(
+    state.listings
+      .filter(item => !selectedMark || item.brand === selectedMark)
+      .map(item => item.model)
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b, "ru"));
+
+  elements.modelFilterSelect.innerHTML = '<option value="">Все модели</option>';
+  models.forEach(model => {
+    const option = document.createElement("option");
+    option.value = model;
+    option.textContent = model;
+    elements.modelFilterSelect.append(option);
+  });
+
+  elements.modelFilterSelect.value = models.includes(current) ? current : "";
+}
+
 function getFilteredListings() {
   const search = elements.searchInput.value.trim().toLowerCase();
   const minYear = number(elements.minYearInput.value);
   const maxPrice = number(elements.maxPriceInput.value);
   const city = elements.citySelect.value;
+  const mark = elements.markFilterSelect.value;
+  const model = elements.modelFilterSelect.value;
+  const credit = elements.creditFilterSelect.value;
   const sort = elements.sortSelect.value;
   const showInactive = elements.showInactiveToggle.checked;
 
@@ -778,10 +980,22 @@ function getFilteredListings() {
     const yearMatch = !minYear || (item.year !== null && item.year >= minYear);
     const priceMatch = !maxPrice || item.price <= maxPrice;
     const cityMatch = !city || item.city === city;
-    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch;
+    const markMatch = !mark || item.brand === mark;
+    const modelMatch = !model || item.model === model;
+    const creditMatch = !credit || (credit === "yes" ? item.creditAvailable : !item.creditAvailable);
+    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch && markMatch && modelMatch && creditMatch;
   });
 
   switch (sort) {
+    case "liquidity-desc":
+      results.sort((a, b) => b.liquidityScore - a.liquidityScore || b.score - a.score);
+      break;
+    case "fresh-desc":
+      results.sort((a, b) => b.freshnessScore - a.freshnessScore || b.score - a.score);
+      break;
+    case "risk-asc":
+      results.sort((a, b) => (a.riskScore ?? 50) - (b.riskScore ?? 50) || b.score - a.score);
+      break;
     case "price-asc":
       results.sort((a, b) => a.price - b.price);
       break;
@@ -863,12 +1077,20 @@ function renderThumb(imageUrl, className = "thumb") {
 function renderTopLists(listings) {
   elements.topScoreList.innerHTML = "";
   elements.topDealList.innerHTML = "";
+  elements.topFreshList.innerHTML = "";
+  elements.topBadList.innerHTML = "";
 
   const topByScore = [...listings]
     .sort((a, b) => b.score - a.score || a.price - b.price)
     .slice(0, 5);
   const topByDeal = [...listings]
     .sort((a, b) => b.dealScore - a.dealScore || a.price - b.price)
+    .slice(0, 5);
+  const topByFresh = [...listings]
+    .sort((a, b) => b.freshnessScore - a.freshnessScore || b.score - a.score)
+    .slice(0, 5);
+  const topBad = [...listings]
+    .sort((a, b) => b.badScore - a.badScore || b.riskScore - a.riskScore)
     .slice(0, 5);
 
   const renderList = (target, items, valueKey, valueLabel) => {
@@ -887,6 +1109,7 @@ function renderTopLists(listings) {
         <div>
           <div class="top-item-title">${escapeHtml(item.title)}</div>
           <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)} · ${formatShortDate(item.publicationDate)}</div>
+          <div class="top-item-badges">${renderListingBadges(item)}</div>
         </div>
         <div class="top-item-value">${item[valueKey].toFixed(2)} ${valueLabel}</div>
       `;
@@ -896,6 +1119,8 @@ function renderTopLists(listings) {
 
   renderList(elements.topScoreList, topByScore, "score", "score");
   renderList(elements.topDealList, topByDeal, "dealScore", "deal");
+  renderList(elements.topFreshList, topByFresh, "freshnessScore", "fresh");
+  renderList(elements.topBadList, topBad, "badScore", "bad");
 }
 
 function renderTable(listings) {
@@ -917,8 +1142,8 @@ function renderTable(listings) {
       <td>${renderThumb(item.image)}</td>
       <td>
         <strong>${escapeHtml(item.title)}</strong><br>
-        <span class="muted">${escapeHtml(item.city || "")}</span>
-        <div class="listing-subline">${renderActualityBadge(item)}<span class="muted">Проверено: ${escapeHtml(formatDateTime(item.lastCheckedAt))}</span></div>
+        <span class="muted">${escapeHtml([item.city, item.brand, item.model].filter(Boolean).join(" · "))}</span>
+        <div class="listing-subline">${renderListingBadges(item)}<span class="muted">Проверено: ${escapeHtml(formatDateTime(item.lastCheckedAt))}</span></div>
       </td>
       <td>${formatPrice(item.price)}</td>
       <td>${item.year ?? "-"}</td>
@@ -988,11 +1213,15 @@ function renderListingFacts(item) {
     renderFact("Год", item.year ?? "-"),
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
     renderFact("Владельцы", item.owners ?? "-"),
+    renderFact("Марка", item.brand || "-"),
+    renderFact("Модель", item.model || "-"),
     renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
     renderFact("Фото", item.photoCount ?? "-"),
     renderFact("Кредит", formatYesNo(item.creditAvailable)),
     renderFact("Продавец", getSellerLabel(item)),
-    renderFact("Риск", item.riskScore !== null ? `${Math.round(item.riskScore)}/100` : "-"),
+    renderFact("Риск", Number.isFinite(item.riskScore) ? `${Math.round(item.riskScore)}/100` : "-"),
+    renderFact("Ликвидность", Number.isFinite(item.liquidityScore) ? `${(item.liquidityScore * 100).toFixed(0)}%` : "-"),
+    renderFact("Перекуп-скор", Number.isFinite(item.resellerScore) ? `${(item.resellerScore * 100).toFixed(0)}%` : "-"),
     renderFact("Цена", formatPrice(item.price)),
     renderFact("Город", item.city || "-")
   ].join("");
@@ -1044,6 +1273,9 @@ function renderSignals(item) {
   }
   if (item.photoCount) {
     signals.push(`Фотографий: ${item.photoCount}`);
+  }
+  if (item.paidServices.length) {
+    signals.push(`Продвижение: ${item.paidServices.join(", ")}`);
   }
   if (item.publicHistoryAvailable) {
     signals.push(`Есть публичная история авто на странице`);
@@ -1812,7 +2044,10 @@ function openListingDetails(listingId) {
     ["Цена", parts.price],
     ["Год", parts.year],
     ["Пробег", parts.mileage],
-    ["Владельцы", parts.owners]
+    ["Владельцы", parts.owners],
+    ["Рынок", parts.market],
+    ["Свежесть", parts.freshness],
+    ["Риск", parts.risk]
   ]
     .map(([label, value]) => `
       <div class="breakdown-item">
@@ -1865,6 +2100,9 @@ function render() {
   const listings = getFilteredListings();
   state.renderedListings = listings;
   renderProfiles();
+  populateCities();
+  populateMarks();
+  populateModels();
   renderStats(listings);
   renderFavorites();
   renderHistory();
@@ -1878,6 +2116,9 @@ function resetFilters() {
   elements.minYearInput.value = "";
   elements.maxPriceInput.value = "";
   elements.citySelect.value = "";
+  elements.markFilterSelect.value = "";
+  elements.modelFilterSelect.value = "";
+  elements.creditFilterSelect.value = "";
   elements.sortSelect.value = "score";
   elements.showInactiveToggle.checked = false;
   render();
@@ -2027,11 +2268,21 @@ async function handleFileUpload(event) {
   elements.minYearInput,
   elements.maxPriceInput,
   elements.citySelect,
+  elements.modelFilterSelect,
+  elements.creditFilterSelect,
   elements.sortSelect,
   elements.showInactiveToggle
 ].forEach(element => {
   element.addEventListener("input", render);
   element.addEventListener("change", render);
+});
+
+elements.markFilterSelect.addEventListener("change", () => {
+  populateModels();
+  if (![...elements.modelFilterSelect.options].some(option => option.value === elements.modelFilterSelect.value)) {
+    elements.modelFilterSelect.value = "";
+  }
+  render();
 });
 
 elements.loginBtn.addEventListener("click", loginUser);
