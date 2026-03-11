@@ -91,6 +91,25 @@ function normalizeIsoDate(value) {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
+function normalizeBoolean(value) {
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+function normalizeTextList(value) {
+  return Array.isArray(value)
+    ? value.map(item => String(item || "").trim()).filter(Boolean).slice(0, 12)
+    : [];
+}
+
+function pickDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
 function resolveActualityStatus(item) {
   const status = normalizeActualityStatus(item.actuality_status);
   if (status === "archived" || status === "unavailable") {
@@ -111,6 +130,49 @@ function resolveActualityStatus(item) {
 
 function getListingStorageKey(item) {
   return String(item.advert_id || extractAdvertIdFromUrl(item.url) || item.url || `${item.title}|${item.price}|${item.city}`);
+}
+
+function buildRiskSummary(item) {
+  let score = 0;
+  const flags = [];
+
+  if (item.actuality_status === "archived" || item.actuality_status === "unavailable") {
+    score += 50;
+    flags.push("Объявление недоступно или в архиве");
+  } else if (item.actuality_status === "stale") {
+    score += 18;
+    flags.push("Давно не подтверждалось");
+  }
+
+  if (Number(item.photo_count) > 0 && Number(item.photo_count) < 5) {
+    score += 10;
+    flags.push("Мало фотографий");
+  }
+
+  if (Number(item.owners) >= 4) {
+    score += 8;
+    flags.push("Много владельцев");
+  }
+
+  if (item.description && item.description.length < 80) {
+    score += 7;
+    flags.push("Короткое описание");
+  }
+
+  if (Number.isFinite(Number(item.market_difference_percent)) && Number(item.market_difference_percent) > 15) {
+    score += 14;
+    flags.push("Сильно ниже среднего рынка");
+  }
+
+  if (normalizeBoolean(item.public_history_available)) {
+    score = Math.max(score - 5, 0);
+    flags.push("Есть публичная история на странице");
+  }
+
+  return {
+    risk_score: Math.min(score, 100),
+    risk_flags: flags.slice(0, 6)
+  };
 }
 
 function normalizeListings(rows) {
@@ -139,11 +201,29 @@ function normalizeListings(rows) {
       market_difference: Number.isFinite(Number(item.market_difference)) ? Number(item.market_difference) : null,
       market_difference_percent: Number.isFinite(Number(item.market_difference_percent))
         ? Number(item.market_difference_percent)
-        : null
+        : null,
+      photo_count: Number(item.photo_count) > 0 ? Number(item.photo_count) : null,
+      phone_count: Number(item.phone_count) > 0 ? Number(item.phone_count) : null,
+      phone_prefix: String(item.phone_prefix || "").trim(),
+      credit_available: normalizeBoolean(item.credit_available),
+      credit_monthly_payment: Number(item.credit_monthly_payment) > 0 ? Number(item.credit_monthly_payment) : null,
+      credit_down_payment: Number(item.credit_down_payment) > 0 ? Number(item.credit_down_payment) : null,
+      seller_user_id: String(item.seller_user_id || "").trim(),
+      seller_type_id: Number(item.seller_type_id) > 0 ? Number(item.seller_type_id) : null,
+      is_verified_dealer: normalizeBoolean(item.is_verified_dealer),
+      is_used_car_dealer: normalizeBoolean(item.is_used_car_dealer),
+      public_history_available: normalizeBoolean(item.public_history_available),
+      history_summary: String(item.history_summary || "").trim(),
+      risk_score: Number(item.risk_score) >= 0 ? Number(item.risk_score) : null,
+      risk_flags: normalizeTextList(item.risk_flags)
     }))
     .map(item => ({
       ...item,
       actuality_status: resolveActualityStatus(item)
+    }))
+    .map(item => ({
+      ...item,
+      ...buildRiskSummary(item)
     }))
     .filter(item => item.title && item.price > 0);
 }
@@ -501,6 +581,42 @@ function extractAdvertIdFromUrl(url) {
   return match ? String(match[1]) : "";
 }
 
+function extractCreditTerms($) {
+  const amounts = [];
+  $('[data-test="credit-wrap"] .a-credit__amount').each((_, element) => {
+    const amount = parseNumber($(element).text());
+    if (amount > 0) {
+      amounts.push(amount);
+    }
+  });
+
+  return {
+    credit_monthly_payment: amounts[0] || null,
+    credit_down_payment: amounts[1] || null
+  };
+}
+
+function extractPublicHistorySummary(html) {
+  const match = String(html || "").match(/История авто[\s\S]{0,280}/i);
+  if (!match) {
+    return {
+      public_history_available: false,
+      history_summary: ""
+    };
+  }
+
+  const summary = normalizeWhitespace(
+    match[0]
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+  );
+
+  return {
+    public_history_available: true,
+    history_summary: summary.slice(0, 240)
+  };
+}
+
 async function fetchKolesaPriceInsight(advertUrl) {
   const snapshot = await fetchKolesaListingSnapshot(advertUrl);
   if (snapshot.actuality_status !== "active") {
@@ -549,6 +665,7 @@ async function fetchKolesaListingSnapshot(advertUrl) {
   }
 
   const html = await response.text();
+  const $ = cheerio.load(html);
   const jsonText = extractAssignedJsonObject(html, "window.digitalData =");
   if (!jsonText) {
     return {
@@ -556,20 +673,29 @@ async function fetchKolesaListingSnapshot(advertUrl) {
       last_checked_at: checkedAt
     };
   }
+  const pageDataText = extractAssignedJsonObject(html, "var data =");
 
   const digitalData = JSON.parse(jsonText);
   const product = digitalData?.product || {};
+  const pageData = pageDataText ? JSON.parse(pageDataText) : {};
+  const advertData = pageData?.advert || {};
   const avgPrice = Number(product?.attributes?.avgPrice) || 0;
   const currentPrice = Number(product?.unitPrice) || 0;
   const marketDifference = avgPrice - currentPrice;
   const marketDifferencePercent = avgPrice
     ? Number(((marketDifference / avgPrice) * 100).toFixed(2))
     : null;
+  const creditTerms = extractCreditTerms($);
+  const publicHistory = extractPublicHistorySummary(html);
+  const description = normalizeWhitespace(
+    String(advertData?.descriptionText || "")
+      .replace(/<br\s*\/?>/gi, "\n")
+  );
 
   return {
     actuality_status: "active",
     advert_id: String(product?.id || extractAdvertIdFromUrl(advertUrl)),
-    title: String(product?.name || ""),
+    title: String(advertData?.title || product?.name || ""),
     price: currentPrice || null,
     publication_date: String(product?.publicationDate || ""),
     last_update: String(product?.lastUpdate || ""),
@@ -579,6 +705,19 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     brand: String(product?.attributes?.brand || ""),
     model: String(product?.attributes?.model || ""),
     city: String(product?.city || ""),
+    description,
+    photo_count: Number(product?.photoCount || 0) || null,
+    phone_count: Number(advertData?.nbPhones || 0) || null,
+    phone_prefix: String(advertData?.phonePrefix || ""),
+    credit_available: Boolean(product?.isCreditAvailable || advertData?.hasAcrCredit),
+    credit_monthly_payment: creditTerms.credit_monthly_payment,
+    credit_down_payment: creditTerms.credit_down_payment,
+    seller_user_id: String(product?.seller?.userId || advertData?.userId || ""),
+    seller_type_id: Number(product?.seller?.userTypeId || 0) || null,
+    is_verified_dealer: normalizeBoolean(advertData?.isVerifiedDealer),
+    is_used_car_dealer: normalizeBoolean(pageData?.isUsedCarDealer),
+    public_history_available: publicHistory.public_history_available,
+    history_summary: publicHistory.history_summary,
     last_checked_at: checkedAt
   };
 }
@@ -1127,10 +1266,11 @@ const server = http.createServer(async (request, response) => {
           ...item,
           title: snapshot.title || item.title,
           advert_id: snapshot.advert_id || item.advert_id || extractAdvertIdFromUrl(item.url),
-          price: snapshot.price || item.price,
+          price: pickDefined(snapshot.price, item.price),
           publication_date: snapshot.publication_date || item.publication_date,
           last_update: snapshot.last_update || item.last_update,
-          avg_price: snapshot.avg_price || item.avg_price,
+          description: snapshot.description || item.description,
+          avg_price: pickDefined(snapshot.avg_price, item.avg_price),
           market_difference:
             snapshot.market_difference !== null && snapshot.market_difference !== undefined
               ? snapshot.market_difference
@@ -1139,6 +1279,26 @@ const server = http.createServer(async (request, response) => {
             snapshot.market_difference_percent !== null && snapshot.market_difference_percent !== undefined
               ? snapshot.market_difference_percent
               : item.market_difference_percent,
+          photo_count: pickDefined(snapshot.photo_count, item.photo_count),
+          phone_count: pickDefined(snapshot.phone_count, item.phone_count),
+          phone_prefix: snapshot.phone_prefix || item.phone_prefix,
+          credit_available: snapshot.credit_available !== undefined
+            ? normalizeBoolean(snapshot.credit_available)
+            : normalizeBoolean(item.credit_available),
+          credit_monthly_payment: pickDefined(snapshot.credit_monthly_payment, item.credit_monthly_payment),
+          credit_down_payment: pickDefined(snapshot.credit_down_payment, item.credit_down_payment),
+          seller_user_id: snapshot.seller_user_id || item.seller_user_id,
+          seller_type_id: pickDefined(snapshot.seller_type_id, item.seller_type_id),
+          is_verified_dealer: snapshot.is_verified_dealer !== undefined
+            ? normalizeBoolean(snapshot.is_verified_dealer)
+            : normalizeBoolean(item.is_verified_dealer),
+          is_used_car_dealer: snapshot.is_used_car_dealer !== undefined
+            ? normalizeBoolean(snapshot.is_used_car_dealer)
+            : normalizeBoolean(item.is_used_car_dealer),
+          public_history_available: snapshot.public_history_available !== undefined
+            ? normalizeBoolean(snapshot.public_history_available)
+            : normalizeBoolean(item.public_history_available),
+          history_summary: snapshot.history_summary || item.history_summary,
           last_checked_at: checkedAt,
           last_seen_at: nextStatus === "active" ? checkedAt : item.last_seen_at,
           actuality_status: nextStatus,

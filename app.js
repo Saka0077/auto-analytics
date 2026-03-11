@@ -210,6 +210,7 @@ const elements = {
   modalCity: document.getElementById("modal-city"),
   modalFacts: document.getElementById("modal-facts"),
   modalBreakdown: document.getElementById("modal-breakdown"),
+  modalSignals: document.getElementById("modal-signals"),
   modalDescription: document.getElementById("modal-description"),
   modalLink: document.getElementById("modal-link"),
   modalFavoriteBtn: document.getElementById("modal-favorite-btn"),
@@ -252,6 +253,10 @@ function optionalPositiveNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function booleanValue(value) {
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
 function normalizeRow(item) {
   return {
     id: item.id || createListingId(item),
@@ -274,6 +279,22 @@ function normalizeRow(item) {
     lastCheckedAt: item.last_checked_at || item.lastCheckedAt || "",
     lastStatusChangeAt: item.last_status_change_at || item.lastStatusChangeAt || "",
     actualityStatus: normalizeActualityStatus(item.actuality_status || item.actualityStatus),
+    photoCount: optionalPositiveNumber(item.photo_count ?? item.photoCount),
+    phoneCount: optionalPositiveNumber(item.phone_count ?? item.phoneCount),
+    phonePrefix: item.phone_prefix || item.phonePrefix || "",
+    creditAvailable: booleanValue(item.credit_available ?? item.creditAvailable),
+    creditMonthlyPayment: optionalPositiveNumber(item.credit_monthly_payment ?? item.creditMonthlyPayment),
+    creditDownPayment: optionalPositiveNumber(item.credit_down_payment ?? item.creditDownPayment),
+    sellerUserId: item.seller_user_id || item.sellerUserId || "",
+    sellerTypeId: optionalPositiveNumber(item.seller_type_id ?? item.sellerTypeId),
+    isVerifiedDealer: booleanValue(item.is_verified_dealer ?? item.isVerifiedDealer),
+    isUsedCarDealer: booleanValue(item.is_used_car_dealer ?? item.isUsedCarDealer),
+    publicHistoryAvailable: booleanValue(item.public_history_available ?? item.publicHistoryAvailable),
+    historySummary: item.history_summary || item.historySummary || "",
+    riskScore: number(item.risk_score ?? item.riskScore),
+    riskFlags: Array.isArray(item.risk_flags ?? item.riskFlags)
+      ? (item.risk_flags ?? item.riskFlags).map(value => String(value || "").trim()).filter(Boolean)
+      : [],
     avgPrice: optionalPositiveNumber(item.avg_price ?? item.avgPrice),
     marketDifference: number(item.market_difference ?? item.marketDifference),
     marketDifferencePercent: number(item.market_difference_percent ?? item.marketDifferencePercent)
@@ -294,6 +315,10 @@ function formatMileage(value) {
 
 function formatPercent(value) {
   return `${Math.abs(Number(value || 0)).toFixed(1)}%`;
+}
+
+function formatYesNo(value) {
+  return value ? "Да" : "Нет";
 }
 
 function normalizeActualityStatus(value) {
@@ -361,6 +386,10 @@ function shouldAutoCheckActuality(item) {
     return false;
   }
 
+  if (!hasDetailEnrichment(item)) {
+    return true;
+  }
+
   if (!item.lastCheckedAt) {
     return true;
   }
@@ -377,6 +406,29 @@ function shouldAutoCheckActuality(item) {
 function renderActualityBadge(item) {
   const meta = getActualityMeta(item);
   return `<span class="${meta.className}">${meta.label}</span>`;
+}
+
+function hasDetailEnrichment(item) {
+  return Boolean(
+    item.photoCount ||
+    item.creditAvailable ||
+    item.creditMonthlyPayment ||
+    item.phoneCount ||
+    item.riskScore !== null ||
+    item.historySummary
+  );
+}
+
+function getSellerLabel(item) {
+  if (item.isVerifiedDealer || item.isUsedCarDealer) {
+    return "Дилер";
+  }
+
+  if (item.sellerUserId || item.sellerTypeId) {
+    return "Продавец";
+  }
+
+  return "-";
 }
 
 function setStatus(text) {
@@ -937,6 +989,10 @@ function renderListingFacts(item) {
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
     renderFact("Владельцы", item.owners ?? "-"),
     renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
+    renderFact("Фото", item.photoCount ?? "-"),
+    renderFact("Кредит", formatYesNo(item.creditAvailable)),
+    renderFact("Продавец", getSellerLabel(item)),
+    renderFact("Риск", item.riskScore !== null ? `${Math.round(item.riskScore)}/100` : "-"),
     renderFact("Цена", formatPrice(item.price)),
     renderFact("Город", item.city || "-")
   ].join("");
@@ -965,6 +1021,46 @@ function replaceListing(updatedItem) {
   const replace = item => (item.id === normalized.id ? { ...item, ...normalized } : item);
   state.listings = state.listings.map(replace);
   state.renderedListings = state.renderedListings.map(replace);
+}
+
+function renderSignals(item) {
+  const finance = [];
+  const signals = [];
+
+  if (item.creditAvailable) {
+    finance.push(`Кредит доступен`);
+  }
+  if (item.creditMonthlyPayment) {
+    finance.push(`Ежемесячный платёж: ${formatPrice(item.creditMonthlyPayment)}`);
+  }
+  if (item.creditDownPayment) {
+    finance.push(`Первоначальный взнос: ${formatPrice(item.creditDownPayment)}`);
+  }
+  if (item.phoneCount) {
+    signals.push(`Контактов в объявлении: ${item.phoneCount}`);
+  }
+  if (item.phonePrefix) {
+    signals.push(`Префикс номера: ${item.phonePrefix}`);
+  }
+  if (item.photoCount) {
+    signals.push(`Фотографий: ${item.photoCount}`);
+  }
+  if (item.publicHistoryAvailable) {
+    signals.push(`Есть публичная история авто на странице`);
+  }
+  if (item.historySummary) {
+    signals.push(item.historySummary);
+  }
+  if (item.riskFlags.length) {
+    signals.push(...item.riskFlags);
+  }
+
+  const lines = [...finance, ...signals];
+  if (!lines.length) {
+    return `<div class="muted">После проверки карточки здесь появятся кредитные условия и открытые сигналы по объявлению.</div>`;
+  }
+
+  return `<ul class="signal-list">${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`;
 }
 
 function getActualListingsCount(listings = state.listings) {
@@ -1058,6 +1154,7 @@ async function checkListingActuality(listingId, { silent = false } = {}) {
       elements.modalCity.textContent = updated.city || "-";
       renderListingFacts(updated);
       renderListingBreakdown(updated);
+      elements.modalSignals.innerHTML = renderSignals(updated);
       elements.modalSource.textContent = updated.source || "Карточка объявления";
     }
 
@@ -1727,6 +1824,7 @@ function openListingDetails(listingId) {
     .join("");
 
   elements.modalDescription.textContent = item.description || "Описание не указано.";
+  elements.modalSignals.innerHTML = renderSignals(item);
 
   if (item.url) {
     elements.modalLink.href = item.url;

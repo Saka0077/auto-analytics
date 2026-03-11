@@ -761,7 +761,7 @@ a:hover {
 
 .modal-sections {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
 }
 
@@ -812,6 +812,18 @@ a:hover {
   color: var(--muted);
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.modal-signal-box {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.signal-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
 }
 
 .modal-actions {
