@@ -170,6 +170,25 @@ h1 {
   gap: 10px;
 }
 
+.check-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+.check-field input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.check-field span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 input,
 select,
 button {
@@ -524,6 +543,14 @@ tbody tr.is-clickable {
   cursor: pointer;
 }
 
+.listing-subline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
 .score-badge {
   display: inline-flex;
   align-items: center;
@@ -534,6 +561,32 @@ tbody tr.is-clickable {
   background: #eef2f7;
   color: var(--text);
   font-weight: 700;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-badge--active {
+  background: rgba(15, 118, 110, 0.12);
+  color: var(--good);
+}
+
+.status-badge--stale {
+  background: rgba(180, 83, 9, 0.12);
+  color: #b45309;
+}
+
+.status-badge--archived {
+  background: rgba(107, 114, 128, 0.14);
+  color: #4b5563;
 }
 
 a {
@@ -752,6 +805,9 @@ a:hover {
 
 .modal-actions {
   margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .modal-link {

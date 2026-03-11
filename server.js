@@ -11,6 +11,10 @@ const DATA_DIR = path.join(ROOT, "data");
 const DATA_FILE = path.join(DATA_DIR, "listings.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth-store.json");
 const SAMPLE_FILE = path.join(ROOT, "sample_listings.json");
+const STALE_AFTER_HOURS = Number(process.env.LISTING_STALE_AFTER_HOURS) > 0
+  ? Number(process.env.LISTING_STALE_AFTER_HOURS)
+  : 72;
+const STALE_AFTER_MS = STALE_AFTER_HOURS * 60 * 60 * 1000;
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -65,12 +69,48 @@ function readListings() {
   const filePath = fs.existsSync(DATA_FILE) ? DATA_FILE : SAMPLE_FILE;
   const raw = fs.readFileSync(filePath, "utf-8");
   const parsed = JSON.parse(raw);
-  return Array.isArray(parsed) ? parsed : parsed.items || [];
+  return normalizeListings(Array.isArray(parsed) ? parsed : parsed.items || []);
 }
 
 function writeListings(listings) {
   ensureDataDir();
-  fs.writeFileSync(DATA_FILE, JSON.stringify(listings, null, 2), "utf-8");
+  fs.writeFileSync(DATA_FILE, JSON.stringify(normalizeListings(listings), null, 2), "utf-8");
+}
+
+function normalizeActualityStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  return ["active", "stale", "archived", "unavailable"].includes(status) ? status : "active";
+}
+
+function normalizeIsoDate(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function resolveActualityStatus(item) {
+  const status = normalizeActualityStatus(item.actuality_status);
+  if (status === "archived" || status === "unavailable") {
+    return status;
+  }
+
+  if (String(item.source || "").trim() !== "kolesa.kz") {
+    return status;
+  }
+
+  const checkedAt = normalizeIsoDate(item.last_checked_at || item.last_seen_at);
+  if (!checkedAt) {
+    return status;
+  }
+
+  return Date.now() - new Date(checkedAt).getTime() > STALE_AFTER_MS ? "stale" : "active";
+}
+
+function getListingStorageKey(item) {
+  return String(item.advert_id || extractAdvertIdFromUrl(item.url) || item.url || `${item.title}|${item.price}|${item.city}`);
 }
 
 function normalizeListings(rows) {
@@ -86,14 +126,24 @@ function normalizeListings(rows) {
       image: String(item.image || "").trim(),
       description: String(item.description || "").trim(),
       source: String(item.source || "").trim(),
+      advert_id: String(item.advert_id || extractAdvertIdFromUrl(item.url)).trim(),
       engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null,
       publication_date: String(item.publication_date || "").trim(),
       last_update: String(item.last_update || "").trim(),
+      first_seen_at: normalizeIsoDate(item.first_seen_at),
+      last_seen_at: normalizeIsoDate(item.last_seen_at),
+      last_checked_at: normalizeIsoDate(item.last_checked_at),
+      last_status_change_at: normalizeIsoDate(item.last_status_change_at),
+      actuality_status: normalizeActualityStatus(item.actuality_status),
       avg_price: Number(item.avg_price) > 0 ? Number(item.avg_price) : null,
       market_difference: Number.isFinite(Number(item.market_difference)) ? Number(item.market_difference) : null,
       market_difference_percent: Number.isFinite(Number(item.market_difference_percent))
         ? Number(item.market_difference_percent)
         : null
+    }))
+    .map(item => ({
+      ...item,
+      actuality_status: resolveActualityStatus(item)
     }))
     .filter(item => item.title && item.price > 0);
 }
@@ -452,17 +502,47 @@ function extractAdvertIdFromUrl(url) {
 }
 
 async function fetchKolesaPriceInsight(advertUrl) {
+  const snapshot = await fetchKolesaListingSnapshot(advertUrl);
+  if (snapshot.actuality_status !== "active") {
+    throw new Error(snapshot.actuality_status === "archived" ? "listing-archived" : "digital-data-not-found");
+  }
+
+  if (!snapshot.avg_price || !snapshot.price) {
+    throw new Error("avg-price-not-found");
+  }
+
+  return {
+    avgPrice: snapshot.avg_price,
+    currentPrice: snapshot.price,
+    marketDifference: snapshot.market_difference,
+    marketDifferencePercent: snapshot.market_difference_percent,
+    marketPosition: snapshot.market_difference > 0 ? "below" : snapshot.market_difference < 0 ? "above" : "equal",
+    brand: String(snapshot.brand || ""),
+    model: String(snapshot.model || ""),
+    city: String(snapshot.city || "")
+  };
+}
+
+async function fetchKolesaListingSnapshot(advertUrl) {
   const parsedUrl = new URL(advertUrl);
   if (!parsedUrl.hostname.endsWith("kolesa.kz")) {
     throw new Error("unsupported-host");
   }
 
+  const checkedAt = new Date().toISOString();
   const response = await fetch(parsedUrl.toString(), {
     headers: {
       "User-Agent": "Mozilla/5.0 AutoAnalytics/1.0",
       "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
     }
   });
+
+  if (response.status === 404) {
+    return {
+      actuality_status: "archived",
+      last_checked_at: checkedAt
+    };
+  }
 
   if (!response.ok) {
     throw new Error(`fetch-failed-${response.status}`);
@@ -471,44 +551,74 @@ async function fetchKolesaPriceInsight(advertUrl) {
   const html = await response.text();
   const jsonText = extractAssignedJsonObject(html, "window.digitalData =");
   if (!jsonText) {
-    throw new Error("digital-data-not-found");
+    return {
+      actuality_status: "unavailable",
+      last_checked_at: checkedAt
+    };
   }
 
   const digitalData = JSON.parse(jsonText);
   const product = digitalData?.product || {};
   const avgPrice = Number(product?.attributes?.avgPrice) || 0;
   const currentPrice = Number(product?.unitPrice) || 0;
-
-  if (!avgPrice || !currentPrice) {
-    throw new Error("avg-price-not-found");
-  }
-
   const marketDifference = avgPrice - currentPrice;
   const marketDifferencePercent = avgPrice
     ? Number(((marketDifference / avgPrice) * 100).toFixed(2))
     : null;
 
   return {
-    avgPrice,
-    currentPrice,
-    marketDifference,
-    marketDifferencePercent,
-    marketPosition: marketDifference > 0 ? "below" : marketDifference < 0 ? "above" : "equal",
+    actuality_status: "active",
+    advert_id: String(product?.id || extractAdvertIdFromUrl(advertUrl)),
+    title: String(product?.name || ""),
+    price: currentPrice || null,
+    publication_date: String(product?.publicationDate || ""),
+    last_update: String(product?.lastUpdate || ""),
+    avg_price: avgPrice || null,
+    market_difference: avgPrice && currentPrice ? marketDifference : null,
+    market_difference_percent: avgPrice && currentPrice ? marketDifferencePercent : null,
     brand: String(product?.attributes?.brand || ""),
     model: String(product?.attributes?.model || ""),
-    city: String(product?.city || "")
+    city: String(product?.city || ""),
+    last_checked_at: checkedAt
   };
 }
 
 function uniqueListings(listings) {
   const seen = new Set();
   return listings.filter(item => {
-    const key = item.url || `${item.title}|${item.price}|${item.city}`;
+    const key = getListingStorageKey(item);
     if (seen.has(key)) {
       return false;
     }
     seen.add(key);
     return true;
+  });
+}
+
+function mergeImportedListings(existingRows, importedRows) {
+  const existing = normalizeListings(existingRows);
+  const imported = normalizeListings(importedRows);
+  const existingByKey = new Map(existing.map(item => [getListingStorageKey(item), item]));
+  const nowIso = new Date().toISOString();
+
+  return imported.map(item => {
+    const previous = existingByKey.get(getListingStorageKey(item));
+    const nextStatus = normalizeActualityStatus(item.actuality_status || "active");
+    const previousStatus = normalizeActualityStatus(previous?.actuality_status || "active");
+
+    return {
+      ...previous,
+      ...item,
+      advert_id: item.advert_id || previous?.advert_id || extractAdvertIdFromUrl(item.url),
+      first_seen_at: previous?.first_seen_at || item.first_seen_at || nowIso,
+      last_seen_at: item.last_seen_at || nowIso,
+      last_checked_at: item.last_checked_at || nowIso,
+      actuality_status: nextStatus,
+      last_status_change_at:
+        previousStatus !== nextStatus
+          ? nowIso
+          : item.last_status_change_at || previous?.last_status_change_at || nowIso
+    };
   });
 }
 
@@ -549,6 +659,7 @@ async function fetchKolesaPage(pageUrl) {
 
   const html = await response.text();
   const $ = cheerio.load(html);
+  const checkedAt = new Date().toISOString();
   const listingMeta = new Map();
   extractAssignedJsonObjects(html, "listing.items.push(").forEach(jsonText => {
     try {
@@ -596,6 +707,7 @@ async function fetchKolesaPage(pageUrl) {
       year,
       mileage,
       owners: 0,
+      advert_id: advertId,
       engine_volume: engineVolume,
       city,
       url: href.startsWith("http") ? href : `https://kolesa.kz${href}`,
@@ -604,6 +716,11 @@ async function fetchKolesaPage(pageUrl) {
       source: "kolesa.kz",
       publication_date: String(meta?.publicationDate || ""),
       last_update: String(meta?.lastUpdate || ""),
+      first_seen_at: checkedAt,
+      last_seen_at: checkedAt,
+      last_checked_at: checkedAt,
+      last_status_change_at: checkedAt,
+      actuality_status: "active",
       avg_price: avgPrice || null,
       market_difference: marketDifference,
       market_difference_percent: marketDifferencePercent
@@ -831,7 +948,7 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      writeListings(listings);
+      writeListings(mergeImportedListings(readListings(), listings));
       sendJson(response, 200, { ok: true, count: listings.length });
     } catch (error) {
       sendJson(response, 400, { error: "Некорректный JSON." });
@@ -953,7 +1070,7 @@ const server = http.createServer(async (request, response) => {
       }
 
       if (save) {
-        writeListings(listings);
+        writeListings(mergeImportedListings(readListings(), listings));
       }
 
       sendJson(response, 200, {
@@ -971,6 +1088,72 @@ const server = http.createServer(async (request, response) => {
           ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
           : "Не удалось импортировать объявления с Kolesa.";
       console.error("Kolesa import failed:", error);
+      sendJson(response, 400, { error: message, detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname === "/api/listings/check" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const targetUrl = String(payload.url || "").trim();
+      if (!targetUrl) {
+        sendJson(response, 400, { error: "Нужен url объявления." });
+        return;
+      }
+
+      const listings = readListings();
+      const current = listings.find(item => item.url === targetUrl);
+      if (!current) {
+        sendJson(response, 404, { error: "Объявление не найдено в текущем списке." });
+        return;
+      }
+
+      if (current.source !== "kolesa.kz") {
+        sendJson(response, 400, { error: "Проверка актуальности пока доступна только для Kolesa." });
+        return;
+      }
+
+      const snapshot = await fetchKolesaListingSnapshot(targetUrl);
+      const nextStatus = normalizeActualityStatus(snapshot.actuality_status);
+      const checkedAt = snapshot.last_checked_at || new Date().toISOString();
+      const updatedListings = listings.map(item => {
+        if (item.url !== targetUrl) {
+          return item;
+        }
+
+        const previousStatus = normalizeActualityStatus(item.actuality_status);
+        return {
+          ...item,
+          title: snapshot.title || item.title,
+          advert_id: snapshot.advert_id || item.advert_id || extractAdvertIdFromUrl(item.url),
+          price: snapshot.price || item.price,
+          publication_date: snapshot.publication_date || item.publication_date,
+          last_update: snapshot.last_update || item.last_update,
+          avg_price: snapshot.avg_price || item.avg_price,
+          market_difference:
+            snapshot.market_difference !== null && snapshot.market_difference !== undefined
+              ? snapshot.market_difference
+              : item.market_difference,
+          market_difference_percent:
+            snapshot.market_difference_percent !== null && snapshot.market_difference_percent !== undefined
+              ? snapshot.market_difference_percent
+              : item.market_difference_percent,
+          last_checked_at: checkedAt,
+          last_seen_at: nextStatus === "active" ? checkedAt : item.last_seen_at,
+          actuality_status: nextStatus,
+          last_status_change_at: previousStatus !== nextStatus ? checkedAt : item.last_status_change_at || checkedAt
+        };
+      });
+
+      writeListings(updatedListings);
+      const updated = readListings().find(item => item.url === targetUrl);
+      sendJson(response, 200, { ok: true, item: updated });
+    } catch (error) {
+      const message =
+        error.message === "unsupported-host"
+          ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
+          : "Не удалось проверить актуальность объявления.";
       sendJson(response, 400, { error: message, detail: String(error.message || error) });
     }
     return;

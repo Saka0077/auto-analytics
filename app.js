@@ -163,6 +163,7 @@ const elements = {
   maxPriceInput: document.getElementById("max-price-input"),
   citySelect: document.getElementById("city-select"),
   sortSelect: document.getElementById("sort-select"),
+  showInactiveToggle: document.getElementById("show-inactive-toggle"),
   importCitySelect: document.getElementById("import-city-select"),
   importMarkSelect: document.getElementById("import-mark-select"),
   importBodySelect: document.getElementById("import-body-select"),
@@ -212,6 +213,7 @@ const elements = {
   modalLink: document.getElementById("modal-link"),
   modalFavoriteBtn: document.getElementById("modal-favorite-btn"),
   modalCompareBtn: document.getElementById("modal-compare-btn"),
+  modalCheckBtn: document.getElementById("modal-check-btn"),
   compareModal: document.getElementById("compare-modal"),
   compareBackdrop: document.getElementById("compare-backdrop"),
   compareCloseBtn: document.getElementById("compare-close-btn"),
@@ -262,9 +264,15 @@ function normalizeRow(item) {
     image: item.image || "",
     description: item.description || "",
     source: item.source || "",
+    advertId: item.advert_id || item.advertId || "",
     engineVolume: optionalPositiveNumber(item.engine_volume ?? item.engineVolume),
     publicationDate: item.publication_date || item.publicationDate || "",
     lastUpdate: item.last_update || item.lastUpdate || "",
+    firstSeenAt: item.first_seen_at || item.firstSeenAt || "",
+    lastSeenAt: item.last_seen_at || item.lastSeenAt || "",
+    lastCheckedAt: item.last_checked_at || item.lastCheckedAt || "",
+    lastStatusChangeAt: item.last_status_change_at || item.lastStatusChangeAt || "",
+    actualityStatus: normalizeActualityStatus(item.actuality_status || item.actualityStatus),
     avgPrice: optionalPositiveNumber(item.avg_price ?? item.avgPrice),
     marketDifference: number(item.market_difference ?? item.marketDifference),
     marketDifferencePercent: number(item.market_difference_percent ?? item.marketDifferencePercent)
@@ -287,6 +295,11 @@ function formatPercent(value) {
   return `${Math.abs(Number(value || 0)).toFixed(1)}%`;
 }
 
+function normalizeActualityStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  return ["active", "stale", "archived", "unavailable"].includes(status) ? status : "active";
+}
+
 function formatShortDate(value) {
   if (!value) {
     return "-";
@@ -301,6 +314,68 @@ function formatShortDate(value) {
     day: "numeric",
     month: "short"
   }).format(date);
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function getActualityMeta(item) {
+  switch (normalizeActualityStatus(item?.actualityStatus)) {
+    case "stale":
+      return { label: "Не подтверждено", className: "status-badge status-badge--stale" };
+    case "archived":
+      return { label: "В архиве", className: "status-badge status-badge--archived" };
+    case "unavailable":
+      return { label: "Недоступно", className: "status-badge status-badge--archived" };
+    default:
+      return { label: "Активно", className: "status-badge status-badge--active" };
+  }
+}
+
+function isListingActual(item) {
+  return normalizeActualityStatus(item?.actualityStatus) === "active";
+}
+
+function isKolesaListing(item) {
+  return Boolean(item?.url && item?.source === "kolesa.kz" && item.url.includes("kolesa.kz"));
+}
+
+function shouldAutoCheckActuality(item) {
+  if (!isKolesaListing(item)) {
+    return false;
+  }
+
+  if (!item.lastCheckedAt) {
+    return true;
+  }
+
+  const checkedAt = new Date(item.lastCheckedAt);
+  if (Number.isNaN(checkedAt.getTime())) {
+    return true;
+  }
+
+  const twelveHours = 12 * 60 * 60 * 1000;
+  return !isListingActual(item) || (Date.now() - checkedAt.getTime() > twelveHours);
+}
+
+function renderActualityBadge(item) {
+  const meta = getActualityMeta(item);
+  return `<span class="${meta.className}">${meta.label}</span>`;
 }
 
 function setStatus(text) {
@@ -638,13 +713,15 @@ function getFilteredListings() {
   const maxPrice = number(elements.maxPriceInput.value);
   const city = elements.citySelect.value;
   const sort = elements.sortSelect.value;
+  const showInactive = elements.showInactiveToggle.checked;
 
   const results = scoreListings(state.listings).filter(item => {
+    const actualityMatch = showInactive || isListingActual(item);
     const titleMatch = !search || item.title.toLowerCase().includes(search);
     const yearMatch = !minYear || (item.year !== null && item.year >= minYear);
     const priceMatch = !maxPrice || item.price <= maxPrice;
     const cityMatch = !city || item.city === city;
-    return titleMatch && yearMatch && priceMatch && cityMatch;
+    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch;
   });
 
   switch (sort) {
@@ -781,7 +858,11 @@ function renderTable(listings) {
     row.dataset.id = item.id;
     row.innerHTML = `
       <td>${renderThumb(item.image)}</td>
-      <td><strong>${escapeHtml(item.title)}</strong><br><span class="muted">${escapeHtml(item.city || "")}</span></td>
+      <td>
+        <strong>${escapeHtml(item.title)}</strong><br>
+        <span class="muted">${escapeHtml(item.city || "")}</span>
+        <div class="listing-subline">${renderActualityBadge(item)}<span class="muted">Проверено: ${escapeHtml(formatDateTime(item.lastCheckedAt))}</span></div>
+      </td>
       <td>${formatPrice(item.price)}</td>
       <td>${item.year ?? "-"}</td>
       <td>${formatShortDate(item.publicationDate)}</td>
@@ -839,7 +920,10 @@ function renderMarketFacts(item) {
 }
 
 function renderListingFacts(item) {
+  const actualityMeta = getActualityMeta(item);
   elements.modalFacts.innerHTML = [
+    renderFact("Статус", actualityMeta.label),
+    renderFact("Проверено", formatDateTime(item.lastCheckedAt)),
     renderFact("Рейтинг", item.score.toFixed(2)),
     renderFact("Выгода", item.dealScore.toFixed(2)),
     ...renderMarketFacts(item),
@@ -869,6 +953,17 @@ function applyListingInsight(listingId, insight) {
 
   state.listings = state.listings.map(mergeInsight);
   state.renderedListings = state.renderedListings.map(mergeInsight);
+}
+
+function replaceListing(updatedItem) {
+  const normalized = normalizeRow(updatedItem);
+  const replace = item => (item.id === normalized.id ? { ...item, ...normalized } : item);
+  state.listings = state.listings.map(replace);
+  state.renderedListings = state.renderedListings.map(replace);
+}
+
+function getActualListingsCount(listings = state.listings) {
+  return listings.filter(isListingActual).length;
 }
 
 async function loadKolesaPriceInsight(item) {
@@ -915,6 +1010,68 @@ async function loadKolesaPriceInsight(item) {
     if (state.selectedListingId === item.id) {
       const updatedItem = getListingById(item.id) || item;
       renderListingFacts(updatedItem);
+    }
+  }
+}
+
+async function checkListingActuality(listingId, { silent = false } = {}) {
+  const item = getListingById(listingId);
+  if (!item || !isKolesaListing(item)) {
+    return;
+  }
+
+  elements.modalCheckBtn.disabled = true;
+  elements.modalCheckBtn.textContent = "Проверка...";
+
+  if (!silent) {
+    setStatus("Источник: проверяем актуальность объявления...");
+  }
+
+  try {
+    const response = await fetch("/api/listings/check", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ url: item.url })
+    });
+
+    const payload = await response.json();
+    if (!response.ok || !payload.item) {
+      throw new Error(payload.error || "Check failed");
+    }
+
+    replaceListing(payload.item);
+    const updated = getListingById(listingId) || normalizeRow(payload.item);
+
+    populateCities();
+    render();
+
+    if (state.selectedListingId === listingId && updated) {
+      elements.modalTitle.textContent = updated.title;
+      elements.modalPrice.textContent = formatPrice(updated.price);
+      elements.modalCity.textContent = updated.city || "-";
+      renderListingFacts(updated);
+      renderListingBreakdown(updated);
+      elements.modalSource.textContent = updated.source || "Карточка объявления";
+    }
+
+    if (!silent) {
+      setStatus(`Источник: статус обновлен (${getActualityMeta(updated).label.toLowerCase()})`);
+    }
+  } catch (error) {
+    if (!silent) {
+      window.alert(error.message || "Не удалось проверить объявление.");
+      setStatus("Источник: ошибка проверки актуальности");
+    }
+  } finally {
+    if (state.selectedListingId === listingId) {
+      const updated = getListingById(listingId) || item;
+      elements.modalCheckBtn.disabled = !isKolesaListing(updated);
+      elements.modalCheckBtn.textContent = "Проверить актуальность";
+    } else {
+      elements.modalCheckBtn.disabled = false;
+      elements.modalCheckBtn.textContent = "Проверить актуальность";
     }
   }
 }
@@ -1443,9 +1600,10 @@ function openListingDetails(listingId) {
     return;
   }
 
+  const imageUrl = item.image ? `/api/image?url=${encodeURIComponent(item.image)}` : "";
   state.selectedListingId = listingId;
-  elements.modalMedia.innerHTML = item.image
-    ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.title)}">`
+  elements.modalMedia.innerHTML = imageUrl
+    ? `<img src="${imageUrl}" alt="${escapeHtml(item.title)}">`
     : `<div class="modal-media-empty">Фото не найдено</div>`;
   elements.modalSource.textContent = item.source || "Карточка объявления";
   elements.modalTitle.textContent = item.title;
@@ -1493,10 +1651,15 @@ function openListingDetails(listingId) {
     : state.favoriteIds.includes(listingId)
       ? "Убрать из избранного"
       : "В избранное";
+  elements.modalCheckBtn.disabled = !isKolesaListing(item);
+  elements.modalCheckBtn.textContent = "Проверить актуальность";
 
   elements.detailModal.hidden = false;
   document.body.style.overflow = "hidden";
   void loadKolesaPriceInsight(item);
+  if (shouldAutoCheckActuality(item)) {
+    void checkListingActuality(item.id, { silent: true });
+  }
 }
 
 function closeListingDetails() {
@@ -1525,6 +1688,7 @@ function resetFilters() {
   elements.maxPriceInput.value = "";
   elements.citySelect.value = "";
   elements.sortSelect.value = "score";
+  elements.showInactiveToggle.checked = false;
   render();
 }
 
@@ -1579,7 +1743,7 @@ async function loadListingsFromServer() {
       if (isAuthenticated()) {
         void saveAppState();
       }
-      setStatus("Источник: серверные данные");
+      setStatus(`Источник: серверные данные, активных ${getActualListingsCount()} из ${state.listings.length}`);
       return;
     }
   } catch (error) {
@@ -1627,7 +1791,7 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
       void saveAppState();
     }
     const pagesLoaded = Number(payload.pagesLoaded) || 1;
-    setStatus(`Источник: Kolesa, загружено ${state.listings.length} с ${pagesLoaded} стр.`);
+    setStatus(`Источник: Kolesa, активных ${getActualListingsCount()} из ${state.listings.length}, ${pagesLoaded} стр.`);
   } catch (error) {
     window.alert(error.message || "Не удалось импортировать данные.");
     setStatus("Источник: ошибка импорта");
@@ -1672,7 +1836,8 @@ async function handleFileUpload(event) {
   elements.minYearInput,
   elements.maxPriceInput,
   elements.citySelect,
-  elements.sortSelect
+  elements.sortSelect,
+  elements.showInactiveToggle
 ].forEach(element => {
   element.addEventListener("input", render);
   element.addEventListener("change", render);
@@ -1726,6 +1891,11 @@ elements.modalFavoriteBtn.addEventListener("click", () => {
 elements.modalCompareBtn.addEventListener("click", () => {
   if (state.selectedListingId) {
     toggleCompare(state.selectedListingId);
+  }
+});
+elements.modalCheckBtn.addEventListener("click", () => {
+  if (state.selectedListingId) {
+    void checkListingActuality(state.selectedListingId);
   }
 });
 elements.pickBestCompareBtn.addEventListener("click", () => {
