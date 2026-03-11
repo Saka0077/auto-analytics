@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Авто Аналитика</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Auto analytics</p>
+        <h1>Поиск лучших объявлений</h1>
+        <p class="hero-text">
+          Загрузи данные, отфильтруй список и быстро найди варианты с лучшим соотношением цены и состояния.
+        </p>
+      </div>
+      <div class="hero-card">
+        <div class="metric">
+          <span class="metric-label">Лучший вариант</span>
+          <strong id="best-title">Нет данных</strong>
+        </div>
+        <div class="metric-grid">
+          <div>
+            <span class="metric-label">Цена</span>
+            <strong id="best-price">-</strong>
+          </div>
+          <div>
+            <span class="metric-label">Рейтинг</span>
+            <strong id="best-score">-</strong>
+          </div>
+        </div>
+        <p id="sync-status" class="sync-status">Источник: локальные данные</p>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel controls-panel">
+        <div class="panel-head">
+          <h2>Фильтры</h2>
+          <button id="reset-btn" class="ghost-btn" type="button">Сбросить</button>
+        </div>
+
+        <div class="auth-box">
+          <div id="auth-guest-view">
+            <label class="field">
+              <span>Логин</span>
+              <input id="auth-username-input" type="text" placeholder="sayat">
+            </label>
+            <label class="field">
+              <span>Пароль</span>
+              <input id="auth-password-input" type="password" placeholder="Пароль">
+            </label>
+            <div class="auth-actions">
+              <button id="login-btn" class="primary-btn" type="button">Войти</button>
+              <button id="register-btn" class="ghost-btn" type="button">Регистрация</button>
+            </div>
+          </div>
+          <div id="auth-user-view" hidden>
+            <p id="auth-user-text" class="auth-user-text">Вход выполнен</p>
+            <button id="logout-btn" class="ghost-btn" type="button">Выйти</button>
+          </div>
+        </div>
+
+        <div id="profile-box" class="profile-box">
+          <label class="field">
+            <span>Профиль</span>
+            <select id="profile-select">
+              <option value="">Загрузка...</option>
+            </select>
+          </label>
+          <div class="profile-create">
+            <input id="profile-name-input" type="text" placeholder="Новый профиль">
+            <button id="create-profile-btn" class="ghost-btn" type="button">Создать</button>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Поиск по названию</span>
+          <input id="search-input" type="text" placeholder="Camry, Elantra, Kia...">
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span>Мин. год</span>
+            <input id="min-year-input" type="number" placeholder="2018">
+          </label>
+
+          <label class="field">
+            <span>Макс. цена</span>
+            <input id="max-price-input" type="number" placeholder="12000000">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Город</span>
+          <select id="city-select">
+            <option value="">Все города</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Сортировка</span>
+          <select id="sort-select">
+            <option value="score">Сначала лучшие</option>
+            <option value="price-asc">Цена по возрастанию</option>
+            <option value="price-desc">Цена по убыванию</option>
+            <option value="year-desc">Сначала новее</option>
+            <option value="mileage-asc">Меньше пробег</option>
+          </select>
+        </label>
+
+        <div class="import-box">
+          <label class="field import-field">
+            <span>Ссылка Kolesa</span>
+            <input id="kolesa-url-input" type="url" placeholder="https://kolesa.kz/cars/...">
+          </label>
+          <button id="import-kolesa-btn" class="primary-btn" type="button">Импортировать</button>
+        </div>
+
+        <div class="upload-box">
+          <div>
+            <strong>Загрузка данных</strong>
+            <p>Поддержка локального файла JSON.</p>
+          </div>
+          <input id="file-input" type="file" accept=".json,application/json">
+        </div>
+
+        <div class="hint-box">
+          <strong>Важно</strong>
+          <p>
+            Импорт с Kolesa теперь идет через сервер. Вставь ссылку на страницу поиска или список объявлений,
+            и сайт загрузит карточки в текущую таблицу.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel dashboard-panel">
+        <div class="stats-grid">
+          <article class="stat-card">
+            <span>Всего объявлений</span>
+            <strong id="total-count">0</strong>
+          </article>
+          <article class="stat-card">
+            <span>Средняя цена</span>
+            <strong id="avg-price">-</strong>
+          </article>
+          <article class="stat-card">
+            <span>Средний год</span>
+            <strong id="avg-year">-</strong>
+          </article>
+          <article class="stat-card">
+            <span>Средний пробег</span>
+            <strong id="avg-mileage">-</strong>
+          </article>
+        </div>
+
+        <div class="compare-panel">
+          <div>
+            <div class="panel-head compare-head">
+              <h2>Сравнение</h2>
+              <span id="compare-count" class="muted">0 из 3 выбрано</span>
+            </div>
+            <p id="compare-winner-text" class="compare-winner-text">Победитель пока не выбран.</p>
+            <div id="compare-chips" class="compare-chips">
+              <span class="muted">Добавь машины из карточки объявления.</span>
+            </div>
+          </div>
+          <div class="compare-actions">
+            <button id="pick-best-compare-btn" class="ghost-btn" type="button">Найти лучший</button>
+            <button id="open-compare-btn" class="primary-btn" type="button">Сравнить</button>
+            <button id="clear-compare-btn" class="ghost-btn" type="button">Очистить</button>
+          </div>
+        </div>
+
+        <div class="saved-grid">
+          <div class="top-card">
+            <div class="panel-head">
+              <h2>Избранное</h2>
+            </div>
+            <div id="favorites-list" class="saved-list"></div>
+          </div>
+
+          <div class="top-card">
+            <div class="panel-head">
+              <h2>История сравнений</h2>
+            </div>
+            <div id="history-list" class="saved-list"></div>
+          </div>
+        </div>
+
+        <div class="top-grid">
+          <div class="top-card">
+            <div class="panel-head">
+              <h2>Топ 5 лучших</h2>
+            </div>
+            <div id="top-score-list" class="top-list"></div>
+          </div>
+
+          <div class="top-card">
+            <div class="panel-head">
+              <h2>Топ 5 выгодных</h2>
+            </div>
+            <div id="top-deal-list" class="top-list"></div>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="panel-head">
+            <h2>Рейтинг объявлений</h2>
+            <span id="results-count" class="muted">0 результатов</span>
+          </div>
+          <div id="bars" class="bars"></div>
+        </div>
+
+        <div class="table-card">
+          <div class="panel-head">
+            <h2>Список машин</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Фото</th>
+                  <th>Машина</th>
+                  <th>Цена</th>
+                  <th>Год</th>
+                  <th>Пробег</th>
+                  <th>Влад.</th>
+                  <th>Рейтинг</th>
+                  <th>Ссылка</th>
+                </tr>
+              </thead>
+              <tbody id="results-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="detail-modal" class="modal" hidden>
+    <div id="modal-backdrop" class="modal-backdrop"></div>
+    <section class="modal-dialog" aria-modal="true" role="dialog" aria-labelledby="modal-title">
+      <button id="modal-close-btn" class="modal-close" type="button" aria-label="Закрыть">×</button>
+      <div class="modal-media" id="modal-media"></div>
+      <div class="modal-content">
+        <div class="modal-head">
+          <div>
+            <p id="modal-source" class="eyebrow modal-eyebrow">Карточка</p>
+            <h2 id="modal-title" class="modal-title">Машина</h2>
+          </div>
+          <div class="modal-price-box">
+            <strong id="modal-price">-</strong>
+            <span id="modal-city" class="muted">-</span>
+          </div>
+        </div>
+
+        <div id="modal-facts" class="modal-facts"></div>
+
+        <div class="modal-sections">
+          <section class="modal-section">
+            <h3>Почему такой рейтинг</h3>
+            <div id="modal-breakdown" class="breakdown-list"></div>
+          </section>
+
+          <section class="modal-section">
+            <h3>Описание</h3>
+            <p id="modal-description" class="modal-description">Нет описания.</p>
+          </section>
+        </div>
+
+        <div class="modal-actions">
+          <button id="modal-favorite-btn" class="ghost-btn" type="button">В избранное</button>
+          <button id="modal-compare-btn" class="ghost-btn" type="button">Добавить к сравнению</button>
+          <a id="modal-link" class="primary-btn modal-link" href="#" target="_blank" rel="noreferrer">Открыть объявление</a>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="compare-modal" class="modal" hidden>
+    <div id="compare-backdrop" class="modal-backdrop"></div>
+    <section class="modal-dialog compare-dialog" aria-modal="true" role="dialog" aria-labelledby="compare-title">
+      <button id="compare-close-btn" class="modal-close" type="button" aria-label="Закрыть">×</button>
+        <div class="modal-content">
+          <div class="modal-head">
+            <div>
+              <p class="eyebrow modal-eyebrow">Compare</p>
+              <h2 id="compare-title" class="modal-title">Сравнение машин</h2>
+            </div>
+            <div class="compare-export-actions">
+              <button id="export-compare-csv-btn" class="ghost-btn" type="button">Экспорт CSV</button>
+              <button id="export-compare-pdf-btn" class="primary-btn" type="button">Экспорт PDF</button>
+            </div>
+          </div>
+        <div id="compare-grid" class="compare-grid"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

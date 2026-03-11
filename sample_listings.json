@@ -1,0 +1,50 @@
+[
+  {
+    "title": "Toyota Camry 2018",
+    "price": 11200000,
+    "year": 2018,
+    "mileage": 98000,
+    "owners": 2,
+    "engine_volume": 2.5,
+    "city": "Алматы",
+    "url": "https://example.com/camry-2018",
+    "description": "Хорошее состояние",
+    "source": "sample"
+  },
+  {
+    "title": "Hyundai Elantra 2020",
+    "price": 9900000,
+    "year": 2020,
+    "mileage": 74000,
+    "owners": 1,
+    "engine_volume": 2.0,
+    "city": "Астана",
+    "url": "https://example.com/elantra-2020",
+    "description": "Один хозяин",
+    "source": "sample"
+  },
+  {
+    "title": "Kia K5 2021",
+    "price": 13100000,
+    "year": 2021,
+    "mileage": 54000,
+    "owners": 1,
+    "engine_volume": 2.5,
+    "city": "Алматы",
+    "url": "https://example.com/k5-2021",
+    "description": "Свежий авто",
+    "source": "sample"
+  },
+  {
+    "title": "Volkswagen Passat 2017",
+    "price": 8700000,
+    "year": 2017,
+    "mileage": 126000,
+    "owners": 3,
+    "engine_volume": 1.8,
+    "city": "Шымкент",
+    "url": "https://example.com/passat-2017",
+    "description": "Есть торг",
+    "source": "sample"
+  }
+]

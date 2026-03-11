@@ -1,0 +1,1462 @@
+const AUTH_TOKEN_KEY = "autoAnalyticsAuthToken";
+
+const defaultListings = [
+  {
+    title: "Toyota Camry 2018",
+    price: 11200000,
+    year: 2018,
+    mileage: 98000,
+    owners: 2,
+    city: "Алматы",
+    url: "https://example.com/camry-2018",
+    description: "Хорошее состояние",
+    source: "demo",
+    image: ""
+  },
+  {
+    title: "Hyundai Elantra 2020",
+    price: 9900000,
+    year: 2020,
+    mileage: 74000,
+    owners: 1,
+    city: "Астана",
+    url: "https://example.com/elantra-2020",
+    description: "Один хозяин",
+    source: "demo",
+    image: ""
+  },
+  {
+    title: "Kia K5 2021",
+    price: 13100000,
+    year: 2021,
+    mileage: 54000,
+    owners: 1,
+    city: "Алматы",
+    url: "https://example.com/k5-2021",
+    description: "Свежий авто",
+    source: "demo",
+    image: ""
+  },
+  {
+    title: "Volkswagen Passat 2017",
+    price: 8700000,
+    year: 2017,
+    mileage: 126000,
+    owners: 3,
+    city: "Шымкент",
+    url: "https://example.com/passat-2017",
+    description: "Есть торг",
+    source: "demo",
+    image: ""
+  }
+];
+
+const state = {
+  listings: defaultListings.map(normalizeRow),
+  renderedListings: [],
+  selectedListingId: null,
+  compareIds: [],
+  compareWinnerId: null,
+  favoriteIds: [],
+  comparisonHistory: [],
+  activeProfileId: "default",
+  profiles: [{ id: "default", name: "Основной" }],
+  authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
+  currentUser: null
+};
+
+const elements = {
+  authGuestView: document.getElementById("auth-guest-view"),
+  authUserView: document.getElementById("auth-user-view"),
+  authUsernameInput: document.getElementById("auth-username-input"),
+  authPasswordInput: document.getElementById("auth-password-input"),
+  loginBtn: document.getElementById("login-btn"),
+  registerBtn: document.getElementById("register-btn"),
+  logoutBtn: document.getElementById("logout-btn"),
+  authUserText: document.getElementById("auth-user-text"),
+  profileBox: document.getElementById("profile-box"),
+  profileSelect: document.getElementById("profile-select"),
+  profileNameInput: document.getElementById("profile-name-input"),
+  createProfileBtn: document.getElementById("create-profile-btn"),
+  searchInput: document.getElementById("search-input"),
+  minYearInput: document.getElementById("min-year-input"),
+  maxPriceInput: document.getElementById("max-price-input"),
+  citySelect: document.getElementById("city-select"),
+  sortSelect: document.getElementById("sort-select"),
+  kolesaUrlInput: document.getElementById("kolesa-url-input"),
+  importKolesaBtn: document.getElementById("import-kolesa-btn"),
+  fileInput: document.getElementById("file-input"),
+  resetBtn: document.getElementById("reset-btn"),
+  totalCount: document.getElementById("total-count"),
+  avgPrice: document.getElementById("avg-price"),
+  avgYear: document.getElementById("avg-year"),
+  avgMileage: document.getElementById("avg-mileage"),
+  compareCount: document.getElementById("compare-count"),
+  compareWinnerText: document.getElementById("compare-winner-text"),
+  compareChips: document.getElementById("compare-chips"),
+  favoritesList: document.getElementById("favorites-list"),
+  historyList: document.getElementById("history-list"),
+  pickBestCompareBtn: document.getElementById("pick-best-compare-btn"),
+  openCompareBtn: document.getElementById("open-compare-btn"),
+  clearCompareBtn: document.getElementById("clear-compare-btn"),
+  bars: document.getElementById("bars"),
+  resultsBody: document.getElementById("results-body"),
+  resultsCount: document.getElementById("results-count"),
+  topScoreList: document.getElementById("top-score-list"),
+  topDealList: document.getElementById("top-deal-list"),
+  bestTitle: document.getElementById("best-title"),
+  bestPrice: document.getElementById("best-price"),
+  bestScore: document.getElementById("best-score"),
+  syncStatus: document.getElementById("sync-status"),
+  detailModal: document.getElementById("detail-modal"),
+  modalBackdrop: document.getElementById("modal-backdrop"),
+  modalCloseBtn: document.getElementById("modal-close-btn"),
+  modalMedia: document.getElementById("modal-media"),
+  modalSource: document.getElementById("modal-source"),
+  modalTitle: document.getElementById("modal-title"),
+  modalPrice: document.getElementById("modal-price"),
+  modalCity: document.getElementById("modal-city"),
+  modalFacts: document.getElementById("modal-facts"),
+  modalBreakdown: document.getElementById("modal-breakdown"),
+  modalDescription: document.getElementById("modal-description"),
+  modalLink: document.getElementById("modal-link"),
+  modalFavoriteBtn: document.getElementById("modal-favorite-btn"),
+  modalCompareBtn: document.getElementById("modal-compare-btn"),
+  compareModal: document.getElementById("compare-modal"),
+  compareBackdrop: document.getElementById("compare-backdrop"),
+  compareCloseBtn: document.getElementById("compare-close-btn"),
+  compareGrid: document.getElementById("compare-grid"),
+  exportCompareCsvBtn: document.getElementById("export-compare-csv-btn"),
+  exportComparePdfBtn: document.getElementById("export-compare-pdf-btn")
+};
+
+function createListingId(item) {
+  return [
+    item.url || "",
+    item.title || "",
+    item.price || "",
+    item.year || "",
+    item.city || ""
+  ].join("|");
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function number(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function optionalPositiveNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeRow(item) {
+  return {
+    id: item.id || createListingId(item),
+    title: item.title || item.name || "Без названия",
+    price: number(item.price) || 0,
+    year: optionalPositiveNumber(item.year),
+    mileage: optionalPositiveNumber(item.mileage),
+    owners: optionalPositiveNumber(item.owners),
+    city: item.city || "",
+    url: item.url || "",
+    image: item.image || "",
+    description: item.description || "",
+    source: item.source || "",
+    engineVolume: optionalPositiveNumber(item.engine_volume ?? item.engineVolume)
+  };
+}
+
+function normalizeRows(rows) {
+  return rows.map(normalizeRow).filter(item => item.price > 0);
+}
+
+function formatPrice(value) {
+  return new Intl.NumberFormat("ru-RU").format(Math.round(value)) + " ₸";
+}
+
+function formatMileage(value) {
+  return new Intl.NumberFormat("ru-RU").format(Math.round(value)) + " км";
+}
+
+function setStatus(text) {
+  elements.syncStatus.textContent = text;
+}
+
+function setImportBusy(isBusy) {
+  elements.importKolesaBtn.disabled = isBusy;
+  elements.importKolesaBtn.textContent = isBusy ? "Загрузка..." : "Импортировать";
+}
+
+function isAuthenticated() {
+  return Boolean(state.authToken && state.currentUser);
+}
+
+function setAuthToken(token) {
+  state.authToken = token || "";
+  if (state.authToken) {
+    localStorage.setItem(AUTH_TOKEN_KEY, state.authToken);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+function resetUserState() {
+  state.currentUser = null;
+  state.favoriteIds = [];
+  state.comparisonHistory = [];
+  state.activeProfileId = "default";
+  state.profiles = [{ id: "default", name: "Основной" }];
+  state.compareIds = [];
+  state.compareWinnerId = null;
+}
+
+function applyServerState(payload) {
+  state.activeProfileId = String(payload.activeProfileId || "default");
+  state.profiles = Array.isArray(payload.profiles) && payload.profiles.length
+    ? payload.profiles
+    : [{ id: "default", name: "Основной" }];
+  state.favoriteIds = Array.isArray(payload.favorites) ? payload.favorites.map(String) : [];
+  state.comparisonHistory = Array.isArray(payload.comparisonHistory) ? payload.comparisonHistory : [];
+}
+
+async function apiFetch(url, options = {}, authRequired = false) {
+  const headers = {
+    ...(options.headers || {})
+  };
+
+  if (state.authToken) {
+    headers.Authorization = `Bearer ${state.authToken}`;
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers
+  });
+
+  if (response.status === 401 && authRequired) {
+    setAuthToken("");
+    resetUserState();
+  }
+
+  return response;
+}
+
+function renderAuth() {
+  const loggedIn = isAuthenticated();
+  elements.authGuestView.hidden = loggedIn;
+  elements.authUserView.hidden = !loggedIn;
+  elements.profileBox.hidden = !loggedIn;
+  elements.authUserText.textContent = loggedIn
+    ? `Вход выполнен: ${state.currentUser.username}`
+    : "Вход не выполнен";
+}
+
+async function handleAuthSuccess(payload) {
+  setAuthToken(payload.token || state.authToken);
+  state.currentUser = payload.user || null;
+  applyServerState(payload.state || {});
+  state.compareIds = [];
+  state.compareWinnerId = null;
+  elements.authPasswordInput.value = "";
+  render();
+}
+
+async function registerUser() {
+  const username = elements.authUsernameInput.value.trim();
+  const password = elements.authPasswordInput.value;
+  if (!username || !password) {
+    window.alert("Заполни логин и пароль.");
+    return;
+  }
+
+  try {
+    const response = await apiFetch("/api/auth/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ username, password })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Register failed");
+    }
+    await handleAuthSuccess(payload);
+  } catch (error) {
+    window.alert(error.message || "Не удалось зарегистрироваться.");
+  }
+}
+
+async function loginUser() {
+  const username = elements.authUsernameInput.value.trim();
+  const password = elements.authPasswordInput.value;
+  if (!username || !password) {
+    window.alert("Заполни логин и пароль.");
+    return;
+  }
+
+  try {
+    const response = await apiFetch("/api/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ username, password })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Login failed");
+    }
+    await handleAuthSuccess(payload);
+  } catch (error) {
+    window.alert(error.message || "Не удалось войти.");
+  }
+}
+
+async function logoutUser() {
+  try {
+    await apiFetch("/api/auth/logout", { method: "POST" }, true);
+  } catch (error) {
+    // Ignore transport failures during logout.
+  }
+
+  setAuthToken("");
+  resetUserState();
+  render();
+}
+
+async function loadAuthSession() {
+  if (!state.authToken) {
+    resetUserState();
+    return;
+  }
+
+  try {
+    const response = await apiFetch("/api/auth/session", { method: "GET" }, true);
+    if (!response.ok) {
+      throw new Error("Session load failed");
+    }
+    const payload = await response.json();
+    state.currentUser = payload.user || null;
+    applyServerState(payload.state || {});
+  } catch (error) {
+    setAuthToken("");
+    resetUserState();
+  }
+}
+
+function normalize(value, min, max, invert = false) {
+  if (
+    value === null ||
+    value === undefined ||
+    min === null ||
+    min === undefined ||
+    max === null ||
+    max === undefined
+  ) {
+    return 0.5;
+  }
+  if (max === min) {
+    return 1;
+  }
+  const result = (value - min) / (max - min);
+  return invert ? 1 - result : result;
+}
+
+function scoreListings(listings) {
+  const prices = listings.map(item => item.price).filter(Boolean);
+  const years = listings.map(item => item.year).filter(item => item !== null && item !== undefined);
+  const mileages = listings.map(item => item.mileage).filter(item => item !== null && item !== undefined);
+  const owners = listings.map(item => item.owners).filter(item => item !== null && item !== undefined);
+
+  const bounds = {
+    priceMin: Math.min(...prices),
+    priceMax: Math.max(...prices),
+    yearMin: years.length ? Math.min(...years) : null,
+    yearMax: years.length ? Math.max(...years) : null,
+    mileageMin: mileages.length ? Math.min(...mileages) : null,
+    mileageMax: mileages.length ? Math.max(...mileages) : null,
+    ownersMin: owners.length ? Math.min(...owners) : null,
+    ownersMax: owners.length ? Math.max(...owners) : null
+  };
+
+  return listings.map(item => {
+    const priceScore = normalize(item.price, bounds.priceMin, bounds.priceMax, true);
+    const yearScore = normalize(item.year, bounds.yearMin, bounds.yearMax);
+    const mileageScore = normalize(item.mileage, bounds.mileageMin, bounds.mileageMax, true);
+    const ownersScore = normalize(item.owners, bounds.ownersMin, bounds.ownersMax, true);
+    const score =
+      priceScore * 0.45 +
+      yearScore * 0.25 +
+      mileageScore * 0.2 +
+      ownersScore * 0.1;
+    const dealScore =
+      priceScore * 0.65 +
+      yearScore * 0.2 +
+      mileageScore * 0.15;
+
+    return {
+      ...item,
+      score: Number(score.toFixed(4)),
+      dealScore: Number(dealScore.toFixed(4)),
+      scoreParts: {
+        price: Number(priceScore.toFixed(4)),
+        year: Number(yearScore.toFixed(4)),
+        mileage: Number(mileageScore.toFixed(4)),
+        owners: Number(ownersScore.toFixed(4))
+      }
+    };
+  });
+}
+
+function populateCities() {
+  const current = elements.citySelect.value;
+  const cities = [...new Set(state.listings.map(item => item.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  elements.citySelect.innerHTML = '<option value="">Все города</option>';
+
+  cities.forEach(city => {
+    const option = document.createElement("option");
+    option.value = city;
+    option.textContent = city;
+    elements.citySelect.append(option);
+  });
+
+  elements.citySelect.value = cities.includes(current) ? current : "";
+}
+
+function getFilteredListings() {
+  const search = elements.searchInput.value.trim().toLowerCase();
+  const minYear = number(elements.minYearInput.value);
+  const maxPrice = number(elements.maxPriceInput.value);
+  const city = elements.citySelect.value;
+  const sort = elements.sortSelect.value;
+
+  const results = scoreListings(state.listings).filter(item => {
+    const titleMatch = !search || item.title.toLowerCase().includes(search);
+    const yearMatch = !minYear || (item.year !== null && item.year >= minYear);
+    const priceMatch = !maxPrice || item.price <= maxPrice;
+    const cityMatch = !city || item.city === city;
+    return titleMatch && yearMatch && priceMatch && cityMatch;
+  });
+
+  switch (sort) {
+    case "price-asc":
+      results.sort((a, b) => a.price - b.price);
+      break;
+    case "price-desc":
+      results.sort((a, b) => b.price - a.price);
+      break;
+    case "year-desc":
+      results.sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+      break;
+    case "mileage-asc":
+      results.sort((a, b) => (a.mileage ?? Number.MAX_SAFE_INTEGER) - (b.mileage ?? Number.MAX_SAFE_INTEGER));
+      break;
+    default:
+      results.sort((a, b) => b.score - a.score || a.price - b.price);
+      break;
+  }
+
+  return results;
+}
+
+function renderStats(listings) {
+  elements.totalCount.textContent = String(listings.length);
+
+  if (!listings.length) {
+    elements.avgPrice.textContent = "-";
+    elements.avgYear.textContent = "-";
+    elements.avgMileage.textContent = "-";
+    elements.bestTitle.textContent = "Нет данных";
+    elements.bestPrice.textContent = "-";
+    elements.bestScore.textContent = "-";
+    return;
+  }
+
+  const avgPrice = listings.reduce((sum, item) => sum + item.price, 0) / listings.length;
+  const yearValues = listings.map(item => item.year).filter(item => item !== null && item !== undefined);
+  const mileageValues = listings.map(item => item.mileage).filter(item => item !== null && item !== undefined);
+  const best = [...listings].sort((a, b) => b.score - a.score)[0];
+
+  elements.avgPrice.textContent = formatPrice(avgPrice);
+  elements.avgYear.textContent = yearValues.length
+    ? String(Math.round(yearValues.reduce((sum, item) => sum + item, 0) / yearValues.length))
+    : "-";
+  elements.avgMileage.textContent = mileageValues.length
+    ? formatMileage(mileageValues.reduce((sum, item) => sum + item, 0) / mileageValues.length)
+    : "-";
+  elements.bestTitle.textContent = best.title;
+  elements.bestPrice.textContent = formatPrice(best.price);
+  elements.bestScore.textContent = best.score.toFixed(2);
+}
+
+function renderBars(listings) {
+  elements.bars.innerHTML = "";
+
+  listings.slice(0, 6).forEach(item => {
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    row.innerHTML = `
+      <div class="bar-label">${escapeHtml(item.title)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.max(item.score * 100, 5)}%"></div></div>
+      <div>${item.score.toFixed(2)}</div>
+    `;
+    elements.bars.append(row);
+  });
+}
+
+function getAllScoredListings() {
+  return scoreListings(state.listings);
+}
+
+function renderThumb(imageUrl, className = "thumb") {
+  if (imageUrl) {
+    return `<div class="${className}"><img src="${escapeHtml(imageUrl)}" alt="Фото авто" loading="lazy"></div>`;
+  }
+
+  return `<div class="${className} thumb--empty">нет фото</div>`;
+}
+
+function renderTopLists(listings) {
+  elements.topScoreList.innerHTML = "";
+  elements.topDealList.innerHTML = "";
+
+  const topByScore = [...listings]
+    .sort((a, b) => b.score - a.score || a.price - b.price)
+    .slice(0, 5);
+  const topByDeal = [...listings]
+    .sort((a, b) => b.dealScore - a.dealScore || a.price - b.price)
+    .slice(0, 5);
+
+  const renderList = (target, items, valueKey, valueLabel) => {
+    if (!items.length) {
+      target.innerHTML = `<div class="muted">Нет данных.</div>`;
+      return;
+    }
+
+    items.forEach(item => {
+      const row = document.createElement("button");
+      row.className = "top-item";
+      row.type = "button";
+      row.dataset.id = item.id;
+      row.innerHTML = `
+        ${renderThumb(item.image, "thumb thumb--small")}
+        <div>
+          <div class="top-item-title">${escapeHtml(item.title)}</div>
+          <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)}</div>
+        </div>
+        <div class="top-item-value">${item[valueKey].toFixed(2)} ${valueLabel}</div>
+      `;
+      target.append(row);
+    });
+  };
+
+  renderList(elements.topScoreList, topByScore, "score", "score");
+  renderList(elements.topDealList, topByDeal, "dealScore", "deal");
+}
+
+function renderTable(listings) {
+  elements.resultsBody.innerHTML = "";
+  elements.resultsCount.textContent = `${listings.length} результатов`;
+
+  if (!listings.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="8">Ничего не найдено по текущим фильтрам.</td>`;
+    elements.resultsBody.append(row);
+    return;
+  }
+
+  listings.forEach(item => {
+    const row = document.createElement("tr");
+    row.className = "is-clickable";
+    row.dataset.id = item.id;
+    row.innerHTML = `
+      <td>${renderThumb(item.image)}</td>
+      <td><strong>${escapeHtml(item.title)}</strong><br><span class="muted">${escapeHtml(item.city || "")}</span></td>
+      <td>${formatPrice(item.price)}</td>
+      <td>${item.year ?? "-"}</td>
+      <td>${item.mileage ? formatMileage(item.mileage) : "-"}</td>
+      <td>${item.owners ?? "-"}</td>
+      <td><span class="score-badge">${item.score.toFixed(2)}</span></td>
+      <td>${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Открыть</a>` : "-"}</td>
+    `;
+    elements.resultsBody.append(row);
+  });
+}
+
+function renderFact(label, value) {
+  return `
+    <div class="modal-fact">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function getListingById(listingId) {
+  return state.renderedListings.find(item => item.id === listingId) ||
+    getAllScoredListings().find(item => item.id === listingId) ||
+    null;
+}
+
+function getComparedItems() {
+  return state.compareIds
+    .map(id => getListingById(id))
+    .filter(Boolean);
+}
+
+function getFavoriteItems() {
+  return state.favoriteIds
+    .map(id => getListingById(id))
+    .filter(Boolean);
+}
+
+async function saveAppState() {
+  if (!isAuthenticated()) {
+    return;
+  }
+
+  try {
+    await apiFetch("/api/state", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        activeProfileId: state.activeProfileId,
+        favorites: state.favoriteIds,
+        comparisonHistory: state.comparisonHistory
+      })
+    }, true);
+  } catch (error) {
+    setStatus("Источник: серверные данные, но состояние не сохранено");
+  }
+}
+
+async function loadAppState() {
+  await loadAuthSession();
+}
+
+function renderProfiles() {
+  renderAuth();
+  elements.profileSelect.innerHTML = "";
+
+  if (!isAuthenticated()) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Нужен вход";
+    elements.profileSelect.append(option);
+    elements.profileSelect.disabled = true;
+    elements.profileNameInput.disabled = true;
+    elements.createProfileBtn.disabled = true;
+    return;
+  }
+
+  elements.profileSelect.disabled = false;
+  elements.profileNameInput.disabled = false;
+  elements.createProfileBtn.disabled = false;
+
+  const profiles = state.profiles.length ? state.profiles : [{ id: "default", name: "Основной" }];
+  profiles.forEach(profile => {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = profile.name;
+    elements.profileSelect.append(option);
+  });
+
+  elements.profileSelect.value = profiles.some(profile => profile.id === state.activeProfileId)
+    ? state.activeProfileId
+    : profiles[0].id;
+}
+
+async function createProfile() {
+  if (!isAuthenticated()) {
+    window.alert("Сначала войди в аккаунт.");
+    return;
+  }
+
+  const name = elements.profileNameInput.value.trim();
+  if (!name) {
+    window.alert("Введите имя профиля.");
+    return;
+  }
+
+  try {
+    const response = await apiFetch("/api/profiles", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ name })
+    }, true);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Create profile failed");
+    }
+
+    applyServerState(payload);
+    state.compareIds = [];
+    state.compareWinnerId = null;
+    elements.profileNameInput.value = "";
+    updateComparePanel();
+    render();
+  } catch (error) {
+    window.alert(error.message || "Не удалось создать профиль.");
+  }
+}
+
+async function switchProfile(profileId) {
+  if (!isAuthenticated() || !profileId || profileId === state.activeProfileId) {
+    return;
+  }
+
+  try {
+    const response = await apiFetch("/api/profiles/active", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ profileId })
+    }, true);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Switch profile failed");
+    }
+
+    applyServerState(payload);
+    state.compareIds = [];
+    state.compareWinnerId = null;
+    updateComparePanel();
+    render();
+  } catch (error) {
+    window.alert(error.message || "Не удалось переключить профиль.");
+  }
+}
+
+function updateComparePanel() {
+  elements.compareCount.textContent = `${state.compareIds.length} из 3 выбрано`;
+  elements.compareChips.innerHTML = "";
+  elements.openCompareBtn.disabled = state.compareIds.length < 2;
+  elements.pickBestCompareBtn.disabled = state.compareIds.length < 2;
+  elements.exportCompareCsvBtn.disabled = state.compareIds.length < 2;
+  elements.exportComparePdfBtn.disabled = state.compareIds.length < 2;
+
+  if (!state.compareIds.length) {
+    state.compareWinnerId = null;
+    elements.compareWinnerText.textContent = "Победитель пока не выбран.";
+    elements.compareChips.innerHTML = `<span class="muted">Добавь машины из карточки объявления.</span>`;
+    return;
+  }
+
+  if (state.compareWinnerId && !state.compareIds.includes(state.compareWinnerId)) {
+    state.compareWinnerId = null;
+  }
+
+  if (state.compareWinnerId) {
+    const winner = getListingById(state.compareWinnerId);
+    elements.compareWinnerText.textContent = winner
+      ? `Лучший вариант сейчас: ${winner.title} (${winner.score.toFixed(2)})`
+      : "Победитель пока не выбран.";
+  } else {
+    elements.compareWinnerText.textContent = "Победитель пока не выбран.";
+  }
+
+  state.compareIds.forEach(id => {
+    const item = getListingById(id);
+    if (!item) {
+      return;
+    }
+
+    const chip = document.createElement("div");
+    chip.className = "compare-chip";
+    chip.innerHTML = `
+      <span>${escapeHtml(item.title)}</span>
+      <button type="button" data-remove-id="${escapeHtml(id)}">×</button>
+    `;
+    elements.compareChips.append(chip);
+  });
+}
+
+function renderFavorites() {
+  elements.favoritesList.innerHTML = "";
+
+  if (!isAuthenticated()) {
+    elements.favoritesList.innerHTML = `<div class="muted">Войди в аккаунт, чтобы сохранять избранное.</div>`;
+    return;
+  }
+
+  const items = getFavoriteItems();
+  if (!items.length) {
+    elements.favoritesList.innerHTML = `<div class="muted">Пока пусто.</div>`;
+    return;
+  }
+
+  items.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "saved-item";
+    row.dataset.id = item.id;
+    row.innerHTML = `
+      <div class="saved-item-row">
+        <div class="saved-item-title">${escapeHtml(item.title)}</div>
+        <div class="saved-item-actions">
+          <button type="button" data-remove-favorite="${escapeHtml(item.id)}">убрать</button>
+        </div>
+      </div>
+      <div class="saved-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)}</div>
+    `;
+    elements.favoritesList.append(row);
+  });
+}
+
+function renderHistory() {
+  elements.historyList.innerHTML = "";
+
+  if (!isAuthenticated()) {
+    elements.historyList.innerHTML = `<div class="muted">Войди в аккаунт, чтобы хранить историю.</div>`;
+    return;
+  }
+
+  if (!state.comparisonHistory.length) {
+    elements.historyList.innerHTML = `<div class="muted">Истории пока нет.</div>`;
+    return;
+  }
+
+  state.comparisonHistory.slice(0, 8).forEach((entry, index) => {
+    const row = document.createElement("div");
+    row.className = "saved-item";
+    row.dataset.historyIndex = String(index);
+    row.innerHTML = `
+      <div class="saved-item-row">
+        <div class="saved-item-title">${escapeHtml(entry.winnerTitle || "Без победителя")}</div>
+        <div class="saved-item-actions">
+          <button type="button" data-restore-history="${index}">восстановить</button>
+        </div>
+      </div>
+      <div class="saved-item-meta">${escapeHtml((entry.titles || []).join(" • "))}</div>
+      <div class="saved-item-meta">${escapeHtml(new Date(entry.createdAt).toLocaleString("ru-RU"))}</div>
+    `;
+    elements.historyList.append(row);
+  });
+}
+
+function toggleFavorite(listingId) {
+  if (!isAuthenticated()) {
+    window.alert("Сначала войди в аккаунт.");
+    return;
+  }
+
+  if (state.favoriteIds.includes(listingId)) {
+    state.favoriteIds = state.favoriteIds.filter(id => id !== listingId);
+  } else {
+    state.favoriteIds = [listingId, ...state.favoriteIds.filter(id => id !== listingId)].slice(0, 30);
+  }
+
+  if (state.selectedListingId === listingId) {
+    elements.modalFavoriteBtn.textContent = state.favoriteIds.includes(listingId)
+      ? "Убрать из избранного"
+      : "В избранное";
+  }
+
+  renderFavorites();
+  void saveAppState();
+}
+
+function restoreHistory(index) {
+  if (!isAuthenticated()) {
+    window.alert("Сначала войди в аккаунт.");
+    return;
+  }
+
+  const entry = state.comparisonHistory[index];
+  if (!entry) {
+    return;
+  }
+
+  state.compareIds = Array.isArray(entry.compareIds) ? entry.compareIds.slice(0, 3) : [];
+  state.compareWinnerId = entry.winnerId || null;
+  updateComparePanel();
+  openCompareModal();
+}
+
+function toggleCompare(listingId) {
+  const exists = state.compareIds.includes(listingId);
+  if (exists) {
+    state.compareIds = state.compareIds.filter(id => id !== listingId);
+  } else {
+    if (state.compareIds.length >= 3) {
+      window.alert("Можно сравнить максимум 3 машины.");
+      return;
+    }
+    state.compareIds = [...state.compareIds, listingId];
+  }
+
+  if (state.compareIds.length < 2) {
+    state.compareWinnerId = null;
+  }
+
+  if (state.selectedListingId === listingId) {
+    const selected = state.compareIds.includes(listingId);
+    elements.modalCompareBtn.textContent = selected ? "Убрать из сравнения" : "Добавить к сравнению";
+  }
+
+  updateComparePanel();
+}
+
+function pickBestComparedListing() {
+  const items = getComparedItems();
+
+  if (items.length < 2) {
+    window.alert("Нужно выбрать минимум 2 машины.");
+    return null;
+  }
+
+  const winner = [...items].sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    if (b.dealScore !== a.dealScore) {
+      return b.dealScore - a.dealScore;
+    }
+    return a.price - b.price;
+  })[0];
+
+  state.compareWinnerId = winner.id;
+  if (isAuthenticated()) {
+    state.comparisonHistory = [
+      {
+        createdAt: new Date().toISOString(),
+        winnerId: winner.id,
+        compareIds: items.map(item => item.id),
+        winnerTitle: winner.title,
+        titles: items.map(item => item.title)
+      },
+      ...state.comparisonHistory
+    ].slice(0, 20);
+  }
+  updateComparePanel();
+  if (isAuthenticated()) {
+    renderHistory();
+    void saveAppState();
+  }
+  return winner;
+}
+
+function exportComparedAsCsv() {
+  const items = getComparedItems();
+  if (items.length < 2) {
+    window.alert("Нужно выбрать минимум 2 машины.");
+    return;
+  }
+
+  const rows = [
+    [
+      "title",
+      "price",
+      "year",
+      "mileage",
+      "owners",
+      "city",
+      "score",
+      "dealScore",
+      "engineVolume",
+      "source",
+      "url",
+      "description"
+    ],
+    ...items.map(item => [
+      item.title,
+      item.price,
+      item.year ?? "",
+      item.mileage ?? "",
+      item.owners ?? "",
+      item.city || "",
+      item.score.toFixed(2),
+      item.dealScore.toFixed(2),
+      item.engineVolume ?? "",
+      item.source || "",
+      item.url || "",
+      item.description || ""
+    ])
+  ];
+
+  const csv = rows
+    .map(row => row.map(value => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\r\n");
+
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "compare-cars.csv";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportComparedAsPdf() {
+  const items = getComparedItems();
+  if (items.length < 2) {
+    window.alert("Нужно выбрать минимум 2 машины.");
+    return;
+  }
+
+  const winner = state.compareWinnerId ? getListingById(state.compareWinnerId) : null;
+  const printWindow = window.open("", "_blank", "width=1200,height=900");
+  if (!printWindow) {
+    window.alert("Браузер заблокировал окно печати.");
+    return;
+  }
+
+  const cards = items.map(item => `
+    <section class="card ${winner && winner.id === item.id ? "winner" : ""}">
+      ${winner && winner.id === item.id ? `<div class="badge">Лучший выбор</div>` : ""}
+      <h2>${escapeHtml(item.title)}</h2>
+      <div class="price">${formatPrice(item.price)}</div>
+      <div class="grid">
+        <div><span>Город</span><strong>${escapeHtml(item.city || "-")}</strong></div>
+        <div><span>Год</span><strong>${item.year ?? "-"}</strong></div>
+        <div><span>Пробег</span><strong>${item.mileage ? formatMileage(item.mileage) : "-"}</strong></div>
+        <div><span>Владельцы</span><strong>${item.owners ?? "-"}</strong></div>
+        <div><span>Рейтинг</span><strong>${item.score.toFixed(2)}</strong></div>
+        <div><span>Выгода</span><strong>${item.dealScore.toFixed(2)}</strong></div>
+      </div>
+      <p>${escapeHtml(item.description || "Описание не указано.")}</p>
+      <p class="url">${escapeHtml(item.url || "")}</p>
+    </section>
+  `).join("");
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+      <meta charset="UTF-8">
+      <title>Сравнение машин</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 24px; color: #111827; }
+        h1 { margin: 0 0 8px; }
+        .meta { color: #6b7280; margin-bottom: 20px; }
+        .wrap { display: grid; grid-template-columns: repeat(${Math.min(items.length, 3)}, 1fr); gap: 16px; }
+        .card { border: 1px solid #d1d5db; border-radius: 16px; padding: 16px; page-break-inside: avoid; }
+        .winner { border-color: #111827; }
+        .badge { display: inline-block; margin-bottom: 10px; padding: 6px 10px; background: #111827; color: #fff; border-radius: 999px; font-size: 12px; font-weight: 700; }
+        .price { font-size: 24px; font-weight: 800; margin-bottom: 12px; }
+        .grid { display: grid; gap: 10px; margin-bottom: 12px; }
+        .grid div { border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; }
+        .grid span { display: block; color: #6b7280; font-size: 12px; margin-bottom: 4px; }
+        .url { color: #6b7280; font-size: 12px; word-break: break-all; }
+      </style>
+    </head>
+    <body>
+      <h1>Сравнение машин</h1>
+      <div class="meta">Экспортировано ${new Date().toLocaleString("ru-RU")}</div>
+      <div class="wrap">${cards}</div>
+      <script>
+        window.onload = () => {
+          window.print();
+        };
+      </script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
+function renderCompareCard(item) {
+  const isWinner = state.compareWinnerId === item.id;
+  return `
+    <article class="compare-card${isWinner ? " is-winner" : ""}">
+      ${renderThumb(item.image, "thumb")}
+      <div class="compare-card-body">
+        ${isWinner ? `<div class="compare-badge">Лучший выбор</div>` : ""}
+        <h3>${escapeHtml(item.title)}</h3>
+        <div class="compare-card-price">${formatPrice(item.price)}</div>
+        <div class="compare-specs">
+          <div class="compare-spec"><span>Город</span><strong>${escapeHtml(item.city || "-")}</strong></div>
+          <div class="compare-spec"><span>Год</span><strong>${item.year ?? "-"}</strong></div>
+          <div class="compare-spec"><span>Пробег</span><strong>${item.mileage ? formatMileage(item.mileage) : "-"}</strong></div>
+          <div class="compare-spec"><span>Владельцы</span><strong>${item.owners ?? "-"}</strong></div>
+          <div class="compare-spec"><span>Рейтинг</span><strong>${item.score.toFixed(2)}</strong></div>
+          <div class="compare-spec"><span>Выгода</span><strong>${item.dealScore.toFixed(2)}</strong></div>
+          <div class="compare-spec"><span>Двигатель</span><strong>${item.engineVolume ? `${item.engineVolume} л` : "-"}</strong></div>
+        </div>
+        <p class="compare-description">${escapeHtml(item.description || "Описание не указано.")}</p>
+        ${item.url ? `<a class="primary-btn modal-link" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Открыть</a>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function openCompareModal() {
+  const items = getComparedItems();
+
+  if (items.length < 2) {
+    window.alert("Нужно выбрать минимум 2 машины.");
+    return;
+  }
+
+  if (state.compareWinnerId && !items.some(item => item.id === state.compareWinnerId)) {
+    state.compareWinnerId = null;
+  }
+
+  elements.compareGrid.innerHTML = items.map(renderCompareCard).join("");
+  elements.compareModal.hidden = false;
+  document.body.style.overflow = "hidden";
+}
+
+function closeCompareModal() {
+  elements.compareModal.hidden = true;
+  if (elements.detailModal.hidden) {
+    document.body.style.overflow = "";
+  }
+}
+
+function openListingDetails(listingId) {
+  const item = getListingById(listingId);
+  if (!item) {
+    return;
+  }
+
+  state.selectedListingId = listingId;
+  elements.modalMedia.innerHTML = item.image
+    ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.title)}">`
+    : `<div class="modal-media-empty">Фото не найдено</div>`;
+  elements.modalSource.textContent = item.source || "Карточка объявления";
+  elements.modalTitle.textContent = item.title;
+  elements.modalPrice.textContent = formatPrice(item.price);
+  elements.modalCity.textContent = item.city || "Без города";
+  elements.modalFacts.innerHTML = [
+    renderFact("Рейтинг", item.score.toFixed(2)),
+    renderFact("Выгода", item.dealScore.toFixed(2)),
+    renderFact("Год", item.year ?? "-"),
+    renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
+    renderFact("Владельцы", item.owners ?? "-"),
+    renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
+    renderFact("Цена", formatPrice(item.price)),
+    renderFact("Город", item.city || "-")
+  ].join("");
+
+  const parts = item.scoreParts || {
+    price: 0.5,
+    year: 0.5,
+    mileage: 0.5,
+    owners: 0.5
+  };
+
+  elements.modalBreakdown.innerHTML = [
+    ["Цена", parts.price],
+    ["Год", parts.year],
+    ["Пробег", parts.mileage],
+    ["Владельцы", parts.owners]
+  ]
+    .map(([label, value]) => `
+      <div class="breakdown-item">
+        <span>${escapeHtml(label)}</span>
+        <div class="breakdown-track"><div class="breakdown-fill" style="width:${Math.max(Number(value) * 100, 4)}%"></div></div>
+        <strong>${Number(value).toFixed(2)}</strong>
+      </div>
+    `)
+    .join("");
+
+  elements.modalDescription.textContent = item.description || "Описание не указано.";
+
+  if (item.url) {
+    elements.modalLink.href = item.url;
+    elements.modalLink.removeAttribute("aria-disabled");
+  } else {
+    elements.modalLink.href = "#";
+    elements.modalLink.setAttribute("aria-disabled", "true");
+  }
+
+  elements.modalCompareBtn.textContent = state.compareIds.includes(listingId)
+    ? "Убрать из сравнения"
+    : "Добавить к сравнению";
+  elements.modalFavoriteBtn.textContent = !isAuthenticated()
+    ? "Войти для избранного"
+    : state.favoriteIds.includes(listingId)
+      ? "Убрать из избранного"
+      : "В избранное";
+
+  elements.detailModal.hidden = false;
+  document.body.style.overflow = "hidden";
+}
+
+function closeListingDetails() {
+  state.selectedListingId = null;
+  elements.detailModal.hidden = true;
+  if (elements.compareModal.hidden) {
+    document.body.style.overflow = "";
+  }
+}
+
+function render() {
+  const listings = getFilteredListings();
+  state.renderedListings = listings;
+  renderProfiles();
+  renderStats(listings);
+  renderFavorites();
+  renderHistory();
+  renderTopLists(listings);
+  renderBars(listings);
+  renderTable(listings);
+}
+
+function resetFilters() {
+  elements.searchInput.value = "";
+  elements.minYearInput.value = "";
+  elements.maxPriceInput.value = "";
+  elements.citySelect.value = "";
+  elements.sortSelect.value = "score";
+  render();
+}
+
+async function saveListingsToServer(listings) {
+  try {
+    const response = await fetch("/api/listings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(listings)
+    });
+
+    if (!response.ok) {
+      throw new Error("Save failed");
+    }
+
+    setStatus("Источник: данные сохранены на сервере");
+  } catch (error) {
+    setStatus("Источник: локальный файл загружен, но сервер недоступен");
+  }
+}
+
+function pruneUserStateToCurrentListings() {
+  const validIds = new Set(state.listings.map(item => item.id));
+  state.favoriteIds = state.favoriteIds.filter(id => validIds.has(id));
+  state.comparisonHistory = state.comparisonHistory
+    .map(entry => ({
+      ...entry,
+      compareIds: Array.isArray(entry.compareIds) ? entry.compareIds.filter(id => validIds.has(id)).slice(0, 3) : []
+    }))
+    .filter(entry => entry.compareIds.length >= 2);
+}
+
+async function loadListingsFromServer() {
+  try {
+    const response = await fetch("/api/listings");
+    if (!response.ok) {
+      throw new Error("Load failed");
+    }
+
+    const payload = await response.json();
+    const rows = Array.isArray(payload.items) ? payload.items : [];
+    if (rows.length) {
+      state.listings = normalizeRows(rows);
+      state.compareIds = [];
+      state.compareWinnerId = null;
+      pruneUserStateToCurrentListings();
+      populateCities();
+      updateComparePanel();
+      render();
+      if (isAuthenticated()) {
+        void saveAppState();
+      }
+      setStatus("Источник: серверные данные");
+      return;
+    }
+  } catch (error) {
+    setStatus("Источник: демо-данные");
+  }
+}
+
+async function importFromKolesa() {
+  const url = elements.kolesaUrlInput.value.trim();
+  if (!url) {
+    window.alert("Вставь ссылку Kolesa.");
+    return;
+  }
+
+  setImportBusy(true);
+  setStatus("Источник: импорт с Kolesa...");
+
+  try {
+    const response = await fetch("/api/import/kolesa", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ url, save: true })
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Import failed");
+    }
+
+    state.listings = normalizeRows(payload.items || []);
+    state.compareIds = [];
+    state.compareWinnerId = null;
+    pruneUserStateToCurrentListings();
+    populateCities();
+    updateComparePanel();
+    resetFilters();
+    if (isAuthenticated()) {
+      void saveAppState();
+    }
+    setStatus(`Источник: Kolesa, загружено ${state.listings.length}`);
+  } catch (error) {
+    window.alert(error.message || "Не удалось импортировать данные.");
+    setStatus("Источник: ошибка импорта");
+  } finally {
+    setImportBusy(false);
+  }
+}
+
+async function handleFileUpload(event) {
+  const [file] = event.target.files;
+  if (!file) {
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const parsed = JSON.parse(String(reader.result));
+      const rows = Array.isArray(parsed) ? parsed : parsed.items;
+      if (!Array.isArray(rows)) {
+        throw new Error("Некорректный формат файла.");
+      }
+
+      state.listings = normalizeRows(rows);
+      state.compareIds = [];
+      state.compareWinnerId = null;
+      pruneUserStateToCurrentListings();
+      populateCities();
+      updateComparePanel();
+      resetFilters();
+      await saveListingsToServer(state.listings);
+      await saveAppState();
+    } catch (error) {
+      window.alert("Не удалось загрузить файл JSON.");
+    }
+  };
+  reader.readAsText(file, "utf-8");
+}
+
+[
+  elements.searchInput,
+  elements.minYearInput,
+  elements.maxPriceInput,
+  elements.citySelect,
+  elements.sortSelect
+].forEach(element => {
+  element.addEventListener("input", render);
+  element.addEventListener("change", render);
+});
+
+elements.loginBtn.addEventListener("click", loginUser);
+elements.registerBtn.addEventListener("click", registerUser);
+elements.logoutBtn.addEventListener("click", logoutUser);
+elements.resetBtn.addEventListener("click", resetFilters);
+elements.createProfileBtn.addEventListener("click", createProfile);
+elements.profileSelect.addEventListener("change", event => {
+  void switchProfile(event.target.value);
+});
+elements.fileInput.addEventListener("change", handleFileUpload);
+elements.importKolesaBtn.addEventListener("click", importFromKolesa);
+elements.modalCloseBtn.addEventListener("click", closeListingDetails);
+elements.modalBackdrop.addEventListener("click", closeListingDetails);
+elements.modalFavoriteBtn.addEventListener("click", () => {
+  if (state.selectedListingId) {
+    toggleFavorite(state.selectedListingId);
+  }
+});
+elements.modalCompareBtn.addEventListener("click", () => {
+  if (state.selectedListingId) {
+    toggleCompare(state.selectedListingId);
+  }
+});
+elements.pickBestCompareBtn.addEventListener("click", () => {
+  const winner = pickBestComparedListing();
+  if (winner && !elements.compareModal.hidden) {
+    openCompareModal();
+  }
+});
+elements.exportCompareCsvBtn.addEventListener("click", exportComparedAsCsv);
+elements.exportComparePdfBtn.addEventListener("click", exportComparedAsPdf);
+elements.openCompareBtn.addEventListener("click", openCompareModal);
+elements.clearCompareBtn.addEventListener("click", () => {
+  state.compareIds = [];
+  state.compareWinnerId = null;
+  updateComparePanel();
+});
+elements.compareCloseBtn.addEventListener("click", closeCompareModal);
+elements.compareBackdrop.addEventListener("click", closeCompareModal);
+elements.resultsBody.addEventListener("click", event => {
+  if (event.target.closest("a")) {
+    return;
+  }
+
+  const row = event.target.closest("tr[data-id]");
+  if (row) {
+    openListingDetails(row.dataset.id);
+  }
+});
+[
+  elements.topScoreList,
+  elements.topDealList
+].forEach(container => {
+  container.addEventListener("click", event => {
+    const item = event.target.closest("[data-id]");
+    if (item) {
+      openListingDetails(item.dataset.id);
+    }
+  });
+});
+elements.compareChips.addEventListener("click", event => {
+  const button = event.target.closest("[data-remove-id]");
+  if (button) {
+    toggleCompare(button.dataset.removeId);
+  }
+});
+elements.favoritesList.addEventListener("click", event => {
+  const removeButton = event.target.closest("[data-remove-favorite]");
+  if (removeButton) {
+    toggleFavorite(removeButton.dataset.removeFavorite);
+    return;
+  }
+
+  const item = event.target.closest("[data-id]");
+  if (item) {
+    openListingDetails(item.dataset.id);
+  }
+});
+elements.historyList.addEventListener("click", event => {
+  const restoreButton = event.target.closest("[data-restore-history]");
+  if (restoreButton) {
+    restoreHistory(Number(restoreButton.dataset.restoreHistory));
+  }
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && !elements.detailModal.hidden) {
+    closeListingDetails();
+  } else if (event.key === "Escape" && !elements.compareModal.hidden) {
+    closeCompareModal();
+  }
+});
+
+populateCities();
+updateComparePanel();
+Promise.all([loadAppState(), loadListingsFromServer()]).finally(() => {
+  render();
+});
