@@ -166,6 +166,11 @@ const elements = {
   modelFilterSelect: document.getElementById("model-filter-select"),
   creditFilterSelect: document.getElementById("credit-filter-select"),
   repairFilterSelect: document.getElementById("repair-filter-select"),
+  fuelFilterSelect: document.getElementById("fuel-filter-select"),
+  driveFilterSelect: document.getElementById("drive-filter-select"),
+  steeringFilterSelect: document.getElementById("steering-filter-select"),
+  colorFilterSelect: document.getElementById("color-filter-select"),
+  optionSearchInput: document.getElementById("option-search-input"),
   sortSelect: document.getElementById("sort-select"),
   showInactiveToggle: document.getElementById("show-inactive-toggle"),
   importCitySelect: document.getElementById("import-city-select"),
@@ -305,6 +310,11 @@ function normalizeRow(item) {
     source: item.source || "",
     brand: item.brand || "",
     model: item.model || "",
+    fuelType: item.fuel_type || item.fuelType || "",
+    driveType: item.drive_type || item.driveType || "",
+    steeringSide: item.steering_side || item.steeringSide || "",
+    color: item.color || "",
+    options: Array.isArray(item.options) ? item.options.map(value => String(value || "").trim()).filter(Boolean) : [],
     vin: normalizeVin(item.vin),
     vinNote: item.vin_note || item.vinNote || "",
     repairState: normalizeRepairState(item.repair_state ?? item.repairState),
@@ -1010,6 +1020,30 @@ function populateModels() {
   elements.modelFilterSelect.value = models.includes(current) ? current : "";
 }
 
+function populateAttributeSelect(element, values, placeholder) {
+  const current = element.value;
+  element.innerHTML = `<option value="">${placeholder}</option>`;
+  values.forEach(value => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    element.append(option);
+  });
+  element.value = values.includes(current) ? current : "";
+}
+
+function populateAttributeFilters() {
+  const fuels = [...new Set(state.listings.map(item => item.fuelType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const drives = [...new Set(state.listings.map(item => item.driveType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const steerings = [...new Set(state.listings.map(item => item.steeringSide).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const colors = [...new Set(state.listings.map(item => item.color).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+
+  populateAttributeSelect(elements.fuelFilterSelect, fuels, "Любое");
+  populateAttributeSelect(elements.driveFilterSelect, drives, "Любой");
+  populateAttributeSelect(elements.steeringFilterSelect, steerings, "Любой");
+  populateAttributeSelect(elements.colorFilterSelect, colors, "Любой");
+}
+
 function getFilteredListings() {
   const search = elements.searchInput.value.trim().toLowerCase();
   const minYear = number(elements.minYearInput.value);
@@ -1019,6 +1053,11 @@ function getFilteredListings() {
   const model = elements.modelFilterSelect.value;
   const credit = elements.creditFilterSelect.value;
   const repair = elements.repairFilterSelect.value;
+  const fuel = elements.fuelFilterSelect.value;
+  const drive = elements.driveFilterSelect.value;
+  const steering = elements.steeringFilterSelect.value;
+  const color = elements.colorFilterSelect.value;
+  const optionSearch = elements.optionSearchInput.value.trim().toLowerCase();
   const sort = elements.sortSelect.value;
   const showInactive = elements.showInactiveToggle.checked;
 
@@ -1032,7 +1071,12 @@ function getFilteredListings() {
     const modelMatch = !model || item.model === model;
     const creditMatch = !credit || (credit === "yes" ? item.creditAvailable : !item.creditAvailable);
     const repairMatch = !repair || item.repairState === repair;
-    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch && markMatch && modelMatch && creditMatch && repairMatch;
+    const fuelMatch = !fuel || item.fuelType === fuel;
+    const driveMatch = !drive || item.driveType === drive;
+    const steeringMatch = !steering || item.steeringSide === steering;
+    const colorMatch = !color || item.color === color;
+    const optionMatch = !optionSearch || item.options.some(option => option.toLowerCase().includes(optionSearch));
+    return actualityMatch && titleMatch && yearMatch && priceMatch && cityMatch && markMatch && modelMatch && creditMatch && repairMatch && fuelMatch && driveMatch && steeringMatch && colorMatch && optionMatch;
   });
 
   switch (sort) {
@@ -1266,6 +1310,10 @@ function renderListingFacts(item) {
     renderFact("VIN", item.vin || "-"),
     renderFact("Марка", item.brand || "-"),
     renderFact("Модель", item.model || "-"),
+    renderFact("Топливо", item.fuelType || "-"),
+    renderFact("Привод", item.driveType || "-"),
+    renderFact("Руль", item.steeringSide || "-"),
+    renderFact("Цвет", item.color || "-"),
     renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
     renderFact("Фото", item.photoCount ?? "-"),
     renderFact("Кредит", formatYesNo(item.creditAvailable)),
@@ -1324,6 +1372,21 @@ function renderSignals(item) {
   }
   if (item.photoCount) {
     signals.push(`Фотографий: ${item.photoCount}`);
+  }
+  if (item.fuelType) {
+    signals.push(`Топливо: ${item.fuelType}`);
+  }
+  if (item.driveType) {
+    signals.push(`Привод: ${item.driveType}`);
+  }
+  if (item.steeringSide) {
+    signals.push(`Руль: ${item.steeringSide}`);
+  }
+  if (item.color) {
+    signals.push(`Цвет: ${item.color}`);
+  }
+  if (item.options.length) {
+    signals.push(`Опции: ${item.options.join(", ")}`);
   }
   if (item.paidServices.length) {
     signals.push(`Продвижение: ${item.paidServices.join(", ")}`);
@@ -2235,6 +2298,7 @@ function render() {
   populateCities();
   populateMarks();
   populateModels();
+  populateAttributeFilters();
   renderStats(listings);
   renderFavorites();
   renderHistory();
@@ -2252,6 +2316,11 @@ function resetFilters() {
   elements.modelFilterSelect.value = "";
   elements.creditFilterSelect.value = "";
   elements.repairFilterSelect.value = "";
+  elements.fuelFilterSelect.value = "";
+  elements.driveFilterSelect.value = "";
+  elements.steeringFilterSelect.value = "";
+  elements.colorFilterSelect.value = "";
+  elements.optionSearchInput.value = "";
   elements.sortSelect.value = "score";
   elements.showInactiveToggle.checked = false;
   render();
@@ -2404,6 +2473,11 @@ async function handleFileUpload(event) {
   elements.modelFilterSelect,
   elements.creditFilterSelect,
   elements.repairFilterSelect,
+  elements.fuelFilterSelect,
+  elements.driveFilterSelect,
+  elements.steeringFilterSelect,
+  elements.colorFilterSelect,
+  elements.optionSearchInput,
   elements.sortSelect,
   elements.showInactiveToggle
 ].forEach(element => {

@@ -121,6 +121,103 @@ function normalizeRepairState(value) {
   return "unknown";
 }
 
+function normalizeTextValue(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function detectFuelType(text) {
+  const normalized = normalizeTextValue(text);
+  if (/электро|электромоб/i.test(normalized)) {
+    return "Электро";
+  }
+  if (/гибрид/i.test(normalized)) {
+    return "Гибрид";
+  }
+  if (/дизел/i.test(normalized)) {
+    return "Дизель";
+  }
+  if (/газ\b|гбо/i.test(normalized)) {
+    return "Газ";
+  }
+  if (/бензин/i.test(normalized)) {
+    return "Бензин";
+  }
+  return "";
+}
+
+function detectDriveType(text) {
+  const normalized = normalizeTextValue(text);
+  if (/4wd|awd|полный привод/i.test(normalized)) {
+    return "Полный";
+  }
+  if (/передний привод/i.test(normalized)) {
+    return "Передний";
+  }
+  if (/задний привод/i.test(normalized)) {
+    return "Задний";
+  }
+  return "";
+}
+
+function detectSteeringSide(text) {
+  const normalized = normalizeTextValue(text);
+  if (/левый руль/i.test(normalized)) {
+    return "Левый";
+  }
+  if (/правый руль/i.test(normalized)) {
+    return "Правый";
+  }
+  return "";
+}
+
+function detectColor(text) {
+  const normalized = normalizeTextValue(text);
+  const colors = [
+    ["Белый", /бел/i],
+    ["Черный", /черн/i],
+    ["Серый", /сер/i],
+    ["Серебристый", /сереб/i],
+    ["Синий", /син/i],
+    ["Красный", /красн/i],
+    ["Зеленый", /зелен/i],
+    ["Коричневый", /корич/i],
+    ["Бежевый", /беж/i],
+    ["Желтый", /желт/i],
+    ["Оранжевый", /оранж/i]
+  ];
+
+  for (const [label, pattern] of colors) {
+    if (pattern.test(normalized)) {
+      return label;
+    }
+  }
+
+  return "";
+}
+
+function detectOptions(text) {
+  const normalized = normalizeTextValue(text);
+  const optionMap = [
+    ["Кожа", /кожа|кожан/i],
+    ["Люк", /люк/i],
+    ["Камера", /камера/i],
+    ["Парктроник", /парктрон/i],
+    ["Подогрев", /подогрев/i],
+    ["Bluetooth", /bluetooth|блютуз/i],
+    ["Климат", /климат/i],
+    ["Круиз", /круиз/i],
+    ["ABS", /\babs\b/i],
+    ["ESP", /\besp\b/i],
+    ["Мультируль", /мультирул/i],
+    ["Сигнализация", /сигнализац/i]
+  ];
+
+  return optionMap
+    .filter(([, pattern]) => pattern.test(normalized))
+    .map(([label]) => label)
+    .slice(0, 12);
+}
+
 function normalizeVin(value) {
   const vin = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   return vin;
@@ -211,6 +308,11 @@ function normalizeListings(rows) {
       source: String(item.source || "").trim(),
       brand: String(item.brand || "").trim(),
       model: String(item.model || "").trim(),
+      fuel_type: String(item.fuel_type || "").trim(),
+      drive_type: String(item.drive_type || "").trim(),
+      steering_side: String(item.steering_side || "").trim(),
+      color: String(item.color || "").trim(),
+      options: normalizeTextList(item.options),
       vin: normalizeVin(item.vin),
       vin_note: String(item.vin_note || "").trim(),
       repair_state: normalizeRepairState(item.repair_state),
@@ -718,6 +820,13 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     String(advertData?.descriptionText || "")
       .replace(/<br\s*\/?>/gi, "\n")
   );
+  const sourceText = [
+    advertData?.title,
+    advertData?.descriptionText,
+    product?.name,
+    product?.attributes?.brand,
+    product?.attributes?.model
+  ].filter(Boolean).join(" ");
 
   return {
     actuality_status: "active",
@@ -731,6 +840,11 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     market_difference_percent: avgPrice && currentPrice ? marketDifferencePercent : null,
     brand: String(product?.attributes?.brand || ""),
     model: String(product?.attributes?.model || ""),
+    fuel_type: detectFuelType(sourceText),
+    drive_type: detectDriveType(sourceText),
+    steering_side: detectSteeringSide(sourceText),
+    color: detectColor(sourceText),
+    options: detectOptions(sourceText),
     city: String(product?.city || ""),
     description,
     photo_count: Number(product?.photoCount || 0) || null,
@@ -867,6 +981,10 @@ async function fetchKolesaPage(pageUrl) {
       return;
     }
 
+    const sourceText = [title, description, alt, meta?.attributes?.brand, meta?.attributes?.model]
+      .filter(Boolean)
+      .join(" ");
+
     items.push({
       title,
       price,
@@ -882,6 +1000,11 @@ async function fetchKolesaPage(pageUrl) {
       source: "kolesa.kz",
       brand: String(meta?.attributes?.brand || ""),
       model: String(meta?.attributes?.model || ""),
+      fuel_type: detectFuelType(sourceText),
+      drive_type: detectDriveType(sourceText),
+      steering_side: detectSteeringSide(sourceText),
+      color: detectColor(sourceText),
+      options: detectOptions(sourceText),
       publication_date: String(meta?.publicationDate || ""),
       last_update: String(meta?.lastUpdate || ""),
       first_seen_at: checkedAt,
