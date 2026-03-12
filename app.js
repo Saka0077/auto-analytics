@@ -52,6 +52,7 @@ const defaultListings = [
 ];
 
 const IMPORT_CITIES = [
+  { value: "", label: "Все города" },
   { value: "aktau", label: "Актау" },
   { value: "almaty", label: "Алматы" },
   { value: "astana", label: "Астана" },
@@ -915,7 +916,7 @@ function fillSelectOptions(element, options, selectedValue = "") {
 }
 
 function populateImportFilters() {
-  fillSelectOptions(elements.importCitySelect, IMPORT_CITIES, "aktau");
+  fillSelectOptions(elements.importCitySelect, IMPORT_CITIES, "");
   fillSelectOptions(elements.importMarkSelect, IMPORT_MARKS, "");
   fillSelectOptions(elements.importBodySelect, IMPORT_BODIES, "");
   fillSelectOptions(elements.importTransmissionSelect, IMPORT_TRANSMISSIONS, "");
@@ -929,7 +930,7 @@ function syncImportUrlPreview() {
 }
 
 function buildImportUrlFromFilters() {
-  const city = elements.importCitySelect.value || "aktau";
+  const city = elements.importCitySelect.value;
   const mark = elements.importMarkSelect.value;
   const body = elements.importBodySelect.value;
   const transmission = elements.importTransmissionSelect.value;
@@ -938,7 +939,10 @@ function buildImportUrlFromFilters() {
   const priceFrom = number(elements.importPriceFromInput.value);
   const priceTo = number(elements.importPriceToInput.value);
 
-  let url = `https://kolesa.kz/cars/${city}/`;
+  let url = "https://kolesa.kz/cars/";
+  if (city) {
+    url += `${city}/`;
+  }
   if (mark) {
     url += `${mark}/`;
   }
