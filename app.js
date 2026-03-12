@@ -511,7 +511,7 @@ function normalizeAutopartsProfile(profile) {
     return null;
   }
 
-  return {
+  const normalizedProfile = {
     id: String(profile.id || "").trim(),
     modelLabel: String(profile.model_label ?? profile.modelLabel ?? "").trim(),
     brand: String(profile.brand || "").trim(),
@@ -536,6 +536,35 @@ function normalizeAutopartsProfile(profile) {
     marketSourceUrl: String(profile.market_source_url ?? profile.marketSourceUrl ?? "").trim(),
     padsSourceUrl: String(profile.pads_source_url ?? profile.padsSourceUrl ?? "").trim(),
     discSourceUrl: String(profile.disc_source_url ?? profile.discSourceUrl ?? "").trim()
+  };
+
+  const coverageSignals = [
+    Number.isFinite(normalizedProfile.cheapnessScore) || Number.isFinite(normalizedProfile.priceScore),
+    Number.isFinite(normalizedProfile.serviceBasketKzt),
+    Number.isFinite(normalizedProfile.avgStock) || Number.isFinite(normalizedProfile.frontPadsStock) || Number.isFinite(normalizedProfile.frontDiscStock),
+    Number.isFinite(normalizedProfile.frontPadsPriceKzt) || Number.isFinite(normalizedProfile.frontDiscPriceKzt)
+  ];
+  const coverageCount = coverageSignals.filter(Boolean).length;
+  const coverageRatio = coverageSignals.length ? coverageCount / coverageSignals.length : 0;
+
+  let coverageLabel = "Нет данных";
+  let coverageLevel = "missing";
+  if (coverageCount >= 4) {
+    coverageLabel = "Полные данные";
+    coverageLevel = "full";
+  } else if (coverageCount >= 2) {
+    coverageLabel = "Частичные данные";
+    coverageLevel = "partial";
+  } else if (coverageCount >= 1) {
+    coverageLabel = "Базовые данные";
+    coverageLevel = "basic";
+  }
+
+  return {
+    ...normalizedProfile,
+    coverageLevel,
+    coverageLabel,
+    coverageRatio: Number(coverageRatio.toFixed(2))
   };
 }
 
@@ -1480,6 +1509,12 @@ function scoreListings(listings) {
   const maintenanceStockValues = listings
     .map(item => item.autopartsProfile?.avgStock ?? item.autopartsProfile?.frontPadsStock)
     .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
+  const maintenancePadsValues = listings
+    .map(item => item.autopartsProfile?.frontPadsPriceKzt)
+    .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
+  const maintenanceDiscValues = listings
+    .map(item => item.autopartsProfile?.frontDiscPriceKzt)
+    .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
   const freshnessValues = listings
     .map(item => {
       const age = daysSince(getListingDateMeta(item).value);
@@ -1508,6 +1543,10 @@ function scoreListings(listings) {
     maintenanceBasketMax: maintenanceBasketValues.length ? Math.max(...maintenanceBasketValues) : null,
     maintenanceStockMin: maintenanceStockValues.length ? Math.min(...maintenanceStockValues) : null,
     maintenanceStockMax: maintenanceStockValues.length ? Math.max(...maintenanceStockValues) : null,
+    maintenancePadsMin: maintenancePadsValues.length ? Math.min(...maintenancePadsValues) : null,
+    maintenancePadsMax: maintenancePadsValues.length ? Math.max(...maintenancePadsValues) : null,
+    maintenanceDiscMin: maintenanceDiscValues.length ? Math.min(...maintenanceDiscValues) : null,
+    maintenanceDiscMax: maintenanceDiscValues.length ? Math.max(...maintenanceDiscValues) : null,
     freshMin: freshnessValues.length ? Math.min(...freshnessValues) : null,
     freshMax: freshnessValues.length ? Math.max(...freshnessValues) : null
   };
@@ -1524,28 +1563,47 @@ function scoreListings(listings) {
     const marketScore = Number.isFinite(item.marketDifferencePercent)
       ? Math.max(0, Math.min(1, (item.marketDifferencePercent + 15) / 30))
       : 0.5;
-    const maintenanceCheapnessScore = item.autopartsProfile
+    const maintenanceCheapnessScore = item.autopartsProfile && Number.isFinite(item.autopartsProfile.cheapnessScore)
       ? normalize(item.autopartsProfile.cheapnessScore, bounds.maintenanceCheapnessMin, bounds.maintenanceCheapnessMax)
-      : 0.5;
-    const maintenanceBasketScore = item.autopartsProfile
+      : null;
+    const maintenanceBasketScore = item.autopartsProfile && Number.isFinite(item.autopartsProfile.serviceBasketKzt)
       ? normalize(item.autopartsProfile.serviceBasketKzt, bounds.maintenanceBasketMin, bounds.maintenanceBasketMax, true)
+      : null;
+    const maintenanceStockValue = item.autopartsProfile?.avgStock ?? item.autopartsProfile?.frontPadsStock;
+    const maintenanceStockScore = item.autopartsProfile && Number.isFinite(maintenanceStockValue)
+      ? normalize(maintenanceStockValue, bounds.maintenanceStockMin, bounds.maintenanceStockMax)
+      : null;
+    const maintenancePadScore = item.autopartsProfile && Number.isFinite(item.autopartsProfile.frontPadsPriceKzt)
+      ? normalize(item.autopartsProfile.frontPadsPriceKzt, bounds.maintenancePadsMin, bounds.maintenancePadsMax, true)
+      : null;
+    const maintenanceDiscScore = item.autopartsProfile && Number.isFinite(item.autopartsProfile.frontDiscPriceKzt)
+      ? normalize(item.autopartsProfile.frontDiscPriceKzt, bounds.maintenanceDiscMin, bounds.maintenanceDiscMax, true)
+      : null;
+    const maintenancePartsScores = [maintenancePadScore, maintenanceDiscScore].filter(score => score !== null);
+    const maintenancePartsScore = maintenancePartsScores.length
+      ? maintenancePartsScores.reduce((sum, score) => sum + score, 0) / maintenancePartsScores.length
+      : null;
+    const maintenanceComponents = [];
+    if (maintenanceCheapnessScore !== null) {
+      maintenanceComponents.push({ score: maintenanceCheapnessScore, weight: 0.45 });
+    }
+    if (maintenanceBasketScore !== null) {
+      maintenanceComponents.push({ score: maintenanceBasketScore, weight: 0.25 });
+    }
+    if (maintenanceStockScore !== null) {
+      maintenanceComponents.push({ score: maintenanceStockScore, weight: 0.15 });
+    }
+    if (maintenancePartsScore !== null) {
+      maintenanceComponents.push({ score: maintenancePartsScore, weight: 0.15 });
+    }
+    const maintenanceBaseScore = maintenanceComponents.length
+      ? maintenanceComponents.reduce((sum, component) => sum + component.score * component.weight, 0) /
+        maintenanceComponents.reduce((sum, component) => sum + component.weight, 0)
       : 0.5;
-    const maintenanceStockScore = item.autopartsProfile
-      ? normalize(
-          item.autopartsProfile.avgStock ?? item.autopartsProfile.frontPadsStock,
-          bounds.maintenanceStockMin,
-          bounds.maintenanceStockMax
-        )
-      : 0.5;
-    const maintenanceScore = Math.max(
-      0,
-      Math.min(
-        1,
-        maintenanceCheapnessScore * 0.55 +
-        maintenanceBasketScore * 0.25 +
-        maintenanceStockScore * 0.2
-      )
-    );
+    const maintenanceCoverageFactor = item.autopartsProfile
+      ? 0.7 + (item.autopartsProfile.coverageRatio ?? 0) * 0.3
+      : 1;
+    const maintenanceScore = Math.max(0, Math.min(1, maintenanceBaseScore * maintenanceCoverageFactor));
     const sellerPenalty = item.isUsedCarDealer ? 0.2 : 0;
     const sellerSignalScore = Math.max(
       0,
@@ -2068,7 +2126,11 @@ function getBreakdownComment(label, value, item) {
       return "по запчастям пока нет базы, оценка нейтральная";
     }
 
-    const basket = item.autopartsProfile.serviceBasketKzt ? formatPrice(item.autopartsProfile.serviceBasketKzt) : "нет корзины";
+    const basket = item.autopartsProfile.serviceBasketKzt
+      ? formatPrice(item.autopartsProfile.serviceBasketKzt)
+      : (item.autopartsProfile.coverageLevel === "partial" || item.autopartsProfile.coverageLevel === "basic"
+          ? "частичные данные"
+          : "нет корзины");
     return value >= 0.72
       ? `запчасти выглядят дешёвыми, сервисная корзина ${basket}`
       : value >= 0.45
@@ -2145,7 +2207,13 @@ function renderListingFacts(item) {
     renderFact("Риск", Number.isFinite(item.riskScore) ? `${Math.round(item.riskScore)}/100` : "-"),
     renderFact("Ликвидность", Number.isFinite(item.liquidityScore) ? `${(item.liquidityScore * 100).toFixed(0)}%` : "-"),
     renderFact("Признак перекупа", Number.isFinite(item.sellerSignalScore) ? `${(item.sellerSignalScore * 100).toFixed(0)}%` : "-"),
-    renderFact("Запчасти", autoparts ? `${autoparts.maintenanceLabel || "Есть данные"} (${formatScorePercent((autoparts.cheapnessScore || 0) / 100)})` : "-"),
+    renderFact(
+      "Запчасти",
+      autoparts
+        ? `${autoparts.maintenanceLabel || "Есть данные"}${Number.isFinite(autoparts.cheapnessScore) ? ` (${formatScorePercent(autoparts.cheapnessScore / 100)})` : ""}`
+        : "-"
+    ),
+    renderFact("Данные запчастей", autoparts?.coverageLabel || "-"),
     renderFact("Сервисная корзина", autoparts?.serviceBasketKzt ? formatPrice(autoparts.serviceBasketKzt) : "-"),
     renderFact("Колодки / перед", autoparts?.frontPadsPriceKzt ? formatPrice(autoparts.frontPadsPriceKzt) : "-"),
     renderFact("Диск / перед", autoparts?.frontDiscPriceKzt ? formatPrice(autoparts.frontDiscPriceKzt) : "-"),
@@ -2328,7 +2396,8 @@ function renderSignals(item) {
   }
   if (autoparts?.maintenanceLabel) {
     const serviceBasket = autoparts.serviceBasketKzt ? `, корзина ${formatPrice(autoparts.serviceBasketKzt)}` : "";
-    signals.push(`Запчасти: ${autoparts.maintenanceLabel}, maintenance ${formatScorePercent(item.maintenanceScore)}${serviceBasket}`);
+    const coverage = autoparts.coverageLabel ? `, ${autoparts.coverageLabel.toLowerCase()}` : "";
+    signals.push(`Запчасти: ${autoparts.maintenanceLabel}${coverage}, maintenance ${formatScorePercent(item.maintenanceScore)}${serviceBasket}`);
   }
   if (autoparts?.comment) {
     signals.push(`По рынку запчастей: ${autoparts.comment}`);

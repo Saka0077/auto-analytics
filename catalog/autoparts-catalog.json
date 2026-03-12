@@ -352,6 +352,40 @@
       "disc_source_url": "https://col.kz/p113678946-disk-tormoznoj-per.html"
     },
     {
+      "id": "lexus-gs-300-grs190",
+      "model_label": "Lexus GS 300 GRS190",
+      "brand": "Lexus",
+      "brand_key": "lexus",
+      "primary_model": "GS 300",
+      "model_aliases": [
+        "GS 300",
+        "GS300"
+      ],
+      "lookup_keys": [
+        "gs 300",
+        "gs300",
+        "lexus gs 300",
+        "lexus gs300"
+      ],
+      "segment": "E-седан",
+      "years": "2005-2011",
+      "front_pads_price_kzt": 5000,
+      "front_pads_stock": null,
+      "front_disc_price_kzt": null,
+      "front_disc_stock": null,
+      "service_basket_kzt": null,
+      "avg_stock": null,
+      "price_score": null,
+      "cheapness_score": null,
+      "priority": 7,
+      "maintenance_band": "partial",
+      "maintenance_label": "Частичные данные",
+      "comment": "По GS 300 пока есть только наблюдение по передним колодкам в Казахстане; корзина обслуживания ещё неполная.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://carmix.kz/p97221244-731-d2266-04465.html",
+      "disc_source_url": ""
+    },
+    {
       "id": "toyota-windom-xv20",
       "model_label": "Toyota Windom XV20",
       "brand": "Toyota",
@@ -706,6 +740,38 @@
       "delivery_days": "in stock",
       "warranty_days": 14,
       "notes": "RX 350 09-15"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Astana",
+      "source_name": "CARMIX",
+      "source_url": "https://carmix.kz/p97221244-731-d2266-04465.html",
+      "model_label": "Lexus GS 300 GRS190",
+      "brand": "Lexus",
+      "brand_key": "lexus",
+      "primary_model": "GS 300",
+      "model_aliases": [
+        "GS 300",
+        "GS300"
+      ],
+      "lookup_keys": [
+        "gs 300",
+        "gs300",
+        "lexus gs 300",
+        "lexus gs300"
+      ],
+      "generation": "GRS190",
+      "years": "2005-2011",
+      "engine": "3.0",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "SUMITOMO",
+      "sku": "04465-30410 / CD2266",
+      "price_kzt": 5000,
+      "stock_qty": null,
+      "delivery_days": "",
+      "warranty_days": null,
+      "notes": "Schema InStock, точный остаток на витрине не указан"
     },
     {
       "check_date": "2026-03-12",
