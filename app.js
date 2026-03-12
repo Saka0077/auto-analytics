@@ -255,6 +255,7 @@ const elements = {
   modalBreakdownTitle: document.getElementById("modal-breakdown-title"),
   modalBreakdown: document.getElementById("modal-breakdown"),
   modalSignals: document.getElementById("modal-signals"),
+  modalMaintenance: document.getElementById("modal-maintenance"),
   modalVinInput: document.getElementById("modal-vin-input"),
   modalVinNoteInput: document.getElementById("modal-vin-note-input"),
   modalVinSaveBtn: document.getElementById("modal-vin-save-btn"),
@@ -1056,8 +1057,31 @@ function getBuyerDecisionMeta(item) {
   const marketDifference = Number.isFinite(item?.marketDifferencePercent) ? item.marketDifferencePercent : 0;
   const age = daysSince(item?.publicationDate || item?.lastUpdate || item?.lastCheckedAt);
   const isStale = age !== null && age >= 30;
+  const hasAutoparts = Boolean(item?.autopartsProfile);
+  const maintenanceScore = Number(item?.maintenanceScore ?? 0.5);
+  const maintenanceCoverage = item?.autopartsProfile?.coverageLevel || "missing";
+  const maintenanceWeak = hasAutoparts && maintenanceScore <= 0.42;
+  const maintenancePartial = hasAutoparts && maintenanceCoverage !== "full";
 
-  if (score >= 0.74 && risk <= 0.35 && marketDifference >= -6 && sellerSignal <= 0.55 && !isStale) {
+  if (maintenanceWeak && score < 0.56) {
+    return {
+      label: "Не брать",
+      className: "status-badge status-badge--skip",
+      note: maintenanceCoverage === "full"
+        ? "обслуживание выглядит дорогим, и это портит сделку даже без других рисков"
+        : "по запчастям уже есть дорогие сигналы, а данных пока недостаточно для уверенной покупки"
+    };
+  }
+
+  if (
+    score >= 0.74 &&
+    risk <= 0.35 &&
+    marketDifference >= -6 &&
+    sellerSignal <= 0.55 &&
+    !isStale &&
+    !maintenanceWeak &&
+    !maintenancePartial
+  ) {
     return {
       label: "Брать",
       className: "status-badge status-badge--buy",
@@ -1071,18 +1095,24 @@ function getBuyerDecisionMeta(item) {
     return {
       label: "Осторожно",
       className: "status-badge status-badge--careful",
-      note: isStale
-        ? "объявление висит давно, проверь историю цены и состояние"
-        : "вариант рабочий, но цену и детали лучше перепроверить"
+      note: maintenanceWeak
+        ? "вариант рабочий, но обслуживание выглядит дорогим и может съесть выгоду"
+        : maintenancePartial
+          ? "по запчастям данные пока неполные, поэтому покупку лучше перепроверить"
+          : isStale
+            ? "объявление висит давно, проверь историю цены и состояние"
+            : "вариант рабочий, но цену и детали лучше перепроверить"
     };
   }
 
   return {
     label: "Не брать",
     className: "status-badge status-badge--skip",
-    note: marketDifference <= -12
-      ? "цена выше рынка или риск по объявлению слишком высокий"
-      : "слишком много красных флагов по продавцу, риску или свежести"
+    note: maintenanceWeak
+      ? "цена обслуживания и другие риски вместе делают покупку слабой"
+      : marketDifference <= -12
+        ? "цена выше рынка или риск по объявлению слишком высокий"
+        : "слишком много красных флагов по продавцу, риску или свежести"
   };
 }
 
@@ -1095,6 +1125,19 @@ function getResellerDecisionMeta(item) {
   const marketDifference = Number.isFinite(item?.marketDifferencePercent) ? item.marketDifferencePercent : 0;
   const age = daysSince(item?.publicationDate || item?.lastUpdate || item?.lastCheckedAt);
   const isStale = age !== null && age >= 21;
+  const hasAutoparts = Boolean(item?.autopartsProfile);
+  const maintenanceScore = Number(item?.maintenanceScore ?? 0.5);
+  const maintenanceCoverage = item?.autopartsProfile?.coverageLevel || "missing";
+  const maintenanceWeak = hasAutoparts && maintenanceScore <= 0.4;
+  const maintenancePartial = hasAutoparts && maintenanceCoverage !== "full";
+
+  if (maintenanceWeak && deal < 0.58) {
+    return {
+      label: "Риск",
+      className: "status-badge status-badge--risk",
+      note: "дорогой ремонт или слабая база по запчастям съедает потенциальную маржу"
+    };
+  }
 
   if (
     score >= 0.72 &&
@@ -1102,7 +1145,9 @@ function getResellerDecisionMeta(item) {
     deal >= 0.58 &&
     marketDifference >= 5 &&
     risk <= 0.45 &&
-    sellerSignal <= 0.68
+    sellerSignal <= 0.68 &&
+    !maintenanceWeak &&
+    !maintenancePartial
   ) {
     return {
       label: "Есть маржа",
@@ -1121,18 +1166,24 @@ function getResellerDecisionMeta(item) {
     return {
       label: "Слабая маржа",
       className: "status-badge status-badge--thin",
-      note: isStale
-        ? "можно смотреть только после сильного торга или проверки истории"
-        : "сделка возможна, но запас по прибыли пока слабый"
+      note: maintenanceWeak
+        ? "запчасти выглядят дорогими, поэтому прибыль легко потерять на ремонте"
+        : maintenancePartial
+          ? "по запчастям база неполная, поэтому маржу лучше считать с запасом"
+          : isStale
+            ? "можно смотреть только после сильного торга или проверки истории"
+            : "сделка возможна, но запас по прибыли пока слабый"
     };
   }
 
   return {
     label: "Риск",
     className: "status-badge status-badge--risk",
-    note: marketDifference < 0
-      ? "цена уже выше рынка или ликвидность слишком слабая для перепродажи"
-      : "риск вложений и зависания в продаже слишком высокий"
+    note: maintenanceWeak
+      ? "дорогие запчасти и риски по объявлению делают перепродажу слабой"
+      : marketDifference < 0
+        ? "цена уже выше рынка или ликвидность слишком слабая для перепродажи"
+        : "риск вложений и зависания в продаже слишком высокий"
   };
 }
 
@@ -2094,6 +2145,132 @@ function renderMarketFacts(item) {
   return [];
 }
 
+function getMaintenanceNarrative(item) {
+  const autoparts = item?.autopartsProfile;
+  const score = Number(item?.maintenanceScore ?? 0.5);
+
+  if (!autoparts) {
+    return {
+      tone: "neutral",
+      title: "Нет базы по запчастям",
+      note: "Оценка содержания пока нейтральная: цены на запчасти для этой машины ещё не собраны."
+    };
+  }
+
+  if (score >= 0.72) {
+    return {
+      tone: "good",
+      title: "Обслуживание выглядит недорогим",
+      note: autoparts.coverageLevel === "full"
+        ? "По базе запчастей это сильная сторона машины."
+        : "Даже по неполной базе видно, что обслуживание выглядит скорее дешёвым."
+    };
+  }
+
+  if (score >= 0.45) {
+    return {
+      tone: "neutral",
+      title: "Обслуживание выглядит средним",
+      note: autoparts.coverageLevel === "full"
+        ? "По запчастям сильного минуса нет, но и особой экономии тоже."
+        : "Данных пока не хватает для уверенного вывода, но явной проблемы не видно."
+    };
+  }
+
+  return {
+    tone: "bad",
+    title: "Обслуживание выглядит дорогим",
+    note: autoparts.coverageLevel === "full"
+      ? "По базе запчастей это уже заметный минус для владения."
+      : "Даже по неполной базе уже видно, что ремонт может выйти дорогим."
+  };
+}
+
+function renderMaintenancePanel(item) {
+  if (!elements.modalMaintenance) {
+    return;
+  }
+
+  const autoparts = item.autopartsProfile;
+  const buyerDecision = getBuyerDecisionMeta(item);
+  const resellerDecision = getResellerDecisionMeta(item);
+  const maintenance = getMaintenanceNarrative(item);
+
+  if (!autoparts) {
+    elements.modalMaintenance.innerHTML = `
+      <div class="maintenance-summary maintenance-summary--neutral">
+        <strong>${escapeHtml(maintenance.title)}</strong>
+        <p>${escapeHtml(maintenance.note)}</p>
+      </div>
+      <div class="maintenance-grid">
+        <div class="maintenance-item">
+          <span>Содержание</span>
+          <strong>${formatScore(item.maintenanceScore)}</strong>
+        </div>
+        <div class="maintenance-item">
+          <span>Покрытие</span>
+          <strong>Нет данных</strong>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const buyerImpact = buyerDecision.label === "Брать"
+    ? "не мешает покупке"
+    : buyerDecision.label === "Осторожно"
+      ? "требует перепроверки перед покупкой"
+      : "ухудшает решение по покупке";
+  const resellerImpact = resellerDecision.label === "Есть маржа"
+    ? "не ломает маржу"
+    : resellerDecision.label === "Слабая маржа"
+      ? "съедает часть маржи"
+      : "делает перепродажу рискованнее";
+
+  elements.modalMaintenance.innerHTML = `
+    <div class="maintenance-summary maintenance-summary--${escapeHtml(maintenance.tone)}">
+      <strong>${escapeHtml(maintenance.title)}</strong>
+      <p>${escapeHtml(maintenance.note)}</p>
+    </div>
+    <div class="maintenance-grid">
+      <div class="maintenance-item">
+        <span>Содержание</span>
+        <strong>${formatScore(item.maintenanceScore)}</strong>
+      </div>
+      <div class="maintenance-item">
+        <span>Покрытие</span>
+        <strong>${escapeHtml(autoparts.coverageLabel || "Есть данные")}</strong>
+      </div>
+      <div class="maintenance-item">
+        <span>Колодки / перед</span>
+        <strong>${autoparts.frontPadsPriceKzt ? formatPrice(autoparts.frontPadsPriceKzt) : "-"}</strong>
+      </div>
+      <div class="maintenance-item">
+        <span>Диск / перед</span>
+        <strong>${autoparts.frontDiscPriceKzt ? formatPrice(autoparts.frontDiscPriceKzt) : "-"}</strong>
+      </div>
+      <div class="maintenance-item">
+        <span>Сервисная корзина</span>
+        <strong>${autoparts.serviceBasketKzt ? formatPrice(autoparts.serviceBasketKzt) : "Пока нет"}</strong>
+      </div>
+      <div class="maintenance-item">
+        <span>Запчасти</span>
+        <strong>${escapeHtml(autoparts.maintenanceLabel || "Есть данные")}</strong>
+      </div>
+    </div>
+    <div class="maintenance-impact-list">
+      <div class="maintenance-impact">
+        <span>Для покупки</span>
+        <strong>${escapeHtml(buyerImpact)}</strong>
+      </div>
+      <div class="maintenance-impact">
+        <span>Для перекупа</span>
+        <strong>${escapeHtml(resellerImpact)}</strong>
+      </div>
+    </div>
+  `;
+}
+
 function getBreakdownComment(label, value, item) {
   if (label === "Рынок" && Number.isFinite(item.marketDifferencePercent)) {
     if (item.marketDifferencePercent >= 10) {
@@ -2220,6 +2397,8 @@ function renderListingFacts(item) {
     renderFact("Цена", formatPrice(item.price)),
     renderFact("Город", item.city || "-")
   ].join("");
+
+  renderMaintenancePanel(item);
 }
 
 function renderListingBreakdown(item) {
@@ -2398,6 +2577,12 @@ function renderSignals(item) {
     const serviceBasket = autoparts.serviceBasketKzt ? `, корзина ${formatPrice(autoparts.serviceBasketKzt)}` : "";
     const coverage = autoparts.coverageLabel ? `, ${autoparts.coverageLabel.toLowerCase()}` : "";
     signals.push(`Запчасти: ${autoparts.maintenanceLabel}${coverage}, maintenance ${formatScorePercent(item.maintenanceScore)}${serviceBasket}`);
+    if (buyerDecision.label !== "Брать") {
+      signals.push(`Покупка и обслуживание: ${buyerDecision.note}`);
+    }
+    if (resellerDecision.label !== "Есть маржа") {
+      signals.push(`Перепродажа и обслуживание: ${resellerDecision.note}`);
+    }
   }
   if (autoparts?.comment) {
     signals.push(`По рынку запчастей: ${autoparts.comment}`);

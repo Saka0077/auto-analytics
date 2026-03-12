@@ -1089,6 +1089,75 @@ a:hover {
   line-height: 1.6;
 }
 
+.maintenance-box {
+  display: grid;
+  gap: 12px;
+}
+
+.maintenance-summary {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.maintenance-summary strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+
+.maintenance-summary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+.maintenance-summary--good {
+  background: #edf7f0;
+  border-color: #c9e4d0;
+}
+
+.maintenance-summary--neutral {
+  background: #f6f7f8;
+  border-color: #dfe3e8;
+}
+
+.maintenance-summary--bad {
+  background: #fff2f0;
+  border-color: #f2c7bf;
+}
+
+.maintenance-grid,
+.maintenance-impact-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.maintenance-item,
+.maintenance-impact {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.maintenance-item span,
+.maintenance-impact span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.maintenance-item strong,
+.maintenance-impact strong {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 .signal-list {
   margin: 0;
   padding-left: 18px;
@@ -1293,6 +1362,11 @@ a:hover {
   }
 
   .breakdown-item {
+    grid-template-columns: 1fr;
+  }
+
+  .maintenance-grid,
+  .maintenance-impact-list {
     grid-template-columns: 1fr;
   }
 
