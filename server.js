@@ -347,7 +347,7 @@ function findAutopartsProfile(item, catalog = readAutopartsCatalog(), aliasesSto
         score += 12;
         reasons.push("year");
       } else {
-        score -= 8;
+        score -= 70;
       }
     }
 

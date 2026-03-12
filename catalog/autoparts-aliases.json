@@ -39,6 +39,50 @@
         "elantra ad",
         "hyundai elantra ad"
       ]
+    },
+    {
+      "catalog_id": "toyota-camry-xv50",
+      "brand": "Toyota",
+      "aliases": [
+        "camry xv50",
+        "toyota camry xv50",
+        "camry 50",
+        "toyota camry 50",
+        "camry v50",
+        "camry 55"
+      ]
+    },
+    {
+      "catalog_id": "daewoo-nexia-n150",
+      "brand": "Daewoo",
+      "aliases": [
+        "nexia n150",
+        "daewoo nexia n150",
+        "nexia 2",
+        "daewoo nexia 2"
+      ]
+    },
+    {
+      "catalog_id": "lada-samara-2109",
+      "brand": "ВАЗ (Lada)",
+      "aliases": [
+        "lada 2109",
+        "ваз 2109",
+        "samara 2109",
+        "21099",
+        "lada samara"
+      ]
+    },
+    {
+      "catalog_id": "lada-priora-2171",
+      "brand": "ВАЗ (Lada)",
+      "aliases": [
+        "lada priora",
+        "priora 2171",
+        "lada priora 2171",
+        "приора 2171",
+        "2171"
+      ]
     }
   ]
 }

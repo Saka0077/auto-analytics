@@ -130,6 +130,149 @@
       "market_source_url": "https://kao.kz/en/novosti/67/",
       "pads_source_url": "https://mag-avto.kz/hyundai/elantra/brake-pads/",
       "disc_source_url": "https://mag-avto.kz/hyundai/elantra/brake-disk/"
+    },
+    {
+      "id": "toyota-camry-xv50",
+      "model_label": "Toyota Camry XV50",
+      "brand": "Toyota",
+      "brand_key": "toyota",
+      "primary_model": "Camry",
+      "model_aliases": [
+        "Camry",
+        "Camry XV50",
+        "Camry 50"
+      ],
+      "lookup_keys": [
+        "camry",
+        "camry xv50",
+        "camry 50",
+        "toyota camry",
+        "toyota camry xv50",
+        "toyota camry 50"
+      ],
+      "segment": "D-седан",
+      "years": "2011-2018",
+      "front_pads_price_kzt": 12000,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": 31400,
+      "front_disc_stock": 1,
+      "service_basket_kzt": 43400,
+      "avg_stock": 1,
+      "price_score": 61,
+      "cheapness_score": 58,
+      "priority": 7,
+      "maintenance_band": "medium",
+      "maintenance_label": "Средние запчасти",
+      "comment": "Camry XV50 остаётся ликвидной, но сервисная корзина уже заметно дороже B-седанов и Nexia.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://www.kotl.kz/cars/toyota_camry_50_2012-2018/kolodki-perednie.html",
+      "disc_source_url": "https://speedrive.kz/diski-tormoznye/advics-disk-tormoznoj-perednij-toyota-camry-50/"
+    },
+    {
+      "id": "daewoo-nexia-n150",
+      "model_label": "Daewoo Nexia N150",
+      "brand": "Daewoo",
+      "brand_key": "daewoo",
+      "primary_model": "Nexia",
+      "model_aliases": [
+        "Nexia",
+        "Nexia N150",
+        "Nexia 2"
+      ],
+      "lookup_keys": [
+        "nexia",
+        "nexia n150",
+        "nexia 2",
+        "daewoo nexia",
+        "daewoo nexia n150"
+      ],
+      "segment": "B-седан",
+      "years": "2008-2016",
+      "front_pads_price_kzt": 5050,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": 12210,
+      "front_disc_stock": 1,
+      "service_basket_kzt": 17260,
+      "avg_stock": 1,
+      "price_score": 98,
+      "cheapness_score": 95,
+      "priority": 2,
+      "maintenance_band": "cheap",
+      "maintenance_label": "Дешёвые запчасти",
+      "comment": "Nexia остаётся одной из самых дешёвых моделей по базовой тормозной корзине на рынке Казахстана.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://guar-nsk.ru/product/kolodka-tormoznaya-daewoo-nexia-perednyaya-trialli-pf-0550-96273708-96281937-daewoo-art-pf0550",
+      "disc_source_url": "https://www.kitmoll.kz/p/941949-disk-tormoznoj-peredniy-nexia-r14"
+    },
+    {
+      "id": "lada-samara-2109",
+      "model_label": "ВАЗ (Lada) 2109",
+      "brand": "ВАЗ (Lada)",
+      "brand_key": "ваз lada",
+      "primary_model": "2109",
+      "model_aliases": [
+        "2109",
+        "Samara 2109",
+        "Lada 2109"
+      ],
+      "lookup_keys": [
+        "2109",
+        "lada 2109",
+        "ваз 2109",
+        "samara 2109"
+      ],
+      "segment": "B-хэтчбек",
+      "years": "1987-2004",
+      "front_pads_price_kzt": 4900,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": 8760,
+      "front_disc_stock": 1,
+      "service_basket_kzt": 13660,
+      "avg_stock": 1,
+      "price_score": 100,
+      "cheapness_score": 99,
+      "priority": 1,
+      "maintenance_band": "cheap",
+      "maintenance_label": "Дешёвые запчасти",
+      "comment": "По классическим Lada базовые тормозные детали остаются самыми дешёвыми среди массовых моделей.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://halykmarket.kz/product/kolodki-perednie-vaz-2109-priora-largus-lada-oks-brake",
+      "disc_source_url": "https://svethofor.info/avtozapchasti/mitsubishi_7160_disk-tormoznoj-perednij-vaz-2108-2190-r14-sh42-trialli-df-095101"
+    },
+    {
+      "id": "lada-priora-2171",
+      "model_label": "ВАЗ (Lada) Priora 2171",
+      "brand": "ВАЗ (Lada)",
+      "brand_key": "ваз lada",
+      "primary_model": "Priora",
+      "model_aliases": [
+        "Priora",
+        "Priora 2171",
+        "Lada Priora"
+      ],
+      "lookup_keys": [
+        "priora",
+        "priora 2171",
+        "lada priora",
+        "ваз priora"
+      ],
+      "segment": "C-универсал",
+      "years": "2007-2018",
+      "front_pads_price_kzt": 4690,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": 19153,
+      "front_disc_stock": 1,
+      "service_basket_kzt": 23843,
+      "avg_stock": 1,
+      "price_score": 82,
+      "cheapness_score": 74,
+      "priority": 5,
+      "maintenance_band": "medium",
+      "maintenance_label": "Средние запчасти",
+      "comment": "У Priora дешёвые колодки, но диски уже заметно дороже классической Samara, поэтому корзина средняя.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://halykmarket.kz/product/kolodki-perednie-vaz-2109-priora-largus-lada-oks-brake",
+      "disc_source_url": "https://halykmarket.kz/product/disk-tormoznoj-perednij-lada-2172-priora"
     }
   ],
   "snapshot_conclusions": [
@@ -225,6 +368,102 @@
       "delivery_days": "same day / stock",
       "warranty_days": 14,
       "notes": "Общий артикул также встречается у Rio"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "KOTL",
+      "source_url": "https://www.kotl.kz/cars/toyota_camry_50_2012-2018/kolodki-perednie.html",
+      "model_label": "Toyota Camry XV50",
+      "brand": "Toyota",
+      "brand_key": "toyota",
+      "primary_model": "Camry",
+      "model_aliases": [
+        "Camry",
+        "Camry XV50",
+        "Camry 50"
+      ],
+      "lookup_keys": [
+        "camry",
+        "camry xv50",
+        "camry 50",
+        "toyota camry"
+      ],
+      "generation": "XV50",
+      "years": "2011-2018",
+      "engine": "2.5/3.5",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "Akel",
+      "sku": "0446533430",
+      "price_kzt": 12000,
+      "stock_qty": 1,
+      "delivery_days": "1 day",
+      "warranty_days": 14,
+      "notes": "Поиск по Camry XV50"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "GUAR NSK",
+      "source_url": "https://guar-nsk.ru/product/kolodka-tormoznaya-daewoo-nexia-perednyaya-trialli-pf-0550-96273708-96281937-daewoo-art-pf0550",
+      "model_label": "Daewoo Nexia N150",
+      "brand": "Daewoo",
+      "brand_key": "daewoo",
+      "primary_model": "Nexia",
+      "model_aliases": [
+        "Nexia",
+        "Nexia N150"
+      ],
+      "lookup_keys": [
+        "nexia",
+        "nexia n150",
+        "daewoo nexia"
+      ],
+      "generation": "N150",
+      "years": "2008-2016",
+      "engine": "1.5/1.6",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "Trialli",
+      "sku": "PF0550",
+      "price_kzt": 5050,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": 14,
+      "notes": "Nexia передние колодки"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "Halyk Market",
+      "source_url": "https://halykmarket.kz/product/kolodki-perednie-vaz-2109-priora-largus-lada-oks-brake",
+      "model_label": "ВАЗ (Lada) Priora 2171",
+      "brand": "ВАЗ (Lada)",
+      "brand_key": "ваз lada",
+      "primary_model": "Priora",
+      "model_aliases": [
+        "Priora",
+        "Priora 2171"
+      ],
+      "lookup_keys": [
+        "priora",
+        "priora 2171",
+        "lada priora",
+        "2109"
+      ],
+      "generation": "2171",
+      "years": "2007-2018",
+      "engine": "1.6",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "OKS Brake",
+      "sku": "",
+      "price_kzt": 4690,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": 14,
+      "notes": "Общий комплект на Lada Priora и Samara"
     }
   ]
 }
