@@ -241,6 +241,13 @@ const elements = {
   topBadList: document.getElementById("top-bad-list"),
   topCreditList: document.getElementById("top-credit-list"),
   topMaintenanceList: document.getElementById("top-maintenance-list"),
+  kolesaBrandMeta: document.getElementById("kolesa-brand-meta"),
+  kolesaBrandList: document.getElementById("kolesa-brand-list"),
+  kolesaModelTitle: document.getElementById("kolesa-model-title"),
+  kolesaModelMeta: document.getElementById("kolesa-model-meta"),
+  kolesaModelList: document.getElementById("kolesa-model-list"),
+  kolesaAktauMeta: document.getElementById("kolesa-aktau-meta"),
+  kolesaAktauList: document.getElementById("kolesa-aktau-list"),
   bestMetricLabel: document.getElementById("best-metric-label"),
   bestTitle: document.getElementById("best-title"),
   bestPrice: document.getElementById("best-price"),
@@ -672,6 +679,68 @@ function formatScorePercent(value) {
 
 function formatPercent(value) {
   return `${Math.abs(Number(value || 0)).toFixed(1)}%`;
+}
+
+function normalizeAnalyticsText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ");
+}
+
+function isKolesaListing(item) {
+  return normalizeAnalyticsText(item?.source).includes("kolesa");
+}
+
+function isAktauCity(value) {
+  const normalized = normalizeAnalyticsText(value);
+  return normalized === "актау" || normalized === "aktau" || normalized === "aqtau";
+}
+
+function getBrandAnalyticsLabel(item) {
+  return item.brand || String(item.title || "").split(/\s+/).filter(Boolean)[0] || "";
+}
+
+function getModelAnalyticsLabel(item) {
+  const label = [item.brand, item.model].filter(Boolean).join(" ").trim();
+  return label || item.title || "";
+}
+
+function buildAnalyticsGroups(items, getLabel, limit = 10) {
+  const groups = new Map();
+
+  items.forEach(item => {
+    const label = String(getLabel(item) || "").trim();
+    const key = normalizeAnalyticsText(label);
+    if (!key) {
+      return;
+    }
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        label,
+        count: 0,
+        totalPrice: 0,
+        priceCount: 0
+      });
+    }
+
+    const group = groups.get(key);
+    group.count += 1;
+    if (Number.isFinite(item.price)) {
+      group.totalPrice += item.price;
+      group.priceCount += 1;
+    }
+  });
+
+  return [...groups.values()]
+    .map(group => ({
+      ...group,
+      averagePrice: group.priceCount ? group.totalPrice / group.priceCount : null
+    }))
+    .sort((left, right) => right.count - left.count || (left.averagePrice ?? Infinity) - (right.averagePrice ?? Infinity) || left.label.localeCompare(right.label, "ru"))
+    .slice(0, limit);
 }
 
 function getAnalysisModeConfig() {
@@ -2107,6 +2176,59 @@ function renderStats(listings) {
   elements.bestTitle.textContent = best.title;
   elements.bestPrice.textContent = formatPrice(best.price);
   elements.bestScore.textContent = formatScore(best[config.scoreKey] ?? best.score);
+}
+
+function renderAnalyticsList(target, items, emptyText) {
+  target.innerHTML = "";
+
+  if (!items.length) {
+    target.innerHTML = `<div class="analytics-empty">${escapeHtml(emptyText)}</div>`;
+    return;
+  }
+
+  items.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "analytics-item";
+    row.innerHTML = `
+      <div>
+        <div class="analytics-item-title">${escapeHtml(item.label)}</div>
+        <div class="analytics-item-meta">${formatInteger(item.count)} объявл.${item.averagePrice ? ` · ср. цена ${escapeHtml(formatPrice(item.averagePrice))}` : ""}</div>
+      </div>
+      <div class="analytics-item-value">${formatInteger(item.count)}</div>
+    `;
+    target.append(row);
+  });
+}
+
+function renderKolesaAnalytics(listings) {
+  const allKolesaListings = state.listings.filter(isKolesaListing);
+  const filteredKolesaListings = listings.filter(isKolesaListing);
+  const selectedCity = elements.citySelect.value;
+  const cityScopedListings = selectedCity
+    ? allKolesaListings.filter(item => normalizeAnalyticsText(item.city) === normalizeAnalyticsText(selectedCity))
+    : filteredKolesaListings;
+  const aktauListings = allKolesaListings.filter(item => isAktauCity(item.city));
+
+  const topBrands = buildAnalyticsGroups(filteredKolesaListings, getBrandAnalyticsLabel, 10);
+  const topModels = buildAnalyticsGroups(cityScopedListings, getModelAnalyticsLabel, 10);
+  const topAktauModels = buildAnalyticsGroups(aktauListings, getModelAnalyticsLabel, 10);
+
+  elements.kolesaBrandMeta.textContent = filteredKolesaListings.length
+    ? `${formatInteger(filteredKolesaListings.length)} объявл. Kolesa в текущей выборке.`
+    : "По текущим фильтрам объявлений Kolesa нет.";
+  elements.kolesaModelTitle.textContent = selectedCity
+    ? `Топ моделей: ${selectedCity}`
+    : "Топ моделей Kolesa";
+  elements.kolesaModelMeta.textContent = selectedCity
+    ? `${formatInteger(cityScopedListings.length)} объявл. Kolesa по городу ${selectedCity}.`
+    : `${formatInteger(cityScopedListings.length)} объявл. Kolesa по текущей выборке.`;
+  elements.kolesaAktauMeta.textContent = aktauListings.length
+    ? `${formatInteger(aktauListings.length)} объявл. Kolesa из Актау в базе.`
+    : "Актау пока не загружен. Сначала импортируй этот город.";
+
+  renderAnalyticsList(elements.kolesaBrandList, topBrands, "Нет импортированных объявлений Kolesa по текущим фильтрам.");
+  renderAnalyticsList(elements.kolesaModelList, topModels, selectedCity ? `По городу ${selectedCity} пока нет данных Kolesa.` : "Нет данных Kolesa по текущей выборке.");
+  renderAnalyticsList(elements.kolesaAktauList, topAktauModels, "По Актау пока нет объявлений Kolesa. Сначала импортируй Актау.");
 }
 
 function renderBars(listings) {
@@ -3738,6 +3860,7 @@ function render() {
   renderStats(listings);
   renderFavorites();
   renderHistory();
+  renderKolesaAnalytics(listings);
   renderTopLists(listings);
   renderBars(listings);
   renderTable(listings);
