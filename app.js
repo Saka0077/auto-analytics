@@ -134,6 +134,7 @@ const IMPORT_TRANSMISSIONS = [
 const state = {
   listings: defaultListings.map(normalizeRow),
   renderedListings: [],
+  analysisMode: "buyer",
   tableSort: {
     key: "",
     direction: "asc"
@@ -153,6 +154,9 @@ const state = {
 };
 
 const elements = {
+  modeBuyerBtn: document.getElementById("mode-buyer-btn"),
+  modeResellerBtn: document.getElementById("mode-reseller-btn"),
+  modeCaption: document.getElementById("mode-caption"),
   authGuestView: document.getElementById("auth-guest-view"),
   authUserView: document.getElementById("auth-user-view"),
   authUsernameInput: document.getElementById("auth-username-input"),
@@ -225,10 +229,18 @@ const elements = {
   topFreshList: document.getElementById("top-fresh-list"),
   topBadList: document.getElementById("top-bad-list"),
   topCreditList: document.getElementById("top-credit-list"),
+  bestMetricLabel: document.getElementById("best-metric-label"),
   bestTitle: document.getElementById("best-title"),
   bestPrice: document.getElementById("best-price"),
+  bestScoreLabel: document.getElementById("best-score-label"),
   bestScore: document.getElementById("best-score"),
   syncStatus: document.getElementById("sync-status"),
+  sortScoreOption: document.getElementById("sort-score-option"),
+  topScoreTitle: document.getElementById("top-score-title"),
+  topDealTitle: document.getElementById("top-deal-title"),
+  topBadTitle: document.getElementById("top-bad-title"),
+  chartTitle: document.getElementById("chart-title"),
+  resultsScoreLabel: document.getElementById("results-score-label"),
   detailModal: document.getElementById("detail-modal"),
   modalBackdrop: document.getElementById("modal-backdrop"),
   modalCloseBtn: document.getElementById("modal-close-btn"),
@@ -238,6 +250,7 @@ const elements = {
   modalPrice: document.getElementById("modal-price"),
   modalCity: document.getElementById("modal-city"),
   modalFacts: document.getElementById("modal-facts"),
+  modalBreakdownTitle: document.getElementById("modal-breakdown-title"),
   modalBreakdown: document.getElementById("modal-breakdown"),
   modalSignals: document.getElementById("modal-signals"),
   modalVinInput: document.getElementById("modal-vin-input"),
@@ -291,7 +304,7 @@ function getTableSortValue(item, key) {
     case "owners":
       return item.owners;
     case "score":
-      return item.score;
+      return getPrimaryScore(item);
     default:
       return item[key];
   }
@@ -581,6 +594,89 @@ function formatScorePercent(value) {
 
 function formatPercent(value) {
   return `${Math.abs(Number(value || 0)).toFixed(1)}%`;
+}
+
+function getAnalysisModeConfig() {
+  return state.analysisMode === "reseller"
+    ? {
+        scoreKey: "resellerOpportunityScore",
+        metricLabel: "Лучший вариант для перепродажи",
+        scoreLabel: "Перекуп",
+        sortLabel: "Лучший для перекупа",
+        topScoreTitle: "Топ 5 для перепродажи",
+        topDealTitle: "Топ 5 ликвидных",
+        topBadTitle: "Слабые для перепродажи",
+        chartTitle: "Рейтинг перекупа",
+        caption: "Режим перекупа: ищем связку из маржи, ликвидности и низкого риска вложений.",
+        breakdownTitle: "Почему это интересно для перепродажи",
+        topSecondaryKey: "liquidityScore",
+        topSecondaryLabel: "ликвидность"
+      }
+    : {
+        scoreKey: "buyerScore",
+        metricLabel: "Лучший вариант для покупки",
+        scoreLabel: "Покупка",
+        sortLabel: "Лучший для покупки",
+        topScoreTitle: "Топ 5 для покупки",
+        topDealTitle: "Топ 5 выгодных",
+        topBadTitle: "Плохие объявления",
+        chartTitle: "Рейтинг покупки",
+        caption: "Режим покупки: ищем лучший вариант для себя по рынку, риску и качеству объявления.",
+        breakdownTitle: "Почему это хороший вариант",
+        topSecondaryKey: "dealScore",
+        topSecondaryLabel: "выгода"
+      };
+}
+
+function getPrimaryScore(item) {
+  const { scoreKey } = getAnalysisModeConfig();
+  return Number(item?.[scoreKey] ?? item?.score ?? 0);
+}
+
+function updateAnalysisModeUI() {
+  const config = getAnalysisModeConfig();
+  elements.modeBuyerBtn?.classList.toggle("is-active", state.analysisMode === "buyer");
+  elements.modeResellerBtn?.classList.toggle("is-active", state.analysisMode === "reseller");
+  if (elements.modeCaption) {
+    elements.modeCaption.textContent = config.caption;
+  }
+  if (elements.bestMetricLabel) {
+    elements.bestMetricLabel.textContent = config.metricLabel;
+  }
+  if (elements.bestScoreLabel) {
+    elements.bestScoreLabel.textContent = config.scoreLabel;
+  }
+  if (elements.sortScoreOption) {
+    elements.sortScoreOption.textContent = config.sortLabel;
+  }
+  if (elements.topScoreTitle) {
+    elements.topScoreTitle.textContent = config.topScoreTitle;
+  }
+  if (elements.topDealTitle) {
+    elements.topDealTitle.textContent = config.topDealTitle;
+  }
+  if (elements.topBadTitle) {
+    elements.topBadTitle.textContent = config.topBadTitle;
+  }
+  if (elements.chartTitle) {
+    elements.chartTitle.textContent = config.chartTitle;
+  }
+  if (elements.resultsScoreLabel) {
+    elements.resultsScoreLabel.textContent = config.scoreLabel;
+  }
+  if (elements.modalBreakdownTitle) {
+    elements.modalBreakdownTitle.textContent = config.breakdownTitle;
+  }
+}
+
+function setAnalysisMode(mode) {
+  const nextMode = mode === "reseller" ? "reseller" : "buyer";
+  if (state.analysisMode === nextMode) {
+    return;
+  }
+  state.analysisMode = nextMode;
+  updateAnalysisModeUI();
+  render();
 }
 
 function formatYesNo(value) {
@@ -1258,7 +1354,7 @@ function scoreListings(listings) {
       ? Math.max(0, Math.min(1, (item.marketDifferencePercent + 15) / 30))
       : 0.5;
     const sellerPenalty = item.isUsedCarDealer ? 0.2 : 0;
-    const resellerScore = Math.max(
+    const sellerSignalScore = Math.max(
       0,
       Math.min(
         1,
@@ -1266,10 +1362,10 @@ function scoreListings(listings) {
         (Number(item.photoCount || 0) >= 12 ? 0.1 : 0) +
         ((item.paidServices || []).length >= 1 ? 0.15 : 0) +
         ((item.phoneCount || 0) >= 2 ? 0.15 : 0) +
-        ((item.description || "").length < 80 ? 0.1 : 0)
+          ((item.description || "").length < 80 ? 0.1 : 0)
       )
     );
-    const sellerTrustScore = Math.max(0, 1 - resellerScore);
+    const sellerTrustScore = Math.max(0, 1 - sellerSignalScore);
     const qualityScore =
       yearScore * 0.22 +
       mileageScore * 0.2 +
@@ -1287,6 +1383,7 @@ function scoreListings(listings) {
       valueScore * 0.56 +
       qualityScore * 0.44 -
       sellerPenalty * 0.35;
+    const buyerScore = Math.max(0, Math.min(1, score));
     const dealScore =
       priceScore * 0.40 +
       marketScore * 0.35 +
@@ -1309,9 +1406,23 @@ function scoreListings(listings) {
           yearScore * 0.05
         )
       : 0;
+    const resellerOpportunityScore = Math.max(
+      0,
+      Math.min(
+        1,
+        dealScore * 0.34 +
+        liquidityScore * 0.26 +
+        marketScore * 0.18 +
+        freshnessScore * 0.08 +
+        riskSafetyScore * 0.08 +
+        priceScore * 0.06 -
+        (item.riskScore !== null ? item.riskScore / 100 : 0.35) * 0.1 -
+        sellerSignalScore * 0.04
+      )
+    );
     const badScore =
       (item.riskScore !== null ? item.riskScore / 100 : 0.35) * 0.45 +
-      resellerScore * 0.2 +
+      sellerSignalScore * 0.2 +
       (photoScore ? 1 - photoScore : 0.4) * 0.15 +
       (Number.isFinite(item.marketDifferencePercent) && item.marketDifferencePercent < 0
         ? Math.min(Math.abs(item.marketDifferencePercent) / 20, 1)
@@ -1319,14 +1430,16 @@ function scoreListings(listings) {
 
     return {
       ...item,
-      score: Number(Math.max(0, Math.min(1, score)).toFixed(4)),
+      score: Number(buyerScore.toFixed(4)),
+      buyerScore: Number(buyerScore.toFixed(4)),
+      resellerOpportunityScore: Number(resellerOpportunityScore.toFixed(4)),
       qualityScore: Number(qualityScore.toFixed(4)),
       valueScore: Number(valueScore.toFixed(4)),
       dealScore: Number(dealScore.toFixed(4)),
       liquidityScore: Number(liquidityScore.toFixed(4)),
       creditScore: Number(creditScore.toFixed(4)),
       freshnessScore: Number(freshnessScore.toFixed(4)),
-      resellerScore: Number(resellerScore.toFixed(4)),
+      sellerSignalScore: Number(sellerSignalScore.toFixed(4)),
       badScore: Number(badScore.toFixed(4)),
       scoreParts: {
         price: Number(priceScore.toFixed(4)),
@@ -1424,6 +1537,7 @@ function populateAttributeFilters() {
 }
 
 function getFilteredListings() {
+  const { scoreKey } = getAnalysisModeConfig();
   const search = elements.searchInput.value.trim().toLowerCase();
   const yearRange = getNormalizedRange(number(elements.yearFromInput.value), number(elements.yearToInput.value));
   const priceRange = getNormalizedRange(number(elements.priceFromInput.value), number(elements.priceToInput.value));
@@ -1476,16 +1590,16 @@ function getFilteredListings() {
 
   switch (sort) {
     case "credit-desc":
-      results.sort((a, b) => b.creditScore - a.creditScore || a.creditMonthlyPayment - b.creditMonthlyPayment);
+      results.sort((a, b) => b.creditScore - a.creditScore || getPrimaryScore(b) - getPrimaryScore(a) || a.creditMonthlyPayment - b.creditMonthlyPayment);
       break;
     case "liquidity-desc":
-      results.sort((a, b) => b.liquidityScore - a.liquidityScore || b.score - a.score);
+      results.sort((a, b) => b.liquidityScore - a.liquidityScore || getPrimaryScore(b) - getPrimaryScore(a));
       break;
     case "fresh-desc":
-      results.sort((a, b) => b.freshnessScore - a.freshnessScore || b.score - a.score);
+      results.sort((a, b) => b.freshnessScore - a.freshnessScore || getPrimaryScore(b) - getPrimaryScore(a));
       break;
     case "risk-asc":
-      results.sort((a, b) => (a.riskScore ?? 50) - (b.riskScore ?? 50) || b.score - a.score);
+      results.sort((a, b) => (a.riskScore ?? 50) - (b.riskScore ?? 50) || getPrimaryScore(b) - getPrimaryScore(a));
       break;
     case "price-asc":
       results.sort((a, b) => a.price - b.price);
@@ -1500,7 +1614,7 @@ function getFilteredListings() {
       results.sort((a, b) => (a.mileage ?? Number.MAX_SAFE_INTEGER) - (b.mileage ?? Number.MAX_SAFE_INTEGER));
       break;
     default:
-      results.sort((a, b) => b.score - a.score || a.price - b.price);
+      results.sort((a, b) => (b[scoreKey] ?? b.score ?? 0) - (a[scoreKey] ?? a.score ?? 0) || a.price - b.price);
       break;
   }
 
@@ -1508,6 +1622,7 @@ function getFilteredListings() {
 }
 
 function renderStats(listings) {
+  const config = getAnalysisModeConfig();
   elements.totalCount.textContent = formatInteger(listings.length);
 
   if (!listings.length) {
@@ -1525,7 +1640,7 @@ function renderStats(listings) {
   const yearValues = listings.map(item => item.year).filter(item => item !== null && item !== undefined);
   const mileageValues = listings.map(item => item.mileage).filter(item => item !== null && item !== undefined);
   const paymentValues = listings.map(item => item.creditMonthlyPayment).filter(item => item !== null && item !== undefined);
-  const best = [...listings].sort((a, b) => b.score - a.score)[0];
+  const best = [...listings].sort((a, b) => getPrimaryScore(b) - getPrimaryScore(a))[0];
 
   elements.avgPrice.textContent = formatPrice(avgPrice);
   elements.avgYear.textContent = yearValues.length
@@ -1539,19 +1654,21 @@ function renderStats(listings) {
     : "-";
   elements.bestTitle.textContent = best.title;
   elements.bestPrice.textContent = formatPrice(best.price);
-  elements.bestScore.textContent = formatScore(best.score);
+  elements.bestScore.textContent = formatScore(best[config.scoreKey] ?? best.score);
 }
 
 function renderBars(listings) {
+  const config = getAnalysisModeConfig();
   elements.bars.innerHTML = "";
 
   listings.slice(0, 6).forEach(item => {
+    const score = item[config.scoreKey] ?? item.score ?? 0;
     const row = document.createElement("div");
     row.className = "bar-row";
     row.innerHTML = `
       <div class="bar-label">${escapeHtml(item.title)}</div>
-      <div class="bar-track"><div class="bar-fill" style="width:${Math.max(item.score * 100, 5)}%"></div></div>
-      <div>${item.score.toFixed(2)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.max(score * 100, 5)}%"></div></div>
+      <div>${formatScore(score)}</div>
     `;
     elements.bars.append(row);
   });
@@ -1571,6 +1688,7 @@ function renderThumb(imageUrl, className = "thumb") {
 }
 
 function renderTopLists(listings) {
+  const config = getAnalysisModeConfig();
   elements.topScoreList.innerHTML = "";
   elements.topDealList.innerHTML = "";
   elements.topFreshList.innerHTML = "";
@@ -1578,20 +1696,20 @@ function renderTopLists(listings) {
   elements.topCreditList.innerHTML = "";
 
   const topByScore = [...listings]
-    .sort((a, b) => b.score - a.score || a.price - b.price)
+    .sort((a, b) => getPrimaryScore(b) - getPrimaryScore(a) || a.price - b.price)
     .slice(0, 5);
   const topByDeal = [...listings]
-    .sort((a, b) => b.dealScore - a.dealScore || a.price - b.price)
+    .sort((a, b) => (b[config.topSecondaryKey] ?? 0) - (a[config.topSecondaryKey] ?? 0) || getPrimaryScore(b) - getPrimaryScore(a))
     .slice(0, 5);
   const topByFresh = [...listings]
-    .sort((a, b) => b.freshnessScore - a.freshnessScore || b.score - a.score)
+    .sort((a, b) => b.freshnessScore - a.freshnessScore || getPrimaryScore(b) - getPrimaryScore(a))
     .slice(0, 5);
   const topBad = [...listings]
-    .sort((a, b) => b.badScore - a.badScore || b.riskScore - a.riskScore)
+    .sort((a, b) => b.badScore - a.badScore || getPrimaryScore(a) - getPrimaryScore(b))
     .slice(0, 5);
   const topCredit = [...listings]
     .filter(item => item.creditAvailable && item.creditMonthlyPayment)
-    .sort((a, b) => b.creditScore - a.creditScore || a.creditMonthlyPayment - b.creditMonthlyPayment)
+    .sort((a, b) => b.creditScore - a.creditScore || getPrimaryScore(b) - getPrimaryScore(a) || a.creditMonthlyPayment - b.creditMonthlyPayment)
     .slice(0, 5);
 
   const renderList = (target, items, valueKey, valueLabel) => {
@@ -1618,8 +1736,8 @@ function renderTopLists(listings) {
     });
   };
 
-  renderList(elements.topScoreList, topByScore, "score", "ц/к");
-  renderList(elements.topDealList, topByDeal, "dealScore", "выгода");
+  renderList(elements.topScoreList, topByScore, config.scoreKey, config.scoreLabel.toLowerCase());
+  renderList(elements.topDealList, topByDeal, config.topSecondaryKey, config.topSecondaryLabel);
   renderList(elements.topFreshList, topByFresh, "freshnessScore", "fresh");
   renderList(elements.topBadList, topBad, "badScore", "bad");
   renderList(elements.topCreditList, topCredit, "creditScore", "credit");
@@ -1653,7 +1771,7 @@ function renderTable(listings) {
       <td>${escapeHtml(formatListingDateBadge(item))}</td>
       <td>${item.mileage ? formatMileage(item.mileage) : "-"}</td>
       <td>${item.owners ?? "-"}</td>
-      <td><span class="score-badge">${formatScore(item.score)}</span></td>
+      <td><span class="score-badge">${formatScore(getPrimaryScore(item))}</span></td>
       <td>${item.url ? `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Открыть</a>` : "-"}</td>
     `;
     elements.resultsBody.append(row);
@@ -1723,6 +1841,14 @@ function getBreakdownComment(label, value, item) {
     return value >= 0.7 ? "сильное общее состояние по данным объявления" : value >= 0.45 ? "средний уровень по качеству" : "есть слабые сигналы по качеству";
   }
 
+  if (label === "Выгода") {
+    return value >= 0.7 ? "есть запас ниже рынка и шанс на хорошую сделку" : value >= 0.45 ? "сделка выглядит средней" : "запас по выгоде слабый";
+  }
+
+  if (label === "Ликвидность") {
+    return value >= 0.7 ? "модель выглядит быстрой для перепродажи" : value >= 0.45 ? "ликвидность средняя" : "может продаваться долго";
+  }
+
   if (label === "Год") {
     return item.year ? `${item.year} год` : "год не указан";
   }
@@ -1759,7 +1885,8 @@ function renderListingFacts(item) {
   elements.modalFacts.innerHTML = [
     renderFact("Статус", actualityMeta.label),
     renderFact("Проверено", formatDateTime(item.lastCheckedAt)),
-    renderFact("Цена/качество", formatScore(item.score)),
+    renderFact("Покупка", formatScore(item.buyerScore ?? item.score)),
+    renderFact("Перекуп", formatScore(item.resellerOpportunityScore)),
     renderFact("Качество", formatScore(item.qualityScore)),
     renderFact("Выгода", formatScore(item.dealScore)),
     ...renderMarketFacts(item),
@@ -1785,13 +1912,14 @@ function renderListingFacts(item) {
     renderFact("Продавец", getSellerLabel(item)),
     renderFact("Риск", Number.isFinite(item.riskScore) ? `${Math.round(item.riskScore)}/100` : "-"),
     renderFact("Ликвидность", Number.isFinite(item.liquidityScore) ? `${(item.liquidityScore * 100).toFixed(0)}%` : "-"),
-    renderFact("Перекуп-скор", Number.isFinite(item.resellerScore) ? `${(item.resellerScore * 100).toFixed(0)}%` : "-"),
+    renderFact("Признак перекупа", Number.isFinite(item.sellerSignalScore) ? `${(item.sellerSignalScore * 100).toFixed(0)}%` : "-"),
     renderFact("Цена", formatPrice(item.price)),
     renderFact("Город", item.city || "-")
   ].join("");
 }
 
 function renderListingBreakdown(item) {
+  const config = getAnalysisModeConfig();
   const parts = item.scoreParts || {
     price: 0.5,
     quality: 0.5,
@@ -1805,18 +1933,36 @@ function renderListingBreakdown(item) {
     seller: 0.5
   };
 
-  elements.modalBreakdown.innerHTML = [
-    ["Качество", parts.quality],
-    ["Цена", parts.price],
-    ["Рынок", parts.market],
-    ["Год", parts.year],
-    ["Пробег", parts.mileage],
-    ["Владельцы", parts.owners],
-    ["Свежесть", parts.freshness],
-    ["Риск", parts.risk],
-    ["Фото", parts.photos],
-    ["Продавец", parts.seller]
-  ]
+  const breakdownItems = state.analysisMode === "reseller"
+    ? [
+        ["Выгода", item.dealScore],
+        ["Ликвидность", item.liquidityScore],
+        ["Рынок", parts.market],
+        ["Свежесть", parts.freshness],
+        ["Риск", parts.risk],
+        ["Фото", parts.photos],
+        ["Продавец", parts.seller],
+        ["Год", parts.year],
+        ["Пробег", parts.mileage]
+      ]
+    : [
+        ["Качество", parts.quality],
+        ["Цена", parts.price],
+        ["Рынок", parts.market],
+        ["Год", parts.year],
+        ["Пробег", parts.mileage],
+        ["Владельцы", parts.owners],
+        ["Свежесть", parts.freshness],
+        ["Риск", parts.risk],
+        ["Фото", parts.photos],
+        ["Продавец", parts.seller]
+      ];
+
+  if (elements.modalBreakdownTitle) {
+    elements.modalBreakdownTitle.textContent = config.breakdownTitle;
+  }
+
+  elements.modalBreakdown.innerHTML = breakdownItems
     .map(([label, value]) => `
       <div class="breakdown-item">
         <div class="breakdown-meta">
@@ -2508,8 +2654,9 @@ function updateComparePanel() {
 
   if (state.compareWinnerId) {
     const winner = getListingById(state.compareWinnerId);
+    const scoreLabel = getAnalysisModeConfig().scoreLabel;
     elements.compareWinnerText.textContent = winner
-      ? `Лучший вариант сейчас: ${winner.title} (${winner.score.toFixed(2)})`
+      ? `Лучший ${scoreLabel.toLowerCase()} вариант сейчас: ${winner.title} (${formatScore(getPrimaryScore(winner))})`
       : "Победитель пока не выбран.";
   } else {
     elements.compareWinnerText.textContent = "Победитель пока не выбран.";
@@ -2665,8 +2812,9 @@ function pickBestComparedListing() {
   }
 
   const winner = [...items].sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score;
+    const scoreDiff = getPrimaryScore(b) - getPrimaryScore(a);
+    if (scoreDiff !== 0) {
+      return scoreDiff;
     }
     if (b.qualityScore !== a.qualityScore) {
       return b.qualityScore - a.qualityScore;
@@ -2710,7 +2858,8 @@ function exportComparedAsCsv() {
       "mileage",
       "owners",
       "city",
-      "score",
+      "buyerScore",
+      "resellerScore",
       "qualityScore",
       "dealScore",
       "engineVolume",
@@ -2725,7 +2874,8 @@ function exportComparedAsCsv() {
       item.mileage ?? "",
       item.owners ?? "",
       item.city || "",
-      formatScore(item.score),
+      formatScore(item.buyerScore ?? item.score),
+      formatScore(item.resellerOpportunityScore),
       formatScore(item.qualityScore),
       formatScore(item.dealScore),
       item.engineVolume ?? "",
@@ -2758,6 +2908,7 @@ function exportComparedAsPdf() {
   }
 
   const winner = state.compareWinnerId ? getListingById(state.compareWinnerId) : null;
+  const modeConfig = getAnalysisModeConfig();
   const printWindow = window.open("", "_blank", "width=1200,height=900");
   if (!printWindow) {
     window.alert("Браузер заблокировал окно печати.");
@@ -2774,7 +2925,7 @@ function exportComparedAsPdf() {
         <div><span>Год</span><strong>${item.year ?? "-"}</strong></div>
         <div><span>Пробег</span><strong>${item.mileage ? formatMileage(item.mileage) : "-"}</strong></div>
         <div><span>Владельцы</span><strong>${item.owners ?? "-"}</strong></div>
-        <div><span>Цена/качество</span><strong>${formatScore(item.score)}</strong></div>
+        <div><span>${escapeHtml(modeConfig.scoreLabel)}</span><strong>${formatScore(getPrimaryScore(item))}</strong></div>
         <div><span>Качество</span><strong>${formatScore(item.qualityScore)}</strong></div>
         <div><span>Выгода</span><strong>${formatScore(item.dealScore)}</strong></div>
       </div>
@@ -2821,6 +2972,7 @@ function exportComparedAsPdf() {
 
 function renderCompareCard(item) {
   const isWinner = state.compareWinnerId === item.id;
+  const modeConfig = getAnalysisModeConfig();
   return `
     <article class="compare-card${isWinner ? " is-winner" : ""}">
       ${renderThumb(item.image, "thumb")}
@@ -2833,7 +2985,7 @@ function renderCompareCard(item) {
           <div class="compare-spec"><span>Год</span><strong>${item.year ?? "-"}</strong></div>
           <div class="compare-spec"><span>Пробег</span><strong>${item.mileage ? formatMileage(item.mileage) : "-"}</strong></div>
           <div class="compare-spec"><span>Владельцы</span><strong>${item.owners ?? "-"}</strong></div>
-          <div class="compare-spec"><span>Цена/качество</span><strong>${formatScore(item.score)}</strong></div>
+          <div class="compare-spec"><span>${escapeHtml(modeConfig.scoreLabel)}</span><strong>${formatScore(getPrimaryScore(item))}</strong></div>
           <div class="compare-spec"><span>Качество</span><strong>${formatScore(item.qualityScore)}</strong></div>
           <div class="compare-spec"><span>Выгода</span><strong>${formatScore(item.dealScore)}</strong></div>
           <div class="compare-spec"><span>Двигатель</span><strong>${item.engineVolume ? `${item.engineVolume} л` : "-"}</strong></div>
@@ -2926,6 +3078,7 @@ function closeListingDetails() {
 }
 
 function render() {
+  updateAnalysisModeUI();
   const listings = getFilteredListings();
   state.renderedListings = listings;
   renderProfiles();
@@ -3144,6 +3297,12 @@ elements.markFilterSelect.addEventListener("change", () => {
   }
   render();
 });
+elements.modeBuyerBtn.addEventListener("click", () => {
+  setAnalysisMode("buyer");
+});
+elements.modeResellerBtn.addEventListener("click", () => {
+  setAnalysisMode("reseller");
+});
 
 elements.loginBtn.addEventListener("click", loginUser);
 elements.registerBtn.addEventListener("click", registerUser);
@@ -3325,6 +3484,7 @@ document.addEventListener("keydown", event => {
 
 populateCities();
 populateImportFilters();
+updateAnalysisModeUI();
 elements.kolesaUrlInput.dataset.manual = "false";
 syncImportUrlPreview();
 updateComparePanel();

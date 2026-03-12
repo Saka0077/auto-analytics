@@ -18,10 +18,15 @@
         <p class="hero-text">
           Загрузи данные, отфильтруй список и быстро найди варианты с лучшим соотношением цены и состояния.
         </p>
+        <div class="mode-switch" role="tablist" aria-label="Режим анализа">
+          <button id="mode-buyer-btn" class="mode-switch-btn is-active" type="button" data-mode="buyer">Покупка</button>
+          <button id="mode-reseller-btn" class="mode-switch-btn" type="button" data-mode="reseller">Перекуп</button>
+        </div>
+        <p id="mode-caption" class="mode-caption">Режим покупки: ищем лучший вариант для себя по рынку, риску и качеству объявления.</p>
       </div>
       <div class="hero-card">
         <div class="metric">
-          <span class="metric-label">Лучшее цена/качество</span>
+          <span id="best-metric-label" class="metric-label">Лучший вариант для покупки</span>
           <strong id="best-title">Нет данных</strong>
         </div>
         <div class="metric-grid">
@@ -30,7 +35,7 @@
             <strong id="best-price">-</strong>
           </div>
           <div>
-            <span class="metric-label">Цена/качество</span>
+            <span id="best-score-label" class="metric-label">Покупка</span>
             <strong id="best-score">-</strong>
           </div>
         </div>
@@ -232,7 +237,7 @@
           <label class="field">
             <span>Сортировка</span>
             <select id="sort-select">
-              <option value="score">Лучшее цена/качество</option>
+              <option id="sort-score-option" value="score">Лучший для покупки</option>
               <option value="credit-desc">Лучшие в кредит</option>
               <option value="liquidity-desc">Ликвидные</option>
               <option value="fresh-desc">Сначала свежие</option>
@@ -403,14 +408,14 @@
         <div class="top-grid">
           <div class="top-card">
             <div class="panel-head">
-              <h2>Топ 5 цена/качество</h2>
+              <h2 id="top-score-title">Топ 5 для покупки</h2>
             </div>
             <div id="top-score-list" class="top-list"></div>
           </div>
 
           <div class="top-card">
             <div class="panel-head">
-              <h2>Топ 5 выгодных</h2>
+              <h2 id="top-deal-title">Топ 5 выгодных</h2>
             </div>
             <div id="top-deal-list" class="top-list"></div>
           </div>
@@ -424,7 +429,7 @@
 
           <div class="top-card">
             <div class="panel-head">
-              <h2>Плохие объявления</h2>
+              <h2 id="top-bad-title">Плохие объявления</h2>
             </div>
             <div id="top-bad-list" class="top-list"></div>
           </div>
@@ -439,7 +444,7 @@
 
         <div class="chart-card">
           <div class="panel-head">
-            <h2>Цена/качество</h2>
+            <h2 id="chart-title">Рейтинг покупки</h2>
           </div>
           <div id="bars" class="bars"></div>
         </div>
@@ -489,7 +494,7 @@
                   </th>
                   <th>
                     <button class="table-sort-btn" type="button" data-sort-key="score">
-                      Цена/кач. <span class="sort-indicator">-</span>
+                      <span id="results-score-label">Покупка</span> <span class="sort-indicator">-</span>
                     </button>
                   </th>
                   <th>Ссылка</th>
@@ -524,7 +529,7 @@
 
         <div class="modal-sections">
           <section class="modal-section">
-            <h3>Почему это хороший вариант</h3>
+            <h3 id="modal-breakdown-title">Почему это хороший вариант</h3>
             <div id="modal-breakdown" class="breakdown-list"></div>
           </section>
 
