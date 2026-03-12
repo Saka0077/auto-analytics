@@ -1822,6 +1822,57 @@ function saveListingsWithSnapshots(listings, { capturedAt } = {}) {
   return normalized;
 }
 
+function applyKolesaSnapshotToListing(item, snapshot, { checkedAt } = {}) {
+  const nextStatus = normalizeActualityStatus(snapshot.actuality_status);
+  const previousStatus = normalizeActualityStatus(item.actuality_status);
+  const resolvedCheckedAt = checkedAt || snapshot.last_checked_at || new Date().toISOString();
+
+  return {
+    ...item,
+    title: snapshot.title || item.title,
+    advert_id: snapshot.advert_id || item.advert_id || extractAdvertIdFromUrl(item.url),
+    price: pickDefined(snapshot.price, item.price),
+    publication_date: snapshot.publication_date || item.publication_date,
+    last_update: snapshot.last_update || item.last_update,
+    description: snapshot.description || item.description,
+    image: snapshot.image || item.image,
+    photo_gallery: normalizePhotoGallery([...(item.photo_gallery || []), ...(snapshot.photo_gallery || [])]),
+    avg_price: pickDefined(snapshot.avg_price, item.avg_price),
+    market_difference:
+      snapshot.market_difference !== null && snapshot.market_difference !== undefined
+        ? snapshot.market_difference
+        : item.market_difference,
+    market_difference_percent:
+      snapshot.market_difference_percent !== null && snapshot.market_difference_percent !== undefined
+        ? snapshot.market_difference_percent
+        : item.market_difference_percent,
+    photo_count: pickDefined(snapshot.photo_count, item.photo_count),
+    phone_count: pickDefined(snapshot.phone_count, item.phone_count),
+    phone_prefix: snapshot.phone_prefix || item.phone_prefix,
+    credit_available: snapshot.credit_available !== undefined
+      ? normalizeBoolean(snapshot.credit_available)
+      : normalizeBoolean(item.credit_available),
+    credit_monthly_payment: pickDefined(snapshot.credit_monthly_payment, item.credit_monthly_payment),
+    credit_down_payment: pickDefined(snapshot.credit_down_payment, item.credit_down_payment),
+    seller_user_id: snapshot.seller_user_id || item.seller_user_id,
+    seller_type_id: pickDefined(snapshot.seller_type_id, item.seller_type_id),
+    is_verified_dealer: snapshot.is_verified_dealer !== undefined
+      ? normalizeBoolean(snapshot.is_verified_dealer)
+      : normalizeBoolean(item.is_verified_dealer),
+    is_used_car_dealer: snapshot.is_used_car_dealer !== undefined
+      ? normalizeBoolean(snapshot.is_used_car_dealer)
+      : normalizeBoolean(item.is_used_car_dealer),
+    public_history_available: snapshot.public_history_available !== undefined
+      ? normalizeBoolean(snapshot.public_history_available)
+      : normalizeBoolean(item.public_history_available),
+    history_summary: snapshot.history_summary || item.history_summary,
+    last_checked_at: resolvedCheckedAt,
+    last_seen_at: nextStatus === "active" ? resolvedCheckedAt : item.last_seen_at,
+    actuality_status: nextStatus,
+    last_status_change_at: previousStatus !== nextStatus ? resolvedCheckedAt : item.last_status_change_at || resolvedCheckedAt
+  };
+}
+
 function clampImportLimit(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -2501,6 +2552,80 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (pathname === "/api/listings/collect-snapshots" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const urls = Array.isArray(payload.urls)
+        ? payload.urls.map(value => String(value || "").trim()).filter(Boolean)
+        : [];
+      const maxItems = clampImportLimit(payload.limit || urls.length || 50);
+      const concurrency = Math.min(Math.max(Number(payload.concurrency) || 3, 1), 5);
+      const listings = readListings();
+      const urlSet = urls.length ? new Set(urls) : null;
+      const targets = listings
+        .filter(item => item.source === "kolesa.kz" && (!urlSet || urlSet.has(item.url)))
+        .slice(0, maxItems);
+
+      if (!targets.length) {
+        sendJson(response, 400, { error: "Нет объявлений Kolesa для сбора истории." });
+        return;
+      }
+
+      const updatedByUrl = new Map();
+      let checked = 0;
+      let failed = 0;
+
+      for (let index = 0; index < targets.length; index += concurrency) {
+        const batch = targets.slice(index, index + concurrency);
+        const results = await Promise.all(batch.map(async item => {
+          try {
+            const snapshot = await fetchKolesaListingSnapshot(item.url);
+            const checkedAt = snapshot.last_checked_at || new Date().toISOString();
+            return {
+              ok: true,
+              url: item.url,
+              item: applyKolesaSnapshotToListing(item, snapshot, { checkedAt })
+            };
+          } catch (error) {
+            return {
+              ok: false,
+              url: item.url
+            };
+          }
+        }));
+
+        results.forEach(result => {
+          if (result.ok && result.item) {
+            updatedByUrl.set(result.url, result.item);
+            checked += 1;
+          } else {
+            failed += 1;
+          }
+        });
+
+        if (index + concurrency < targets.length) {
+          await wait(200);
+        }
+      }
+
+      const nextListings = listings.map(item => updatedByUrl.get(item.url) || item);
+      const savedListings = saveListingsWithSnapshots(nextListings);
+      const savedSnapshots = readListingSnapshots();
+      const enriched = enrichListingsWithAutoparts(enrichListingsWithHistory(savedListings, savedSnapshots));
+
+      sendJson(response, 200, {
+        ok: true,
+        checked,
+        failed,
+        requested: targets.length,
+        items: enriched
+      });
+    } catch (error) {
+      sendJson(response, 400, { error: "Не удалось собрать историю по объявлениям.", detail: String(error.message || error) });
+    }
+    return;
+  }
+
   if (pathname === "/api/listings/check" && request.method === "POST") {
     try {
       const payload = await parseRequestBody(request);
@@ -2525,57 +2650,11 @@ const server = http.createServer(async (request, response) => {
       const snapshot = await fetchKolesaListingSnapshot(targetUrl);
       const nextStatus = normalizeActualityStatus(snapshot.actuality_status);
       const checkedAt = snapshot.last_checked_at || new Date().toISOString();
-      const updatedListings = listings.map(item => {
-        if (item.url !== targetUrl) {
-          return item;
-        }
-
-        const previousStatus = normalizeActualityStatus(item.actuality_status);
-        return {
-          ...item,
-          title: snapshot.title || item.title,
-          advert_id: snapshot.advert_id || item.advert_id || extractAdvertIdFromUrl(item.url),
-          price: pickDefined(snapshot.price, item.price),
-          publication_date: snapshot.publication_date || item.publication_date,
-          last_update: snapshot.last_update || item.last_update,
-          description: snapshot.description || item.description,
-          image: snapshot.image || item.image,
-          photo_gallery: normalizePhotoGallery([...(item.photo_gallery || []), ...(snapshot.photo_gallery || [])]),
-          avg_price: pickDefined(snapshot.avg_price, item.avg_price),
-          market_difference:
-            snapshot.market_difference !== null && snapshot.market_difference !== undefined
-              ? snapshot.market_difference
-              : item.market_difference,
-          market_difference_percent:
-            snapshot.market_difference_percent !== null && snapshot.market_difference_percent !== undefined
-              ? snapshot.market_difference_percent
-              : item.market_difference_percent,
-          photo_count: pickDefined(snapshot.photo_count, item.photo_count),
-          phone_count: pickDefined(snapshot.phone_count, item.phone_count),
-          phone_prefix: snapshot.phone_prefix || item.phone_prefix,
-          credit_available: snapshot.credit_available !== undefined
-            ? normalizeBoolean(snapshot.credit_available)
-            : normalizeBoolean(item.credit_available),
-          credit_monthly_payment: pickDefined(snapshot.credit_monthly_payment, item.credit_monthly_payment),
-          credit_down_payment: pickDefined(snapshot.credit_down_payment, item.credit_down_payment),
-          seller_user_id: snapshot.seller_user_id || item.seller_user_id,
-          seller_type_id: pickDefined(snapshot.seller_type_id, item.seller_type_id),
-          is_verified_dealer: snapshot.is_verified_dealer !== undefined
-            ? normalizeBoolean(snapshot.is_verified_dealer)
-            : normalizeBoolean(item.is_verified_dealer),
-          is_used_car_dealer: snapshot.is_used_car_dealer !== undefined
-            ? normalizeBoolean(snapshot.is_used_car_dealer)
-            : normalizeBoolean(item.is_used_car_dealer),
-          public_history_available: snapshot.public_history_available !== undefined
-            ? normalizeBoolean(snapshot.public_history_available)
-            : normalizeBoolean(item.public_history_available),
-          history_summary: snapshot.history_summary || item.history_summary,
-          last_checked_at: checkedAt,
-          last_seen_at: nextStatus === "active" ? checkedAt : item.last_seen_at,
-          actuality_status: nextStatus,
-          last_status_change_at: previousStatus !== nextStatus ? checkedAt : item.last_status_change_at || checkedAt
-        };
-      });
+      const updatedListings = listings.map(item => (
+        item.url !== targetUrl
+          ? item
+          : applyKolesaSnapshotToListing(item, snapshot, { checkedAt, nextStatus })
+      ));
 
       saveListingsWithSnapshots(updatedListings, { capturedAt: checkedAt });
       const refreshedListings = readListings();

@@ -151,6 +151,7 @@ const state = {
   currentUser: null,
   listingInsights: {},
   listingGalleries: {},
+  listingSnapshots: {},
   importPreview: {
     status: "idle",
     url: "",
@@ -228,6 +229,7 @@ const elements = {
   compareChips: document.getElementById("compare-chips"),
   favoritesList: document.getElementById("favorites-list"),
   historyList: document.getElementById("history-list"),
+  collectHistoryBtn: document.getElementById("collect-history-btn"),
   pickBestCompareBtn: document.getElementById("pick-best-compare-btn"),
   openCompareBtn: document.getElementById("open-compare-btn"),
   clearCompareBtn: document.getElementById("clear-compare-btn"),
@@ -274,6 +276,7 @@ const elements = {
   modalBreakdown: document.getElementById("modal-breakdown"),
   modalSignals: document.getElementById("modal-signals"),
   modalMaintenance: document.getElementById("modal-maintenance"),
+  modalPriceHistory: document.getElementById("modal-price-history"),
   modalVinInput: document.getElementById("modal-vin-input"),
   modalVinNoteInput: document.getElementById("modal-vin-note-input"),
   modalVinSaveBtn: document.getElementById("modal-vin-save-btn"),
@@ -742,6 +745,49 @@ function formatPercent(value) {
 
 function formatDaysOnMarket(value) {
   return Number.isFinite(Number(value)) ? `${formatInteger(value)} дн.` : "-";
+}
+
+function getListingSnapshotCacheKey(item) {
+  return item?.advertId || item?.url || item?.id || "";
+}
+
+function getListingSnapshotRows(item) {
+  const key = getListingSnapshotCacheKey(item);
+  const cached = state.listingSnapshots[key];
+  return Array.isArray(cached?.items) ? cached.items : [];
+}
+
+function formatSnapshotEventDate(value) {
+  if (!value) {
+    return "Дата неизвестна";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Дата неизвестна";
+  }
+  return date.toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function getSnapshotPriceDelta(snapshot, previousSnapshot) {
+  if (!previousSnapshot || !Number.isFinite(snapshot?.price) || !Number.isFinite(previousSnapshot?.price)) {
+    return null;
+  }
+
+  const delta = snapshot.price - previousSnapshot.price;
+  if (!delta) {
+    return null;
+  }
+
+  return {
+    value: Math.abs(delta),
+    direction: delta < 0 ? "down" : "up",
+    label: delta < 0 ? `-${formatPrice(Math.abs(delta))}` : `+${formatPrice(Math.abs(delta))}`
+  };
 }
 
 function normalizeAnalyticsText(value) {
@@ -2616,6 +2662,123 @@ function renderMaintenancePanel(item) {
   `;
 }
 
+function renderPriceHistoryPanel(item) {
+  if (!elements.modalPriceHistory) {
+    return;
+  }
+
+  const key = getListingSnapshotCacheKey(item);
+  const snapshotState = state.listingSnapshots[key];
+  const snapshots = getListingSnapshotRows(item)
+    .slice()
+    .sort((left, right) => new Date(right.captured_at || right.capturedAt || 0).getTime() - new Date(left.captured_at || left.capturedAt || 0).getTime());
+
+  if (snapshotState?.status === "loading") {
+    elements.modalPriceHistory.innerHTML = `<div class="price-history-empty">Загружаю историю цены...</div>`;
+    return;
+  }
+
+  if (snapshotState?.status === "error") {
+    elements.modalPriceHistory.innerHTML = `<div class="price-history-empty">Не удалось загрузить историю цены.</div>`;
+    return;
+  }
+
+  if (!snapshots.length) {
+    elements.modalPriceHistory.innerHTML = `<div class="price-history-empty">Истории пока нет. Нажми "Собрать историю" или проверь объявление позже.</div>`;
+    return;
+  }
+
+  const summary = [
+    { label: "Наблюдений", value: formatInteger(item.snapshotCount ?? snapshots.length) },
+    { label: "Дней в продаже", value: formatDaysOnMarket(item.daysOnMarket) },
+    { label: "Изм. цены", value: formatInteger(item.priceChangeCount ?? 0) },
+    { label: "Снижение", value: Number.isFinite(item.priceDropTotal) ? formatPrice(item.priceDropTotal) : "-" }
+  ];
+
+  const timeline = snapshots
+    .slice(0, 12)
+    .map((snapshot, index) => {
+      const previous = snapshots[index + 1];
+      const delta = getSnapshotPriceDelta(snapshot, previous);
+      const isLatest = index === 0;
+      const price = Number.isFinite(snapshot.price) ? formatPrice(snapshot.price) : "-";
+      const status = String(snapshot.actuality_status || snapshot.actualityStatus || "").trim();
+      const credit = snapshot.credit_available || snapshot.creditAvailable ? "кредит" : "";
+      const meta = [status, credit, snapshot.photo_count || snapshot.photoCount ? `фото ${snapshot.photo_count || snapshot.photoCount}` : ""]
+        .filter(Boolean)
+        .join(" · ");
+
+      return `
+        <div class="price-history-item${isLatest ? " is-latest" : ""}">
+          <div>
+            <div class="price-history-item-head">
+              <span class="price-history-date">${escapeHtml(formatSnapshotEventDate(snapshot.captured_at || snapshot.capturedAt))}</span>
+              ${delta ? `<span class="price-history-badge price-history-badge--${escapeHtml(delta.direction)}">${escapeHtml(delta.label)}</span>` : ""}
+              ${isLatest ? `<span class="price-history-badge">последний</span>` : ""}
+            </div>
+            <div class="price-history-meta">${escapeHtml(meta || "без доп. изменений")}</div>
+          </div>
+          <div class="price-history-price">${escapeHtml(price)}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  elements.modalPriceHistory.innerHTML = `
+    <div class="price-history-summary">
+      ${summary.map(itemSummary => `
+        <div class="price-history-stat">
+          <span>${escapeHtml(itemSummary.label)}</span>
+          <strong>${escapeHtml(itemSummary.value)}</strong>
+        </div>
+      `).join("")}
+    </div>
+    <div class="price-history-timeline">${timeline}</div>
+  `;
+}
+
+async function loadListingSnapshots(item, { force = false } = {}) {
+  const key = getListingSnapshotCacheKey(item);
+  if (!key || (!force && state.listingSnapshots[key]?.status === "loaded")) {
+    renderPriceHistoryPanel(item);
+    return;
+  }
+
+  state.listingSnapshots[key] = {
+    status: "loading",
+    items: getListingSnapshotRows(item)
+  };
+  if (state.selectedListingId === item.id) {
+    renderPriceHistoryPanel(item);
+  }
+
+  try {
+    const query = item.advertId
+      ? `advertId=${encodeURIComponent(item.advertId)}`
+      : `url=${encodeURIComponent(item.url)}`;
+    const response = await fetch(`/api/listing-snapshots?${query}`);
+    if (!response.ok) {
+      throw new Error("Snapshots load failed");
+    }
+    const payload = await response.json();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    state.listingSnapshots[key] = {
+      status: "loaded",
+      items
+    };
+  } catch (error) {
+    state.listingSnapshots[key] = {
+      status: "error",
+      items: []
+    };
+  }
+
+  if (state.selectedListingId === item.id) {
+    const selected = getListingById(item.id) || item;
+    renderPriceHistoryPanel(selected);
+  }
+}
+
 function getBreakdownComment(label, value, item) {
   if (label === "Рынок" && Number.isFinite(item.marketDifferencePercent)) {
     if (item.marketDifferencePercent >= 10) {
@@ -3179,6 +3342,7 @@ async function checkListingActuality(listingId, { silent = false } = {}) {
       renderListingFacts(updated);
       renderListingBreakdown(updated);
       elements.modalSignals.innerHTML = renderSignals(updated);
+      void loadListingSnapshots(updated, { force: true });
       updateVinUi(updated);
       elements.modalSource.textContent = updated.source || "Карточка объявления";
     }
@@ -3200,6 +3364,59 @@ async function checkListingActuality(listingId, { silent = false } = {}) {
       elements.modalCheckBtn.disabled = false;
       elements.modalCheckBtn.textContent = "Проверить актуальность";
     }
+  }
+}
+
+async function collectHistoryForRenderedListings() {
+  const targets = state.renderedListings.filter(isKolesaListing).filter(item => item.url);
+  if (!targets.length) {
+    window.alert("В текущем списке нет объявлений Kolesa для истории.");
+    return;
+  }
+
+  elements.collectHistoryBtn.disabled = true;
+  elements.collectHistoryBtn.textContent = "Собираю...";
+  setStatus(`Источник: собираем историю по ${targets.length} объявлениям...`);
+
+  try {
+    const response = await fetch("/api/listings/collect-snapshots", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        urls: targets.map(item => item.url),
+        limit: targets.length,
+        concurrency: 3
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Collect history failed");
+    }
+
+    const rows = Array.isArray(payload.items) ? payload.items : [];
+    if (rows.length) {
+      state.listings = normalizeRows(rows);
+      state.renderedListings = getFilteredListings();
+      state.listingSnapshots = {};
+      populateCities();
+      render();
+      if (state.selectedListingId && !elements.detailModal.hidden) {
+        const selected = getListingById(state.selectedListingId);
+        if (selected) {
+          void loadListingSnapshots(selected, { force: true });
+        }
+      }
+    }
+
+    setStatus(`Источник: история собрана, обновлено ${payload.checked || 0}, ошибок ${payload.failed || 0}.`);
+  } catch (error) {
+    window.alert(error.message || "Не удалось собрать историю.");
+    setStatus("Источник: ошибка сбора истории");
+  } finally {
+    elements.collectHistoryBtn.disabled = false;
+    elements.collectHistoryBtn.textContent = "Собрать историю";
   }
 }
 
@@ -3905,6 +4122,7 @@ function openListingDetails(listingId) {
   renderListingBreakdown(item);
   elements.modalDescription.textContent = item.description || "Описание не указано.";
   elements.modalSignals.innerHTML = renderSignals(item);
+  renderPriceHistoryPanel(item);
   updateVinUi(item);
 
   if (item.url) {
@@ -3930,6 +4148,7 @@ function openListingDetails(listingId) {
   document.body.style.overflow = "hidden";
   void loadListingGallery(item);
   void loadKolesaPriceInsight(item);
+  void loadListingSnapshots(item);
   if (shouldAutoCheckActuality(item)) {
     void checkListingActuality(item.id, { silent: true });
   }
@@ -3970,6 +4189,7 @@ function render() {
       renderListingFacts(selected);
       renderListingBreakdown(selected);
       elements.modalSignals.innerHTML = renderSignals(selected);
+      renderPriceHistoryPanel(selected);
     }
   }
 }
@@ -4288,6 +4508,9 @@ elements.modalVinCopyBtn.addEventListener("click", () => {
 });
 elements.bulkCheckBtn.addEventListener("click", () => {
   void bulkCheckRenderedListings();
+});
+elements.collectHistoryBtn.addEventListener("click", () => {
+  void collectHistoryForRenderedListings();
 });
 elements.pickBestCompareBtn.addEventListener("click", () => {
   const winner = pickBestComparedListing();
