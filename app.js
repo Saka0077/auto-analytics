@@ -1469,6 +1469,15 @@ function scoreListings(listings) {
   const photoCounts = listings.map(item => item.photoCount).filter(item => item !== null && item !== undefined);
   const risks = listings.map(item => item.riskScore).filter(item => item !== null && item !== undefined);
   const monthlyPayments = listings.map(item => item.creditMonthlyPayment).filter(item => item !== null && item !== undefined);
+  const maintenanceCheapnessValues = listings
+    .map(item => item.autopartsProfile?.cheapnessScore)
+    .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
+  const maintenanceBasketValues = listings
+    .map(item => item.autopartsProfile?.serviceBasketKzt)
+    .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
+  const maintenanceStockValues = listings
+    .map(item => item.autopartsProfile?.avgStock ?? item.autopartsProfile?.frontPadsStock)
+    .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
   const freshnessValues = listings
     .map(item => {
       const age = daysSince(getListingDateMeta(item).value);
@@ -1491,6 +1500,12 @@ function scoreListings(listings) {
     riskMax: risks.length ? Math.max(...risks) : null,
     monthlyPaymentMin: monthlyPayments.length ? Math.min(...monthlyPayments) : 0,
     monthlyPaymentMax: monthlyPayments.length ? Math.max(...monthlyPayments) : 1,
+    maintenanceCheapnessMin: maintenanceCheapnessValues.length ? Math.min(...maintenanceCheapnessValues) : null,
+    maintenanceCheapnessMax: maintenanceCheapnessValues.length ? Math.max(...maintenanceCheapnessValues) : null,
+    maintenanceBasketMin: maintenanceBasketValues.length ? Math.min(...maintenanceBasketValues) : null,
+    maintenanceBasketMax: maintenanceBasketValues.length ? Math.max(...maintenanceBasketValues) : null,
+    maintenanceStockMin: maintenanceStockValues.length ? Math.min(...maintenanceStockValues) : null,
+    maintenanceStockMax: maintenanceStockValues.length ? Math.max(...maintenanceStockValues) : null,
     freshMin: freshnessValues.length ? Math.min(...freshnessValues) : null,
     freshMax: freshnessValues.length ? Math.max(...freshnessValues) : null
   };
@@ -1507,6 +1522,28 @@ function scoreListings(listings) {
     const marketScore = Number.isFinite(item.marketDifferencePercent)
       ? Math.max(0, Math.min(1, (item.marketDifferencePercent + 15) / 30))
       : 0.5;
+    const maintenanceCheapnessScore = item.autopartsProfile
+      ? normalize(item.autopartsProfile.cheapnessScore, bounds.maintenanceCheapnessMin, bounds.maintenanceCheapnessMax)
+      : 0.5;
+    const maintenanceBasketScore = item.autopartsProfile
+      ? normalize(item.autopartsProfile.serviceBasketKzt, bounds.maintenanceBasketMin, bounds.maintenanceBasketMax, true)
+      : 0.5;
+    const maintenanceStockScore = item.autopartsProfile
+      ? normalize(
+          item.autopartsProfile.avgStock ?? item.autopartsProfile.frontPadsStock,
+          bounds.maintenanceStockMin,
+          bounds.maintenanceStockMax
+        )
+      : 0.5;
+    const maintenanceScore = Math.max(
+      0,
+      Math.min(
+        1,
+        maintenanceCheapnessScore * 0.55 +
+        maintenanceBasketScore * 0.25 +
+        maintenanceStockScore * 0.2
+      )
+    );
     const sellerPenalty = item.isUsedCarDealer ? 0.2 : 0;
     const sellerSignalScore = Math.max(
       0,
@@ -1521,36 +1558,40 @@ function scoreListings(listings) {
     );
     const sellerTrustScore = Math.max(0, 1 - sellerSignalScore);
     const qualityScore =
-      yearScore * 0.22 +
-      mileageScore * 0.2 +
-      ownersScore * 0.08 +
-      freshnessScore * 0.12 +
+      yearScore * 0.2 +
+      mileageScore * 0.18 +
+      ownersScore * 0.07 +
+      freshnessScore * 0.1 +
       photoScore * 0.08 +
-      riskSafetyScore * 0.22 +
-      sellerTrustScore * 0.08;
+      riskSafetyScore * 0.2 +
+      sellerTrustScore * 0.07 +
+      maintenanceScore * 0.1;
     const valueScore =
-      priceScore * 0.48 +
-      marketScore * 0.34 +
+      priceScore * 0.43 +
+      marketScore * 0.29 +
       freshnessScore * 0.08 +
-      sellerTrustScore * 0.1;
+      sellerTrustScore * 0.08 +
+      maintenanceScore * 0.12;
     const score =
       valueScore * 0.56 +
       qualityScore * 0.44 -
       sellerPenalty * 0.35;
     const buyerScore = Math.max(0, Math.min(1, score));
     const dealScore =
-      priceScore * 0.40 +
-      marketScore * 0.35 +
-      freshnessScore * 0.1 +
-      yearScore * 0.1 +
-      mileageScore * 0.05;
+      priceScore * 0.34 +
+      marketScore * 0.29 +
+      freshnessScore * 0.08 +
+      yearScore * 0.09 +
+      mileageScore * 0.05 +
+      maintenanceScore * 0.15;
     const liquidityScore =
-      marketScore * 0.3 +
-      freshnessScore * 0.25 +
+      marketScore * 0.26 +
+      freshnessScore * 0.22 +
       photoScore * 0.1 +
-      yearScore * 0.15 +
-      mileageScore * 0.1 +
-      riskSafetyScore * 0.1;
+      yearScore * 0.13 +
+      mileageScore * 0.09 +
+      riskSafetyScore * 0.1 +
+      maintenanceScore * 0.1;
     const creditScore = item.creditAvailable && item.creditMonthlyPayment
       ? (
           normalize(item.creditMonthlyPayment, bounds.monthlyPaymentMin, bounds.monthlyPaymentMax, true) * 0.55 +
@@ -1587,6 +1628,7 @@ function scoreListings(listings) {
       score: Number(buyerScore.toFixed(4)),
       buyerScore: Number(buyerScore.toFixed(4)),
       resellerOpportunityScore: Number(resellerOpportunityScore.toFixed(4)),
+      maintenanceScore: Number(maintenanceScore.toFixed(4)),
       qualityScore: Number(qualityScore.toFixed(4)),
       valueScore: Number(valueScore.toFixed(4)),
       dealScore: Number(dealScore.toFixed(4)),
@@ -1604,6 +1646,7 @@ function scoreListings(listings) {
         market: Number(marketScore.toFixed(4)),
         freshness: Number(freshnessScore.toFixed(4)),
         risk: Number(riskSafetyScore.toFixed(4)),
+        maintenance: Number(maintenanceScore.toFixed(4)),
         photos: Number(photoScore.toFixed(4)),
         seller: Number(sellerTrustScore.toFixed(4))
       }
@@ -2003,6 +2046,19 @@ function getBreakdownComment(label, value, item) {
     return value >= 0.7 ? "модель выглядит быстрой для перепродажи" : value >= 0.45 ? "ликвидность средняя" : "может продаваться долго";
   }
 
+  if (label === "Содержание") {
+    if (!item.autopartsProfile) {
+      return "по запчастям пока нет базы, оценка нейтральная";
+    }
+
+    const basket = item.autopartsProfile.serviceBasketKzt ? formatPrice(item.autopartsProfile.serviceBasketKzt) : "нет корзины";
+    return value >= 0.72
+      ? `запчасти выглядят дешёвыми, сервисная корзина ${basket}`
+      : value >= 0.45
+        ? `обслуживание выглядит средним, сервисная корзина ${basket}`
+        : `обслуживание выйдет дороже среднего, сервисная корзина ${basket}`;
+  }
+
   if (label === "Год") {
     return item.year ? `${item.year} год` : "год не указан";
   }
@@ -2045,6 +2101,7 @@ function renderListingFacts(item) {
     renderFact("Решение", `${config.scoreLabel}: ${currentDecision.label}`),
     renderFact("Покупка", formatScore(item.buyerScore ?? item.score)),
     renderFact("Перекуп", formatScore(item.resellerOpportunityScore)),
+    renderFact("Содержание", formatScore(item.maintenanceScore)),
     renderFact("Качество", formatScore(item.qualityScore)),
     renderFact("Выгода", formatScore(item.dealScore)),
     ...renderMarketFacts(item),
@@ -2091,6 +2148,7 @@ function renderListingBreakdown(item) {
     market: 0.5,
     freshness: 0.5,
     risk: 0.5,
+    maintenance: 0.5,
     photos: 0.5,
     seller: 0.5
   };
@@ -2099,6 +2157,7 @@ function renderListingBreakdown(item) {
     ? [
         ["Выгода", item.dealScore],
         ["Ликвидность", item.liquidityScore],
+        ["Содержание", item.maintenanceScore],
         ["Рынок", parts.market],
         ["Свежесть", parts.freshness],
         ["Риск", parts.risk],
@@ -2110,6 +2169,7 @@ function renderListingBreakdown(item) {
     : [
         ["Качество", parts.quality],
         ["Цена", parts.price],
+        ["Содержание", item.maintenanceScore],
         ["Рынок", parts.market],
         ["Год", parts.year],
         ["Пробег", parts.mileage],
@@ -2251,7 +2311,7 @@ function renderSignals(item) {
   }
   if (autoparts?.maintenanceLabel) {
     const serviceBasket = autoparts.serviceBasketKzt ? `, корзина ${formatPrice(autoparts.serviceBasketKzt)}` : "";
-    signals.push(`Запчасти: ${autoparts.maintenanceLabel}, cheapness ${autoparts.cheapnessScore || 0}/100${serviceBasket}`);
+    signals.push(`Запчасти: ${autoparts.maintenanceLabel}, maintenance ${formatScorePercent(item.maintenanceScore)}${serviceBasket}`);
   }
   if (autoparts?.comment) {
     signals.push(`По рынку запчастей: ${autoparts.comment}`);
@@ -3039,6 +3099,7 @@ function exportComparedAsCsv() {
       "city",
       "buyerScore",
       "resellerScore",
+      "maintenanceScore",
       "qualityScore",
       "dealScore",
       "engineVolume",
@@ -3055,6 +3116,7 @@ function exportComparedAsCsv() {
       item.city || "",
       formatScore(item.buyerScore ?? item.score),
       formatScore(item.resellerOpportunityScore),
+      formatScore(item.maintenanceScore),
       formatScore(item.qualityScore),
       formatScore(item.dealScore),
       item.engineVolume ?? "",
@@ -3105,6 +3167,7 @@ function exportComparedAsPdf() {
         <div><span>Пробег</span><strong>${item.mileage ? formatMileage(item.mileage) : "-"}</strong></div>
         <div><span>Владельцы</span><strong>${item.owners ?? "-"}</strong></div>
         <div><span>${escapeHtml(modeConfig.scoreLabel)}</span><strong>${formatScore(getPrimaryScore(item))}</strong></div>
+        <div><span>Содержание</span><strong>${formatScore(item.maintenanceScore)}</strong></div>
         <div><span>Качество</span><strong>${formatScore(item.qualityScore)}</strong></div>
         <div><span>Выгода</span><strong>${formatScore(item.dealScore)}</strong></div>
       </div>
@@ -3165,6 +3228,7 @@ function renderCompareCard(item) {
           <div class="compare-spec"><span>Пробег</span><strong>${item.mileage ? formatMileage(item.mileage) : "-"}</strong></div>
           <div class="compare-spec"><span>Владельцы</span><strong>${item.owners ?? "-"}</strong></div>
           <div class="compare-spec"><span>${escapeHtml(modeConfig.scoreLabel)}</span><strong>${formatScore(getPrimaryScore(item))}</strong></div>
+          <div class="compare-spec"><span>Содержание</span><strong>${formatScore(item.maintenanceScore)}</strong></div>
           <div class="compare-spec"><span>Качество</span><strong>${formatScore(item.qualityScore)}</strong></div>
           <div class="compare-spec"><span>Выгода</span><strong>${formatScore(item.dealScore)}</strong></div>
           <div class="compare-spec"><span>Двигатель</span><strong>${item.engineVolume ? `${item.engineVolume} л` : "-"}</strong></div>
