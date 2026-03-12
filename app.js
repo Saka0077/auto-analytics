@@ -966,8 +966,105 @@ function getSellerFilterType(item) {
     : "private";
 }
 
+function getBuyerDecisionMeta(item) {
+  const score = Number(item?.buyerScore ?? item?.score ?? 0);
+  const risk = Number.isFinite(item?.riskScore) ? item.riskScore / 100 : 0.35;
+  const sellerSignal = Number.isFinite(item?.sellerSignalScore) ? item.sellerSignalScore : 0.35;
+  const marketDifference = Number.isFinite(item?.marketDifferencePercent) ? item.marketDifferencePercent : 0;
+  const age = daysSince(item?.publicationDate || item?.lastUpdate || item?.lastCheckedAt);
+  const isStale = age !== null && age >= 30;
+
+  if (score >= 0.74 && risk <= 0.35 && marketDifference >= -6 && sellerSignal <= 0.55 && !isStale) {
+    return {
+      label: "Брать",
+      className: "status-badge status-badge--buy",
+      note: marketDifference >= 0
+        ? "цена выглядит в рынке или ниже рынка, риск низкий"
+        : "риск низкий, а карточка выглядит уверенно"
+    };
+  }
+
+  if (score >= 0.55 && risk <= 0.62 && marketDifference >= -14 && sellerSignal <= 0.78) {
+    return {
+      label: "Осторожно",
+      className: "status-badge status-badge--careful",
+      note: isStale
+        ? "объявление висит давно, проверь историю цены и состояние"
+        : "вариант рабочий, но цену и детали лучше перепроверить"
+    };
+  }
+
+  return {
+    label: "Не брать",
+    className: "status-badge status-badge--skip",
+    note: marketDifference <= -12
+      ? "цена выше рынка или риск по объявлению слишком высокий"
+      : "слишком много красных флагов по продавцу, риску или свежести"
+  };
+}
+
+function getResellerDecisionMeta(item) {
+  const score = Number(item?.resellerOpportunityScore ?? 0);
+  const liquidity = Number(item?.liquidityScore ?? 0);
+  const deal = Number(item?.dealScore ?? 0);
+  const risk = Number.isFinite(item?.riskScore) ? item.riskScore / 100 : 0.35;
+  const sellerSignal = Number.isFinite(item?.sellerSignalScore) ? item.sellerSignalScore : 0.35;
+  const marketDifference = Number.isFinite(item?.marketDifferencePercent) ? item.marketDifferencePercent : 0;
+  const age = daysSince(item?.publicationDate || item?.lastUpdate || item?.lastCheckedAt);
+  const isStale = age !== null && age >= 21;
+
+  if (
+    score >= 0.72 &&
+    liquidity >= 0.58 &&
+    deal >= 0.58 &&
+    marketDifference >= 5 &&
+    risk <= 0.45 &&
+    sellerSignal <= 0.68
+  ) {
+    return {
+      label: "Есть маржа",
+      className: "status-badge status-badge--profit",
+      note: "есть дисконт к рынку, нормальная ликвидность и умеренный риск вложений"
+    };
+  }
+
+  if (
+    score >= 0.5 &&
+    liquidity >= 0.42 &&
+    deal >= 0.45 &&
+    marketDifference >= -5 &&
+    risk <= 0.68
+  ) {
+    return {
+      label: "Слабая маржа",
+      className: "status-badge status-badge--thin",
+      note: isStale
+        ? "можно смотреть только после сильного торга или проверки истории"
+        : "сделка возможна, но запас по прибыли пока слабый"
+    };
+  }
+
+  return {
+    label: "Риск",
+    className: "status-badge status-badge--risk",
+    note: marketDifference < 0
+      ? "цена уже выше рынка или ликвидность слишком слабая для перепродажи"
+      : "риск вложений и зависания в продаже слишком высокий"
+  };
+}
+
+function getCurrentDecisionMeta(item) {
+  return state.analysisMode === "reseller"
+    ? getResellerDecisionMeta(item)
+    : getBuyerDecisionMeta(item);
+}
+
 function renderListingBadges(item) {
-  const badges = [renderActualityBadge(item)];
+  const decision = getCurrentDecisionMeta(item);
+  const badges = [
+    renderActualityBadge(item),
+    `<span class="${decision.className}">${escapeHtml(decision.label)}</span>`
+  ];
   const promotion = getPromotionLabel(item);
   const freshness = getFreshnessMeta(item);
   const market = getMarketBadge(item);
@@ -1882,9 +1979,12 @@ function getBreakdownComment(label, value, item) {
 
 function renderListingFacts(item) {
   const actualityMeta = getActualityMeta(item);
+  const config = getAnalysisModeConfig();
+  const currentDecision = getCurrentDecisionMeta(item);
   elements.modalFacts.innerHTML = [
     renderFact("Статус", actualityMeta.label),
     renderFact("Проверено", formatDateTime(item.lastCheckedAt)),
+    renderFact("Решение", `${config.scoreLabel}: ${currentDecision.label}`),
     renderFact("Покупка", formatScore(item.buyerScore ?? item.score)),
     renderFact("Перекуп", formatScore(item.resellerOpportunityScore)),
     renderFact("Качество", formatScore(item.qualityScore)),
@@ -2036,8 +2136,16 @@ function applyListingGallery(listingId, payload) {
 }
 
 function renderSignals(item) {
+  const config = getAnalysisModeConfig();
+  const currentDecision = getCurrentDecisionMeta(item);
+  const buyerDecision = getBuyerDecisionMeta(item);
+  const resellerDecision = getResellerDecisionMeta(item);
   const finance = [];
-  const signals = [];
+  const signals = [
+    `${config.scoreLabel}: ${currentDecision.label}. ${currentDecision.note}`,
+    `Покупка: ${buyerDecision.label}. ${buyerDecision.note}`,
+    `Перекуп: ${resellerDecision.label}. ${resellerDecision.note}`
+  ];
 
   if (item.creditAvailable) {
     finance.push(`Кредит доступен`);
@@ -2412,6 +2520,7 @@ async function bulkCheckRenderedListings() {
             renderModalGallery(selected);
             renderListingFacts(selected);
             renderListingBreakdown(selected);
+            elements.modalSignals.innerHTML = renderSignals(selected);
           }
         }
       }
@@ -3092,6 +3201,18 @@ function render() {
   renderTopLists(listings);
   renderBars(listings);
   renderTable(listings);
+  if (state.selectedListingId && !elements.detailModal.hidden) {
+    const selected = getListingById(state.selectedListingId);
+    if (selected) {
+      elements.modalTitle.textContent = selected.title;
+      elements.modalPrice.textContent = formatPrice(selected.price);
+      elements.modalCity.textContent = selected.city || "-";
+      renderModalGallery(selected);
+      renderListingFacts(selected);
+      renderListingBreakdown(selected);
+      elements.modalSignals.innerHTML = renderSignals(selected);
+    }
+  }
 }
 
 function resetFilters() {

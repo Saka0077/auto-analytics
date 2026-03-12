@@ -714,6 +714,36 @@ tbody tr.is-clickable {
   color: #b91c1c;
 }
 
+.status-badge--buy {
+  background: rgba(21, 128, 61, 0.14);
+  color: #166534;
+}
+
+.status-badge--careful {
+  background: rgba(217, 119, 6, 0.16);
+  color: #b45309;
+}
+
+.status-badge--skip {
+  background: rgba(190, 24, 93, 0.14);
+  color: #be185d;
+}
+
+.status-badge--profit {
+  background: rgba(3, 105, 161, 0.14);
+  color: #0369a1;
+}
+
+.status-badge--thin {
+  background: rgba(71, 85, 105, 0.14);
+  color: #475569;
+}
+
+.status-badge--risk {
+  background: rgba(185, 28, 28, 0.14);
+  color: #b91c1c;
+}
+
 a {
   color: var(--accent);
   text-decoration: none;
