@@ -83,6 +83,30 @@
         "приора 2171",
         "2171"
       ]
+    },
+    {
+      "catalog_id": "toyota-prado-150",
+      "brand": "Toyota",
+      "aliases": [
+        "prado 150",
+        "toyota prado 150",
+        "land cruiser prado",
+        "land cruiser prado 150",
+        "land cruiser prado comfort",
+        "land cruiser prado comfort plus",
+        "prado comfort plus"
+      ]
+    },
+    {
+      "catalog_id": "lexus-rx-350-al10",
+      "brand": "Lexus",
+      "aliases": [
+        "lexus rx 350",
+        "lexus rx350",
+        "rx 350 al10",
+        "rx350 al10",
+        "rx 350 awd"
+      ]
     }
   ]
 }

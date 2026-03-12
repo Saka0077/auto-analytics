@@ -273,6 +273,83 @@
       "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
       "pads_source_url": "https://halykmarket.kz/product/kolodki-perednie-vaz-2109-priora-largus-lada-oks-brake",
       "disc_source_url": "https://halykmarket.kz/product/disk-tormoznoj-perednij-lada-2172-priora"
+    },
+    {
+      "id": "toyota-prado-150",
+      "model_label": "Toyota Land Cruiser Prado 150",
+      "brand": "Toyota",
+      "brand_key": "toyota",
+      "primary_model": "Land Cruiser Prado",
+      "model_aliases": [
+        "Land Cruiser Prado",
+        "Prado 150",
+        "Land Cruiser Prado 150",
+        "Prado"
+      ],
+      "lookup_keys": [
+        "land cruiser prado",
+        "land cruiser prado 150",
+        "prado",
+        "prado 150",
+        "toyota prado",
+        "toyota prado 150",
+        "toyota land cruiser prado"
+      ],
+      "segment": "SUV",
+      "years": "2009-2025",
+      "front_pads_price_kzt": 15100,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": 78000,
+      "front_disc_stock": 1,
+      "service_basket_kzt": 93100,
+      "avg_stock": 1,
+      "price_score": 28,
+      "cheapness_score": 24,
+      "priority": 12,
+      "maintenance_band": "expensive",
+      "maintenance_label": "Дорогие запчасти",
+      "comment": "Prado 150 очень ликвиден, но тормозная корзина заметно дороже массовых седанов и бюджетных моделей.",
+      "market_source_url": "https://kao.kz/ru/novosti/78/",
+      "pads_source_url": "https://uniparts.kz/parts/info/AVANTECH/AV269",
+      "disc_source_url": "https://t4.kz/p120816830-toyota-prado-150.html"
+    },
+    {
+      "id": "lexus-rx-350-al10",
+      "model_label": "Lexus RX 350 AL10",
+      "brand": "Lexus",
+      "brand_key": "lexus",
+      "primary_model": "RX 350",
+      "model_aliases": [
+        "RX 350",
+        "RX350",
+        "RX AL10",
+        "RX 350 AL10"
+      ],
+      "lookup_keys": [
+        "rx 350",
+        "rx350",
+        "rx al10",
+        "rx 350 al10",
+        "lexus rx 350",
+        "lexus rx350"
+      ],
+      "segment": "SUV",
+      "years": "2009-2015",
+      "front_pads_price_kzt": 24000,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": 57000,
+      "front_disc_stock": 1,
+      "service_basket_kzt": 81000,
+      "avg_stock": 1,
+      "price_score": 34,
+      "cheapness_score": 31,
+      "priority": 11,
+      "maintenance_band": "expensive",
+      "maintenance_label": "Дорогие запчасти",
+      "comment": "RX 350 удобен и ликвиден, но по базовой тормозной корзине уже заметно дороже Camry и тем более бюджетных моделей.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://oil-market.kz/p100601179-kashiyama-d2316-kolodki.html",
+      "disc_source_url": "https://col.kz/p113678946-disk-tormoznoj-per.html"
     }
   ],
   "snapshot_conclusions": [
@@ -464,6 +541,136 @@
       "delivery_days": "in stock",
       "warranty_days": 14,
       "notes": "Общий комплект на Lada Priora и Samara"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "Uniparts",
+      "source_url": "https://uniparts.kz/parts/info/AVANTECH/AV269",
+      "model_label": "Toyota Land Cruiser Prado 150",
+      "brand": "Toyota",
+      "brand_key": "toyota",
+      "primary_model": "Land Cruiser Prado",
+      "model_aliases": [
+        "Land Cruiser Prado",
+        "Prado 150"
+      ],
+      "lookup_keys": [
+        "land cruiser prado",
+        "land cruiser prado 150",
+        "prado",
+        "prado 150",
+        "toyota prado"
+      ],
+      "generation": "150",
+      "years": "2009-2025",
+      "engine": "2.7/4.0",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "Avantech",
+      "sku": "AV269",
+      "price_kzt": 15100,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": 14,
+      "notes": "Передние колодки Prado 120/150"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "T4.kz",
+      "source_url": "https://t4.kz/p120816830-toyota-prado-150.html",
+      "model_label": "Toyota Land Cruiser Prado 150",
+      "brand": "Toyota",
+      "brand_key": "toyota",
+      "primary_model": "Land Cruiser Prado",
+      "model_aliases": [
+        "Land Cruiser Prado",
+        "Prado 150"
+      ],
+      "lookup_keys": [
+        "land cruiser prado",
+        "land cruiser prado 150",
+        "prado",
+        "prado 150",
+        "toyota prado"
+      ],
+      "generation": "150",
+      "years": "2009-2025",
+      "engine": "2.7/4.0",
+      "part_group": "Brakes",
+      "part_name": "Front disc",
+      "part_brand": "Ironman 4x4",
+      "sku": "BIMSBR1850",
+      "price_kzt": 78000,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": 14,
+      "notes": "Цена за 1 диск"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "Oil-market",
+      "source_url": "https://oil-market.kz/p100601179-kashiyama-d2316-kolodki.html",
+      "model_label": "Lexus RX 350 AL10",
+      "brand": "Lexus",
+      "brand_key": "lexus",
+      "primary_model": "RX 350",
+      "model_aliases": [
+        "RX 350",
+        "RX350"
+      ],
+      "lookup_keys": [
+        "rx 350",
+        "rx350",
+        "lexus rx 350",
+        "lexus rx350"
+      ],
+      "generation": "AL10",
+      "years": "2009-2015",
+      "engine": "3.5",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "MK Kashiyama",
+      "sku": "D2316",
+      "price_kzt": 24000,
+      "stock_qty": 1,
+      "delivery_days": "not in stock",
+      "warranty_days": 14,
+      "notes": "RX350 >10 / RX450h"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "Колесница",
+      "source_url": "https://col.kz/p113678946-disk-tormoznoj-per.html",
+      "model_label": "Lexus RX 350 AL10",
+      "brand": "Lexus",
+      "brand_key": "lexus",
+      "primary_model": "RX 350",
+      "model_aliases": [
+        "RX 350",
+        "RX350"
+      ],
+      "lookup_keys": [
+        "rx 350",
+        "rx350",
+        "lexus rx 350",
+        "lexus rx350"
+      ],
+      "generation": "AL10",
+      "years": "2009-2015",
+      "engine": "3.5",
+      "part_group": "Brakes",
+      "part_name": "Front disc",
+      "part_brand": "Patron",
+      "sku": "PBD1280",
+      "price_kzt": 57000,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": 14,
+      "notes": "RX 350 09-15"
     }
   ]
 }
