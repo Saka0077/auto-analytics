@@ -471,6 +471,11 @@ function optionalPositiveNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function nonNegativeNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 function booleanValue(value) {
   return value === true || value === "true" || value === 1 || value === "1";
 }
@@ -668,6 +673,18 @@ function normalizeRow(item) {
     lastSeenAt: item.last_seen_at || item.lastSeenAt || "",
     lastCheckedAt: item.last_checked_at || item.lastCheckedAt || "",
     lastStatusChangeAt: item.last_status_change_at || item.lastStatusChangeAt || "",
+    snapshotCount: nonNegativeNumber(item.snapshot_count ?? item.snapshotCount),
+    firstPrice: optionalPositiveNumber(item.first_price ?? item.firstPrice),
+    lastPrice: optionalPositiveNumber(item.last_price ?? item.lastPrice),
+    priceChangeCount: nonNegativeNumber(item.price_change_count ?? item.priceChangeCount),
+    priceDropTotal: nonNegativeNumber(item.price_drop_total ?? item.priceDropTotal),
+    lastPriceChangeAt: item.last_price_change_at || item.lastPriceChangeAt || "",
+    statusChangeCount: nonNegativeNumber(item.status_change_count ?? item.statusChangeCount),
+    wasRelisted: booleanValue(item.was_relisted ?? item.wasRelisted),
+    daysOnMarket: nonNegativeNumber(item.days_on_market ?? item.daysOnMarket),
+    historyFirstSeenAt: item.history_first_seen_at || item.historyFirstSeenAt || "",
+    historyLastSeenAt: item.history_last_seen_at || item.historyLastSeenAt || "",
+    historyAvailable: booleanValue(item.history_available ?? item.historyAvailable),
     actualityStatus: normalizeActualityStatus(item.actuality_status || item.actualityStatus),
     photoCount: optionalPositiveNumber(item.photo_count ?? item.photoCount) || optionalPositiveNumber(normalizedGallery.length),
     phoneCount: optionalPositiveNumber(item.phone_count ?? item.phoneCount),
@@ -721,6 +738,10 @@ function formatScorePercent(value) {
 
 function formatPercent(value) {
   return `${Math.abs(Number(value || 0)).toFixed(1)}%`;
+}
+
+function formatDaysOnMarket(value) {
+  return Number.isFinite(Number(value)) ? `${formatInteger(value)} дн.` : "-";
 }
 
 function normalizeAnalyticsText(value) {
@@ -2686,6 +2707,14 @@ function renderListingFacts(item) {
     renderFact("Выгода", formatScore(item.dealScore)),
     ...renderMarketFacts(item),
     renderFact("Дата объявления", formatListingDateDetailed(item)),
+    renderFact("Дней в продаже", formatDaysOnMarket(item.daysOnMarket)),
+    renderFact("Наблюдений", item.snapshotCount ?? "-"),
+    renderFact("Изменений цены", item.priceChangeCount ?? "-"),
+    renderFact("Первая цена", Number.isFinite(item.firstPrice) ? formatPrice(item.firstPrice) : "-"),
+    renderFact("Текущая цена", Number.isFinite(item.lastPrice) ? formatPrice(item.lastPrice) : formatPrice(item.price)),
+    renderFact("Снижение цены", Number.isFinite(item.priceDropTotal) ? formatPrice(item.priceDropTotal) : "-"),
+    renderFact("Последнее изм. цены", item.lastPriceChangeAt ? formatDateTime(item.lastPriceChangeAt) : "-"),
+    renderFact("Переопубликовано", formatYesNo(item.wasRelisted)),
     renderFact("Год", item.year ?? "-"),
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
     renderFact("Владельцы", item.owners ?? "-"),

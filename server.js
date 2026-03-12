@@ -10,6 +10,7 @@ const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
 const CATALOG_DIR = path.join(ROOT, "catalog");
 const DATA_FILE = path.join(DATA_DIR, "listings.json");
+const SNAPSHOTS_FILE = path.join(DATA_DIR, "listing-snapshots.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth-store.json");
 const AUTOPARTS_FILE = path.join(CATALOG_DIR, "autoparts-catalog.json");
 const AUTOPARTS_ALIASES_FILE = path.join(CATALOG_DIR, "autoparts-aliases.json");
@@ -78,6 +79,26 @@ function readListings() {
 function writeListings(listings) {
   ensureDataDir();
   fs.writeFileSync(DATA_FILE, JSON.stringify(normalizeListings(listings), null, 2), "utf-8");
+}
+
+function readListingSnapshots() {
+  if (!fs.existsSync(SNAPSHOTS_FILE)) {
+    return [];
+  }
+
+  try {
+    const raw = fs.readFileSync(SNAPSHOTS_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    const rows = Array.isArray(parsed) ? parsed : parsed.items || [];
+    return normalizeListingSnapshots(rows);
+  } catch (error) {
+    return [];
+  }
+}
+
+function writeListingSnapshots(rows) {
+  ensureDataDir();
+  fs.writeFileSync(SNAPSHOTS_FILE, JSON.stringify(normalizeListingSnapshots(rows), null, 2), "utf-8");
 }
 
 function createEmptyAutopartsCatalog() {
@@ -738,6 +759,247 @@ function resolveActualityStatus(item) {
 
 function getListingStorageKey(item) {
   return String(item.advert_id || extractAdvertIdFromUrl(item.url) || item.url || `${item.title}|${item.price}|${item.city}`);
+}
+
+function createListingSnapshotId(listingId, capturedAt) {
+  return `snapshot:${listingId}:${capturedAt}`;
+}
+
+function buildListingSnapshotHash(item) {
+  const payload = {
+    price: numberField(item, "price"),
+    publication_date: textField(item, "publication_date", "publicationDate"),
+    last_update: textField(item, "last_update", "lastUpdate"),
+    actuality_status: normalizeActualityStatus(item.actuality_status ?? item.actualityStatus),
+    photo_count: numberField(item, "photo_count", "photoCount"),
+    credit_available: booleanField(item, "credit_available", "creditAvailable"),
+    credit_monthly_payment: numberField(item, "credit_monthly_payment", "creditMonthlyPayment"),
+    city: textField(item, "city"),
+    avg_price: numberField(item, "avg_price", "avgPrice"),
+    market_difference: numberField(item, "market_difference", "marketDifference"),
+    market_difference_percent: numberField(item, "market_difference_percent", "marketDifferencePercent")
+  };
+
+  return crypto.createHash("sha1").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
+}
+
+function buildListingSnapshot(item, { capturedAt } = {}) {
+  const listingId = getListingStorageKey(item);
+  const snapshotTime = normalizeIsoDate(
+    capturedAt
+      || item.last_checked_at
+      || item.lastCheckedAt
+      || item.last_seen_at
+      || item.lastSeenAt
+      || item.publication_date
+      || item.publicationDate
+      || new Date().toISOString()
+  );
+
+  if (!listingId || !snapshotTime) {
+    return null;
+  }
+
+  return {
+    id: createListingSnapshotId(listingId, snapshotTime),
+    listing_id: listingId,
+    captured_at: snapshotTime,
+    price: numberField(item, "price"),
+    publication_date: normalizeIsoDate(textField(item, "publication_date", "publicationDate")),
+    last_update: normalizeIsoDate(textField(item, "last_update", "lastUpdate")),
+    actuality_status: normalizeActualityStatus(item.actuality_status ?? item.actualityStatus),
+    views_count: numberField(item, "views_count", "viewsCount"),
+    promotion_type: textField(item, "promotion_type", "promotionType"),
+    photo_count: numberField(item, "photo_count", "photoCount"),
+    credit_available: booleanField(item, "credit_available", "creditAvailable"),
+    credit_monthly_payment: numberField(item, "credit_monthly_payment", "creditMonthlyPayment"),
+    city: textField(item, "city"),
+    raw_hash: buildListingSnapshotHash(item)
+  };
+}
+
+function normalizeListingSnapshots(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map(item => {
+      const listingId = String(item?.listing_id ?? item?.listingId ?? "").trim();
+      const capturedAt = normalizeIsoDate(item?.captured_at ?? item?.capturedAt);
+      if (!listingId || !capturedAt) {
+        return null;
+      }
+
+      return {
+        id: String(item?.id || createListingSnapshotId(listingId, capturedAt)).trim(),
+        listing_id: listingId,
+        captured_at: capturedAt,
+        price: numberField(item, "price"),
+        publication_date: normalizeIsoDate(item?.publication_date ?? item?.publicationDate),
+        last_update: normalizeIsoDate(item?.last_update ?? item?.lastUpdate),
+        actuality_status: normalizeActualityStatus(item?.actuality_status ?? item?.actualityStatus),
+        views_count: numberField(item, "views_count", "viewsCount"),
+        promotion_type: textField(item, "promotion_type", "promotionType"),
+        photo_count: numberField(item, "photo_count", "photoCount"),
+        credit_available: booleanField(item, "credit_available", "creditAvailable"),
+        credit_monthly_payment: numberField(item, "credit_monthly_payment", "creditMonthlyPayment"),
+        city: textField(item, "city"),
+        raw_hash: String(item?.raw_hash ?? item?.rawHash ?? "").trim() || buildListingSnapshotHash(item)
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      const timeDiff = new Date(left.captured_at).getTime() - new Date(right.captured_at).getTime();
+      if (timeDiff !== 0) {
+        return timeDiff;
+      }
+      return left.listing_id.localeCompare(right.listing_id, "ru");
+    });
+}
+
+function mergeListingSnapshots(existingRows, listings, { capturedAt } = {}) {
+  const existing = normalizeListingSnapshots(existingRows);
+  const lastSnapshotByListingId = new Map();
+  existing.forEach(item => {
+    lastSnapshotByListingId.set(item.listing_id, item);
+  });
+  const next = [...existing];
+
+  listings.forEach(item => {
+    const snapshot = buildListingSnapshot(item, { capturedAt });
+    if (!snapshot) {
+      return;
+    }
+
+    const previous = lastSnapshotByListingId.get(snapshot.listing_id);
+    if (previous?.raw_hash === snapshot.raw_hash) {
+      return;
+    }
+
+    lastSnapshotByListingId.set(snapshot.listing_id, snapshot);
+    next.push(snapshot);
+  });
+
+  return normalizeListingSnapshots(next);
+}
+
+function ensureListingSnapshotsForListings(listings, { capturedAt } = {}) {
+  const existing = readListingSnapshots();
+  const merged = mergeListingSnapshots(existing, listings, { capturedAt });
+  if (merged.length !== existing.length) {
+    writeListingSnapshots(merged);
+  }
+  return merged;
+}
+
+function buildListingHistoryMap(listings, snapshotRows) {
+  const snapshots = normalizeListingSnapshots(snapshotRows);
+  const snapshotsByListingId = new Map();
+  snapshots.forEach(snapshot => {
+    const bucket = snapshotsByListingId.get(snapshot.listing_id) || [];
+    bucket.push(snapshot);
+    snapshotsByListingId.set(snapshot.listing_id, bucket);
+  });
+
+  const historyMap = new Map();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+
+  listings.forEach(item => {
+    const listingId = getListingStorageKey(item);
+    const history = (snapshotsByListingId.get(listingId) || []).slice().sort((left, right) => (
+      new Date(left.captured_at).getTime() - new Date(right.captured_at).getTime()
+    ));
+
+    const prices = history
+      .map(snapshot => snapshot.price)
+      .filter(price => Number.isFinite(price) && price > 0);
+    const firstSnapshot = history[0] || null;
+    const lastSnapshot = history[history.length - 1] || null;
+    const firstPrice = prices[0] ?? (Number.isFinite(item.price) ? item.price : null);
+    const lastPrice = prices[prices.length - 1] ?? (Number.isFinite(item.price) ? item.price : null);
+
+    let priceChangeCount = 0;
+    let lastPriceChangeAt = "";
+    history.forEach((snapshot, index) => {
+      if (index === 0) {
+        return;
+      }
+      const previous = history[index - 1];
+      if (Number.isFinite(snapshot.price) && Number.isFinite(previous.price) && snapshot.price !== previous.price) {
+        priceChangeCount += 1;
+        lastPriceChangeAt = snapshot.captured_at;
+      }
+    });
+
+    let statusChangeCount = 0;
+    let wasRelisted = false;
+    let sawInactive = false;
+    history.forEach((snapshot, index) => {
+      const status = normalizeActualityStatus(snapshot.actuality_status);
+      if (["archived", "unavailable"].includes(status)) {
+        sawInactive = true;
+      } else if (sawInactive && status === "active") {
+        wasRelisted = true;
+      }
+
+      if (index === 0) {
+        return;
+      }
+      if (normalizeActualityStatus(snapshot.actuality_status) !== normalizeActualityStatus(history[index - 1].actuality_status)) {
+        statusChangeCount += 1;
+      }
+    });
+
+    const candidateStartDates = [
+      item.publication_date,
+      item.first_seen_at,
+      firstSnapshot?.publication_date,
+      firstSnapshot?.captured_at
+    ]
+      .map(value => normalizeIsoDate(value))
+      .filter(Boolean)
+      .map(value => new Date(value).getTime())
+      .filter(value => Number.isFinite(value));
+    const candidateEndDates = [
+      ["archived", "unavailable"].includes(normalizeActualityStatus(item.actuality_status))
+        ? (item.last_seen_at || lastSnapshot?.captured_at)
+        : new Date().toISOString(),
+      item.last_seen_at,
+      lastSnapshot?.captured_at
+    ]
+      .map(value => normalizeIsoDate(value))
+      .filter(Boolean)
+      .map(value => new Date(value).getTime())
+      .filter(value => Number.isFinite(value));
+
+    const startedAtMs = candidateStartDates.length ? Math.min(...candidateStartDates) : null;
+    const endedAtMs = candidateEndDates.length ? Math.max(...candidateEndDates) : null;
+    const daysOnMarket = startedAtMs !== null && endedAtMs !== null
+      ? Math.max(1, Math.floor((endedAtMs - startedAtMs) / oneDayMs) + 1)
+      : null;
+
+    historyMap.set(listingId, {
+      snapshot_count: history.length,
+      first_price: firstPrice,
+      last_price: lastPrice,
+      price_change_count: priceChangeCount,
+      price_drop_total: Number.isFinite(firstPrice) && Number.isFinite(lastPrice) ? Math.max(firstPrice - lastPrice, 0) : null,
+      last_price_change_at: lastPriceChangeAt,
+      status_change_count: statusChangeCount,
+      was_relisted: wasRelisted,
+      days_on_market: daysOnMarket,
+      history_first_seen_at: firstSnapshot?.captured_at || normalizeIsoDate(item.first_seen_at),
+      history_last_seen_at: lastSnapshot?.captured_at || normalizeIsoDate(item.last_seen_at),
+      history_available: history.length > 0
+    });
+  });
+
+  return historyMap;
+}
+
+function enrichListingsWithHistory(listings, snapshotRows = readListingSnapshots()) {
+  const historyMap = buildListingHistoryMap(listings, snapshotRows);
+  return listings.map(item => {
+    const history = historyMap.get(getListingStorageKey(item));
+    return history ? { ...item, ...history } : item;
+  });
 }
 
 function buildRiskSummary(item) {
@@ -1552,6 +1814,14 @@ function mergeImportedListings(existingRows, importedRows) {
   });
 }
 
+function saveListingsWithSnapshots(listings, { capturedAt } = {}) {
+  const normalized = normalizeListings(listings);
+  const snapshots = mergeListingSnapshots(readListingSnapshots(), normalized, { capturedAt });
+  writeListings(normalized);
+  writeListingSnapshots(snapshots);
+  return normalized;
+}
+
 function clampImportLimit(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -2000,10 +2270,32 @@ const server = http.createServer(async (request, response) => {
 
   if (pathname === "/api/listings" && request.method === "GET") {
     try {
-      const listings = enrichListingsWithAutoparts(readListings());
+      const baseListings = readListings();
+      const snapshots = ensureListingSnapshotsForListings(baseListings);
+      const listings = enrichListingsWithAutoparts(enrichListingsWithHistory(baseListings, snapshots));
       sendJson(response, 200, { items: listings, count: listings.length });
     } catch (error) {
       sendJson(response, 500, { error: "Не удалось прочитать объявления." });
+    }
+    return;
+  }
+
+  if (pathname === "/api/listing-snapshots" && request.method === "GET") {
+    try {
+      const targetUrl = String(requestUrl.searchParams.get("url") || "").trim();
+      const targetAdvertId = String(requestUrl.searchParams.get("advertId") || "").trim();
+      const allSnapshots = readListingSnapshots();
+
+      if (!targetUrl && !targetAdvertId) {
+        sendJson(response, 200, { items: allSnapshots, count: allSnapshots.length });
+        return;
+      }
+
+      const targetKey = targetAdvertId || extractAdvertIdFromUrl(targetUrl) || targetUrl;
+      const items = allSnapshots.filter(snapshot => snapshot.listing_id === targetKey || snapshot.listing_id.endsWith(`:${targetKey}`) || snapshot.listing_id === targetUrl);
+      sendJson(response, 200, { items, count: items.length });
+    } catch (error) {
+      sendJson(response, 500, { error: "Не удалось прочитать историю объявления." });
     }
     return;
   }
@@ -2033,7 +2325,7 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      writeListings(mergeImportedListings(readListings(), listings));
+      saveListingsWithSnapshots(mergeImportedListings(readListings(), listings));
       sendJson(response, 200, { ok: true, count: listings.length });
     } catch (error) {
       sendJson(response, 400, { error: "Некорректный JSON." });
@@ -2154,8 +2446,11 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
+      let responseItems = enrichListingsWithAutoparts(listings);
       if (save) {
-        writeListings(mergeImportedListings(readListings(), listings));
+        const savedListings = saveListingsWithSnapshots(mergeImportedListings(readListings(), listings));
+        const savedSnapshots = readListingSnapshots();
+        responseItems = enrichListingsWithAutoparts(enrichListingsWithHistory(savedListings, savedSnapshots));
       }
 
       sendJson(response, 200, {
@@ -2165,7 +2460,7 @@ const server = http.createServer(async (request, response) => {
         limit,
         pagesLoaded: result.pagesLoaded,
         count: listings.length,
-        items: enrichListingsWithAutoparts(listings)
+        items: responseItems
       });
     } catch (error) {
       const message =
@@ -2282,8 +2577,10 @@ const server = http.createServer(async (request, response) => {
         };
       });
 
-      writeListings(updatedListings);
-      const updated = enrichListingsWithAutoparts(readListings()).find(item => item.url === targetUrl);
+      saveListingsWithSnapshots(updatedListings, { capturedAt: checkedAt });
+      const refreshedListings = readListings();
+      const refreshedSnapshots = readListingSnapshots();
+      const updated = enrichListingsWithAutoparts(enrichListingsWithHistory(refreshedListings, refreshedSnapshots)).find(item => item.url === targetUrl);
       sendJson(response, 200, { ok: true, item: updated });
     } catch (error) {
       const message =
