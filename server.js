@@ -19,6 +19,29 @@ const STALE_AFTER_HOURS = Number(process.env.LISTING_STALE_AFTER_HOURS) > 0
   ? Number(process.env.LISTING_STALE_AFTER_HOURS)
   : 72;
 const STALE_AFTER_MS = STALE_AFTER_HOURS * 60 * 60 * 1000;
+const LOW_LOAD_SETTINGS = {
+  pageDelayMinMs: 1800,
+  pageDelayMaxMs: 3600,
+  previewDelayMinMs: 200,
+  previewDelayMaxMs: 450,
+  detailDelayMinMs: 3200,
+  detailDelayMaxMs: 5600,
+  detailCacheTtlMs: 20 * 60 * 1000,
+  pageCacheTtlMs: 10 * 60 * 1000,
+  previewCacheTtlMs: 5 * 60 * 1000,
+  previewProbeCap: 120,
+  enrichConcurrency: 1,
+  collectConcurrency: 1,
+  collectMaxConcurrency: 2,
+  queuePollIntervalMs: 1500
+};
+const pageCache = new Map();
+const listingSnapshotCache = new Map();
+const previewCache = new Map();
+const jobStore = new Map();
+const jobQueue = [];
+let activeJobId = "";
+let jobWorkerRunning = false;
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -67,6 +90,136 @@ function parseRequestBody(request) {
     });
     request.on("error", reject);
   });
+}
+
+function cloneJson(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function nowMs() {
+  return Date.now();
+}
+
+function waitRandom(minMs, maxMs) {
+  const min = Math.max(0, Number(minMs) || 0);
+  const max = Math.max(min, Number(maxMs) || min);
+  const duration = Math.round(min + Math.random() * (max - min));
+  return new Promise(resolve => setTimeout(resolve, duration));
+}
+
+function cleanupExpiredCache(map) {
+  const currentTime = nowMs();
+  for (const [key, entry] of map.entries()) {
+    if (!entry || entry.expiresAt <= currentTime) {
+      map.delete(key);
+    }
+  }
+}
+
+function readCache(map, key) {
+  cleanupExpiredCache(map);
+  const entry = map.get(key);
+  if (!entry || entry.expiresAt <= nowMs()) {
+    map.delete(key);
+    return null;
+  }
+  return cloneJson(entry.value);
+}
+
+function writeCache(map, key, value, ttlMs) {
+  map.set(key, {
+    value: cloneJson(value),
+    expiresAt: nowMs() + Math.max(1000, Number(ttlMs) || 1000)
+  });
+}
+
+function normalizeKolesaCacheKey(value) {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch (error) {
+    return String(value || "").trim();
+  }
+}
+
+function createJob(type, payload = {}) {
+  const id = crypto.randomBytes(8).toString("hex");
+  const job = {
+    id,
+    type,
+    status: "queued",
+    created_at: new Date().toISOString(),
+    started_at: "",
+    finished_at: "",
+    progress: 0,
+    total: 0,
+    message: "В очереди",
+    error: "",
+    result: null,
+    payload: cloneJson(payload)
+  };
+  jobStore.set(id, job);
+  jobQueue.push(id);
+  void ensureJobWorker();
+  return cloneJson(job);
+}
+
+function getJobSnapshot(jobId) {
+  const job = jobStore.get(jobId);
+  return job ? cloneJson(job) : null;
+}
+
+function updateJob(jobId, patch) {
+  const job = jobStore.get(jobId);
+  if (!job) {
+    return null;
+  }
+  Object.assign(job, patch);
+  return job;
+}
+
+async function ensureJobWorker() {
+  if (jobWorkerRunning) {
+    return;
+  }
+
+  jobWorkerRunning = true;
+  while (jobQueue.length) {
+    const jobId = jobQueue.shift();
+    const job = jobStore.get(jobId);
+    if (!job) {
+      continue;
+    }
+
+    activeJobId = jobId;
+    job.status = "running";
+    job.started_at = new Date().toISOString();
+    job.message = "Запущено";
+
+    try {
+      if (job.type === "kolesa-import") {
+        await runKolesaImportJob(job);
+      } else if (job.type === "collect-snapshots") {
+        await runCollectSnapshotsJob(job);
+      } else {
+        throw new Error("unsupported-job-type");
+      }
+
+      job.status = "completed";
+      job.finished_at = new Date().toISOString();
+      job.progress = job.total || job.progress;
+      job.message = "Готово";
+    } catch (error) {
+      job.status = "failed";
+      job.finished_at = new Date().toISOString();
+      job.error = String(error.message || error);
+      job.message = "Ошибка";
+    } finally {
+      activeJobId = "";
+    }
+  }
+
+  jobWorkerRunning = false;
 }
 
 function readListings() {
@@ -1744,10 +1897,18 @@ async function fetchKolesaPriceInsight(advertUrl) {
   };
 }
 
-async function fetchKolesaListingSnapshot(advertUrl) {
+async function fetchKolesaListingSnapshot(advertUrl, { force = false } = {}) {
   const parsedUrl = new URL(advertUrl);
   if (!parsedUrl.hostname.endsWith("kolesa.kz")) {
     throw new Error("unsupported-host");
+  }
+
+  const cacheKey = normalizeKolesaCacheKey(advertUrl);
+  if (!force) {
+    const cached = readCache(listingSnapshotCache, cacheKey);
+    if (cached) {
+      return cached;
+    }
   }
 
   const checkedAt = new Date().toISOString();
@@ -1804,8 +1965,7 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     title,
     alt: String(advertData?.photo?.alt || "")
   });
-
-  return {
+  const snapshot = {
     actuality_status: "active",
     advert_id: String(product?.id || extractAdvertIdFromUrl(advertUrl)),
     title,
@@ -1845,6 +2005,9 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     history_summary: publicHistory.history_summary,
     last_checked_at: checkedAt
   };
+
+  writeCache(listingSnapshotCache, cacheKey, snapshot, LOW_LOAD_SETTINGS.detailCacheTtlMs);
+  return snapshot;
 }
 
 function uniqueListings(listings) {
@@ -1971,10 +2134,18 @@ function buildKolesaPageUrl(sourceUrl, page) {
   return pageUrl.toString();
 }
 
-async function fetchKolesaPage(pageUrl) {
+async function fetchKolesaPage(pageUrl, { force = false } = {}) {
   const parsedUrl = new URL(pageUrl);
   if (!parsedUrl.hostname.endsWith("kolesa.kz")) {
     throw new Error("unsupported-host");
+  }
+
+  const cacheKey = parsedUrl.toString();
+  if (!force) {
+    const cached = readCache(pageCache, cacheKey);
+    if (cached) {
+      return cached;
+    }
   }
 
   const response = await fetch(parsedUrl.toString(), {
@@ -2077,14 +2248,16 @@ async function fetchKolesaPage(pageUrl) {
     });
   });
 
-  return normalizeListings(items);
+  const normalized = normalizeListings(items);
+  writeCache(pageCache, cacheKey, normalized, LOW_LOAD_SETTINGS.pageCacheTtlMs);
+  return normalized;
 }
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, concurrency = 3 } = {}) {
+async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, concurrency = LOW_LOAD_SETTINGS.enrichConcurrency, onProgress = null } = {}) {
   const targets = listings
     .filter(item => item?.url && item.url.includes("/a/show/"))
     .slice(0, Math.max(0, maxItems));
@@ -2109,8 +2282,11 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
       } catch (error) {
         // Keep imported list usable even if some detail pages fail to load.
       }
+      if (typeof onProgress === "function") {
+        onProgress(index + 1, targets.length);
+      }
       if (index < targets.length - 1) {
-        await wait(120);
+        await waitRandom(LOW_LOAD_SETTINGS.detailDelayMinMs, LOW_LOAD_SETTINGS.detailDelayMaxMs);
       }
     }
   }
@@ -2166,7 +2342,7 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
   });
 }
 
-async function fetchKolesaListings(sourceUrl, limit = 100) {
+async function fetchKolesaListings(sourceUrl, limit = 100, { onProgress = null } = {}) {
   const safeLimit = clampImportLimit(limit);
   const maxPages = Math.ceil(safeLimit / 20) + 2;
   const pages = [];
@@ -2183,19 +2359,41 @@ async function fetchKolesaListings(sourceUrl, limit = 100) {
 
     pages.push(pageUrl);
     combined = uniqueListings([...combined, ...pageItems]);
+    if (typeof onProgress === "function") {
+      onProgress({
+        stage: "pages",
+        page,
+        pagesLoaded: pages.length,
+        collected: combined.length,
+        limit: safeLimit,
+        message: `Страница ${page}, собрано ${combined.length} объявлений`
+      });
+    }
 
     if (pageItems.length < 20) {
       break;
     }
 
     if (combined.length < safeLimit) {
-      await wait(250);
+      await waitRandom(LOW_LOAD_SETTINGS.pageDelayMinMs, LOW_LOAD_SETTINGS.pageDelayMaxMs);
     }
   }
 
   const enriched = await enrichKolesaListingsWithSnapshots(combined.slice(0, safeLimit), {
-    maxItems: safeLimit <= 40 ? safeLimit : 15,
-    concurrency: 3
+    maxItems: safeLimit <= 25 ? safeLimit : 8,
+    concurrency: LOW_LOAD_SETTINGS.enrichConcurrency,
+    onProgress: (completed, total) => {
+      if (typeof onProgress === "function") {
+        onProgress({
+          stage: "details",
+          completed,
+          total,
+          collected: combined.length,
+          limit: safeLimit,
+          message: `Добираю полные карточки ${completed}/${total}`
+        });
+      }
+    }
   });
 
   return {
@@ -2209,7 +2407,13 @@ async function fetchKolesaListings(sourceUrl, limit = 100) {
 
 async function fetchKolesaListingsPreview(sourceUrl, limit = 1000) {
   const safeLimit = clampImportLimit(limit);
-  const probeLimit = safeLimit + 1;
+  const cacheKey = `${String(sourceUrl || "").trim()}::${safeLimit}`;
+  const cached = readCache(previewCache, cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const previewLimit = Math.min(safeLimit, LOW_LOAD_SETTINGS.previewProbeCap);
+  const probeLimit = previewLimit + 1;
   const maxPages = Math.ceil(probeLimit / 20) + 2;
   const pages = [];
   let combined = [];
@@ -2229,15 +2433,143 @@ async function fetchKolesaListingsPreview(sourceUrl, limit = 1000) {
     }
 
     if (combined.length < probeLimit) {
-      await wait(200);
+      await waitRandom(LOW_LOAD_SETTINGS.previewDelayMinMs, LOW_LOAD_SETTINGS.previewDelayMaxMs);
     }
   }
 
-  const hasMore = combined.length > safeLimit;
-  return {
-    availableCount: hasMore ? safeLimit : combined.length,
-    hasMore,
+  const preview = {
+    availableCount: combined.length > previewLimit ? previewLimit : combined.length,
+    hasMore: combined.length > previewLimit,
     pagesLoaded: pages.length
+  };
+  writeCache(previewCache, cacheKey, preview, LOW_LOAD_SETTINGS.previewCacheTtlMs);
+  return preview;
+}
+
+async function runKolesaImportJob(job) {
+  const sourceUrl = String(job.payload?.url || "").trim();
+  const save = job.payload?.save !== false;
+  const limit = clampImportLimit(job.payload?.limit);
+
+  if (!sourceUrl) {
+    throw new Error("Нужна ссылка на поиск или список объявлений Kolesa.");
+  }
+
+  job.total = limit;
+  job.progress = 0;
+  job.message = "Готовим мягкий импорт";
+
+  const result = await fetchKolesaListings(sourceUrl, limit, {
+    onProgress: progress => {
+      if (progress?.stage === "pages") {
+        job.progress = Math.min(limit, progress.collected || 0);
+        job.total = limit;
+        job.message = progress.message;
+        return;
+      }
+
+      if (progress?.stage === "details") {
+        const completed = Number(progress.completed) || 0;
+        const total = Number(progress.total) || 0;
+        const ratio = total > 0 ? completed / total : 0;
+        const detailsWeight = Math.min(Math.round(limit * 0.2), total || 0);
+        job.progress = Math.min(limit, Math.max(job.progress, (limit - detailsWeight) + Math.round(detailsWeight * ratio)));
+        job.total = limit;
+        job.message = progress.message;
+      }
+    }
+  });
+
+  const listings = result.items;
+  if (!listings.length) {
+    throw new Error("Не удалось найти объявления на странице.");
+  }
+
+  if (save) {
+    saveListingsWithSnapshots(mergeImportedListings(readListings(), listings));
+  }
+
+  job.result = {
+    ok: true,
+    source: "kolesa.kz",
+    sourceUrl,
+    limit,
+    count: listings.length,
+    pagesLoaded: result.pagesLoaded,
+    activeCount: listings.filter(item => normalizeActualityStatus(item.actuality_status) === "active").length
+  };
+}
+
+async function runCollectSnapshotsJob(job) {
+  const urls = Array.isArray(job.payload?.urls)
+    ? job.payload.urls.map(value => String(value || "").trim()).filter(Boolean)
+    : [];
+  const maxItems = clampImportLimit(job.payload?.limit || urls.length || 50);
+  const concurrency = Math.min(
+    Math.max(Number(job.payload?.concurrency) || LOW_LOAD_SETTINGS.collectConcurrency, 1),
+    LOW_LOAD_SETTINGS.collectMaxConcurrency
+  );
+  const listings = readListings();
+  const urlSet = urls.length ? new Set(urls) : null;
+  const targets = listings
+    .filter(item => item.source === "kolesa.kz" && (!urlSet || urlSet.has(item.url)))
+    .slice(0, maxItems);
+
+  if (!targets.length) {
+    throw new Error("Нет объявлений Kolesa для сбора истории.");
+  }
+
+  const updatedByUrl = new Map();
+  let checked = 0;
+  let failed = 0;
+
+  job.total = targets.length;
+  job.progress = 0;
+  job.message = "Готовим сбор истории";
+
+  for (let index = 0; index < targets.length; index += concurrency) {
+    const batch = targets.slice(index, index + concurrency);
+    const results = await Promise.all(batch.map(async item => {
+      try {
+        const snapshot = await fetchKolesaListingSnapshot(item.url);
+        const checkedAt = snapshot.last_checked_at || new Date().toISOString();
+        return {
+          ok: true,
+          url: item.url,
+          item: applyKolesaSnapshotToListing(item, snapshot, { checkedAt })
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          url: item.url
+        };
+      }
+    }));
+
+    results.forEach(result => {
+      if (result.ok && result.item) {
+        updatedByUrl.set(result.url, result.item);
+        checked += 1;
+      } else {
+        failed += 1;
+      }
+    });
+
+    job.progress = Math.min(targets.length, checked + failed);
+    job.message = `Собираю историю ${job.progress}/${targets.length}`;
+
+    if (index + concurrency < targets.length) {
+      await waitRandom(LOW_LOAD_SETTINGS.detailDelayMinMs, LOW_LOAD_SETTINGS.detailDelayMaxMs);
+    }
+  }
+
+  const nextListings = listings.map(item => updatedByUrl.get(item.url) || item);
+  saveListingsWithSnapshots(nextListings);
+  job.result = {
+    ok: true,
+    checked,
+    failed,
+    requested: targets.length
   };
 }
 
@@ -2296,7 +2628,76 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (pathname === "/api/health" && request.method === "GET") {
-    sendJson(response, 200, { ok: true, port: PORT });
+    sendJson(response, 200, {
+      ok: true,
+      port: PORT,
+      activeJobId: activeJobId || null,
+      queuedJobs: jobQueue.length,
+      lowLoad: {
+        detailCacheTtlMs: LOW_LOAD_SETTINGS.detailCacheTtlMs,
+        pageCacheTtlMs: LOW_LOAD_SETTINGS.pageCacheTtlMs,
+        previewCacheTtlMs: LOW_LOAD_SETTINGS.previewCacheTtlMs,
+        collectConcurrency: LOW_LOAD_SETTINGS.collectConcurrency,
+        enrichConcurrency: LOW_LOAD_SETTINGS.enrichConcurrency
+      }
+    });
+    return;
+  }
+
+  if (pathname === "/api/jobs/import/kolesa" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const sourceUrl = String(payload.url || "").trim();
+      const limit = clampImportLimit(payload.limit);
+      if (!sourceUrl) {
+        sendJson(response, 400, { error: "Нужна ссылка на поиск или список объявлений Kolesa." });
+        return;
+      }
+
+      const job = createJob("kolesa-import", {
+        url: sourceUrl,
+        limit,
+        save: payload.save !== false
+      });
+      sendJson(response, 202, { ok: true, job });
+    } catch (error) {
+      sendJson(response, 400, { error: "Не удалось поставить импорт в очередь.", detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname === "/api/jobs/collect-snapshots" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const urls = Array.isArray(payload.urls)
+        ? payload.urls.map(value => String(value || "").trim()).filter(Boolean)
+        : [];
+      const job = createJob("collect-snapshots", {
+        urls,
+        limit: clampImportLimit(payload.limit || urls.length || 50),
+        concurrency: Math.min(
+          Math.max(Number(payload.concurrency) || LOW_LOAD_SETTINGS.collectConcurrency, 1),
+          LOW_LOAD_SETTINGS.collectMaxConcurrency
+        )
+      });
+      sendJson(response, 202, { ok: true, job });
+    } catch (error) {
+      sendJson(response, 400, { error: "Не удалось поставить сбор истории в очередь.", detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname.startsWith("/api/jobs/") && request.method === "GET") {
+    const jobId = pathname.split("/").pop();
+    const job = getJobSnapshot(jobId);
+    if (!job) {
+      sendJson(response, 404, { error: "Задача не найдена." });
+      return;
+    }
+    sendJson(response, 200, {
+      ok: true,
+      job
+    });
     return;
   }
 

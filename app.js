@@ -1482,6 +1482,36 @@ function wait(ms) {
   return new Promise(resolve => window.setTimeout(resolve, ms));
 }
 
+async function waitForServerJob(jobId, { onProgress } = {}) {
+  const normalizedJobId = String(jobId || "").trim();
+  if (!normalizedJobId) {
+    throw new Error("Не удалось запустить задачу.");
+  }
+
+  while (true) {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(normalizedJobId)}`);
+    const payload = await response.json();
+    if (!response.ok || !payload.job) {
+      throw new Error(payload.error || "Не удалось получить статус задачи.");
+    }
+
+    const job = payload.job;
+    if (typeof onProgress === "function") {
+      onProgress(job);
+    }
+
+    if (job.status === "completed") {
+      return job;
+    }
+
+    if (job.status === "failed") {
+      throw new Error(job.error || "Задача завершилась с ошибкой.");
+    }
+
+    await wait(1500);
+  }
+}
+
 function setImportBusy(isBusy) {
   elements.importKolesaBtn.disabled = isBusy;
   elements.importAktauBtn.disabled = isBusy;
@@ -3391,11 +3421,11 @@ async function collectHistoryForRenderedListings() {
   }
 
   elements.collectHistoryBtn.disabled = true;
-  elements.collectHistoryBtn.textContent = "Собираю...";
-  setStatus(`Источник: собираем историю по ${targets.length} объявлениям...`);
+  elements.collectHistoryBtn.textContent = "В очереди...";
+  setStatus(`Источник: ставим сбор истории в очередь для ${targets.length} объявлений...`);
 
   try {
-    const response = await fetch("/api/listings/collect-snapshots", {
+    const response = await fetch("/api/jobs/collect-snapshots", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -3403,7 +3433,7 @@ async function collectHistoryForRenderedListings() {
       body: JSON.stringify({
         urls: targets.map(item => item.url),
         limit: targets.length,
-        concurrency: 3
+        concurrency: 1
       })
     });
     const payload = await response.json();
@@ -3411,22 +3441,29 @@ async function collectHistoryForRenderedListings() {
       throw new Error(payload.error || "Collect history failed");
     }
 
-    const rows = Array.isArray(payload.items) ? payload.items : [];
-    if (rows.length) {
-      state.listings = normalizeRows(rows);
-      state.renderedListings = getFilteredListings();
-      state.listingSnapshots = {};
-      populateCities();
-      render();
-      if (state.selectedListingId && !elements.detailModal.hidden) {
-        const selected = getListingById(state.selectedListingId);
-        if (selected) {
-          void loadListingSnapshots(selected, { force: true });
-        }
+    const completedJob = await waitForServerJob(payload.job?.id, {
+      onProgress: job => {
+        const progressText = job.total > 0 ? `${job.progress || 0}/${job.total}` : "в очереди";
+        elements.collectHistoryBtn.textContent = job.status === "queued"
+          ? "В очереди..."
+          : `История ${progressText}`;
+        setStatus(`Источник: ${job.message || "идет сбор истории"}${job.status === "queued" ? "" : ` (${progressText})`}`);
+      }
+    });
+
+    await loadListingsFromServer();
+    state.renderedListings = getFilteredListings();
+    state.listingSnapshots = {};
+    populateCities();
+    render();
+    if (state.selectedListingId && !elements.detailModal.hidden) {
+      const selected = getListingById(state.selectedListingId);
+      if (selected) {
+        void loadListingSnapshots(selected, { force: true });
       }
     }
 
-    setStatus(`Источник: история собрана, обновлено ${payload.checked || 0}, ошибок ${payload.failed || 0}.`);
+    setStatus(`Источник: история собрана, обновлено ${completedJob.result?.checked || 0}, ошибок ${completedJob.result?.failed || 0}.`);
   } catch (error) {
     window.alert(error.message || "Не удалось собрать историю.");
     setStatus("Источник: ошибка сбора истории");
@@ -4312,10 +4349,10 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
   }
 
   setImportBusy(true);
-  setStatus(`Источник: импорт с Kolesa, цель ${limit} объявлений...`);
+  setStatus(`Источник: ставим импорт в очередь, цель ${limit} объявлений...`);
 
   try {
-    const response = await fetch("/api/import/kolesa", {
+    const response = await fetch("/api/jobs/import/kolesa", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -4328,7 +4365,17 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
       throw new Error(payload.error || "Import failed");
     }
 
-    state.listings = normalizeRows(payload.items || []);
+    const completedJob = await waitForServerJob(payload.job?.id, {
+      onProgress: job => {
+        const progressText = job.total > 0 ? `${job.progress || 0}/${job.total}` : "в очереди";
+        elements.importKolesaBtn.textContent = job.status === "queued"
+          ? "В очереди..."
+          : `Импорт ${progressText}`;
+        setStatus(`Источник: ${job.message || "идет мягкий импорт"}${job.status === "queued" ? "" : ` (${progressText})`}`);
+      }
+    });
+
+    await loadListingsFromServer();
     state.compareIds = [];
     state.compareWinnerId = null;
     pruneUserStateToCurrentListings();
@@ -4338,21 +4385,26 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
     if (isAuthenticated()) {
       void saveAppState();
     }
-    const pagesLoaded = Number(payload.pagesLoaded) || 1;
     state.importPreview = {
       status: "ready",
       url: trimmedUrl,
-      availableCount: Number(payload.availableCount || payload.count || state.importPreview.availableCount || 0),
-      hasMore: Boolean(payload.hasMore),
+      availableCount: Number(
+        completedJob.result?.count
+        || state.importPreview.availableCount
+        || 0
+      ),
+      hasMore: state.importPreview.hasMore && Number(completedJob.result?.count || 0) >= 1000,
       note: ""
     };
     renderImportPreview();
-    setStatus(`Источник: Kolesa, активных ${getActualListingsCount()} из ${state.listings.length}, ${pagesLoaded} стр.`);
+    const pagesLoaded = Number(completedJob.result?.pagesLoaded) || 1;
+    setStatus(`Источник: Kolesa low-load, активных ${getActualListingsCount()} из ${state.listings.length}, ${pagesLoaded} стр.`);
   } catch (error) {
     window.alert(error.message || "Не удалось импортировать данные.");
     setStatus("Источник: ошибка импорта");
   } finally {
     setImportBusy(false);
+    elements.importKolesaBtn.textContent = "Импортировать";
   }
 }
 
