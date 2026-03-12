@@ -121,6 +121,28 @@
       ]
     },
     {
+      "catalog_id": "volkswagen-caddy-iii",
+      "brand": "Volkswagen",
+      "aliases": [
+        "volkswagen caddy",
+        "caddy iii",
+        "vw caddy",
+        "caddy 3"
+      ]
+    },
+    {
+      "catalog_id": "mercedes-s-500-w220",
+      "brand": "Mercedes-Benz",
+      "aliases": [
+        "mercedes s 500",
+        "mercedes-benz s 500",
+        "s500",
+        "s 500",
+        "s class w220",
+        "w220"
+      ]
+    },
+    {
       "catalog_id": "toyota-windom-xv20",
       "brand": "Toyota",
       "aliases": [

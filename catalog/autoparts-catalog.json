@@ -386,6 +386,78 @@
       "disc_source_url": ""
     },
     {
+      "id": "volkswagen-caddy-iii",
+      "model_label": "Volkswagen Caddy III",
+      "brand": "Volkswagen",
+      "brand_key": "volkswagen",
+      "primary_model": "Caddy",
+      "model_aliases": [
+        "Caddy",
+        "Caddy III"
+      ],
+      "lookup_keys": [
+        "caddy",
+        "caddy iii",
+        "volkswagen caddy",
+        "volkswagen caddy iii"
+      ],
+      "segment": "LCV",
+      "years": "2004-2015",
+      "front_pads_price_kzt": 15000,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": null,
+      "front_disc_stock": null,
+      "service_basket_kzt": null,
+      "avg_stock": 1,
+      "price_score": null,
+      "cheapness_score": null,
+      "priority": 7,
+      "maintenance_band": "partial",
+      "maintenance_label": "Частичные данные",
+      "comment": "По Caddy III подтверждены передние колодки по Казахстану; по дискам и полной сервисной корзине данные ещё добираем.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://col.kz/p117296144-kolodki-perednie-passat.html",
+      "disc_source_url": ""
+    },
+    {
+      "id": "mercedes-s-500-w220",
+      "model_label": "Mercedes-Benz S 500 W220",
+      "brand": "Mercedes-Benz",
+      "brand_key": "mercedes benz",
+      "primary_model": "S 500",
+      "model_aliases": [
+        "S 500",
+        "S500",
+        "S Class W220"
+      ],
+      "lookup_keys": [
+        "s 500",
+        "s500",
+        "w220",
+        "s class w220",
+        "mercedes s 500",
+        "mercedes benz s 500",
+        "mercedes-benz s 500"
+      ],
+      "segment": "F-седан",
+      "years": "1998-2005",
+      "front_pads_price_kzt": 39900,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": null,
+      "front_disc_stock": null,
+      "service_basket_kzt": null,
+      "avg_stock": 1,
+      "price_score": null,
+      "cheapness_score": null,
+      "priority": 9,
+      "maintenance_band": "partial",
+      "maintenance_label": "Частичные данные",
+      "comment": "Для W220 подтверждена цена передних колодок в Казахстане; уже видно, что базовое тормозное обслуживание у S 500 заметно дороже массовых моделей.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://marketstar.kz/product/tormoznye-kolodki-perednie-s-class-w220-a0054209520-kupit-almaty/",
+      "disc_source_url": ""
+    },
+    {
       "id": "toyota-windom-xv20",
       "model_label": "Toyota Windom XV20",
       "brand": "Toyota",
@@ -772,6 +844,71 @@
       "delivery_days": "",
       "warranty_days": null,
       "notes": "Schema InStock, точный остаток на витрине не указан"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "Колесница",
+      "source_url": "https://col.kz/p117296144-kolodki-perednie-passat.html",
+      "model_label": "Volkswagen Caddy III",
+      "brand": "Volkswagen",
+      "brand_key": "volkswagen",
+      "primary_model": "Caddy",
+      "model_aliases": [
+        "Caddy",
+        "Caddy III"
+      ],
+      "lookup_keys": [
+        "caddy",
+        "caddy iii",
+        "volkswagen caddy"
+      ],
+      "generation": "III",
+      "years": "2004-2015",
+      "engine": "",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "WXQP",
+      "sku": "1K0698151",
+      "price_kzt": 15000,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": 14,
+      "notes": "Passat B6 05-- / Caddy III 04-- / Golf VI 08--"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "Marketstar",
+      "source_url": "https://marketstar.kz/product/tormoznye-kolodki-perednie-s-class-w220-a0054209520-kupit-almaty/",
+      "model_label": "Mercedes-Benz S 500 W220",
+      "brand": "Mercedes-Benz",
+      "brand_key": "mercedes benz",
+      "primary_model": "S 500",
+      "model_aliases": [
+        "S 500",
+        "S500",
+        "S Class W220"
+      ],
+      "lookup_keys": [
+        "s 500",
+        "s500",
+        "w220",
+        "s class w220",
+        "mercedes s 500"
+      ],
+      "generation": "W220",
+      "years": "1998-2005",
+      "engine": "5.0",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "Mercedes-Benz",
+      "sku": "A0054209520",
+      "price_kzt": 39900,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": null,
+      "notes": "Применяемость: S Class W220"
     },
     {
       "check_date": "2026-03-12",
