@@ -114,7 +114,7 @@
           </div>
           <label class="field import-field">
             <span>Сколько импортировать</span>
-            <input id="import-limit-select" type="number" min="1" max="300" step="1" value="100" placeholder="Например: 80">
+            <input id="import-limit-select" type="number" min="1" max="1000" step="1" value="100" placeholder="Например: 300 или 1000">
           </label>
           <div class="import-actions">
             <button id="import-kolesa-btn" class="primary-btn" type="button">Импортировать</button>
@@ -139,14 +139,14 @@
           </div>
         </div>
 
-        <div class="controls-section">
+        <div class="controls-section controls-section--filters">
           <div class="panel-head">
             <h2>Фильтры</h2>
             <button id="reset-btn" class="ghost-btn" type="button">Сбросить</button>
           </div>
 
           <div class="controls-groups">
-            <div class="control-group">
+            <div class="control-group control-group--account">
               <div class="control-group-head">
                 <h3>Аккаунт и профиль</h3>
                 <p>Сохраняй сравнения, избранное и свои сценарии.</p>
@@ -187,7 +187,7 @@
               </div>
             </div>
 
-            <div class="control-group">
+            <div class="control-group control-group--quick">
               <div class="control-group-head">
                 <h3>Быстрый отбор</h3>
                 <p>Сузь рынок по цене, году, городу и основным параметрам.</p>
@@ -274,7 +274,7 @@
               </label>
             </div>
 
-            <div class="control-group">
+            <div class="control-group control-group--details">
               <div class="control-group-head">
                 <h3>Характеристики</h3>
                 <p>Фильтруй по технике, состоянию и комплектации.</p>
@@ -343,7 +343,7 @@
               </label>
             </div>
 
-            <div class="control-group">
+            <div class="control-group control-group--risk">
               <div class="control-group-head">
                 <h3>Деньги и риск</h3>
                 <p>Оцени кредит, продавца и стоимость обслуживания.</p>

@@ -173,10 +173,22 @@ h1 {
   align-self: start;
   display: grid;
   gap: 16px;
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding-right: 4px;
   padding: 0;
   background: transparent;
   border: 0;
   box-shadow: none;
+}
+
+.controls-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.controls-panel::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 999px;
 }
 
 .controls-section {
@@ -185,6 +197,10 @@ h1 {
   border-radius: 18px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.controls-section--filters {
+  order: -2;
 }
 
 .controls-section--import {
@@ -201,6 +217,15 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--surface-soft);
+}
+
+.control-group--quick {
+  border-color: #d7dde5;
+  background: #f7f8fa;
+}
+
+.control-group--account {
+  order: 10;
 }
 
 .control-group-head {

@@ -1878,7 +1878,7 @@ function clampImportLimit(value) {
   if (!Number.isFinite(parsed)) {
     return 100;
   }
-  return Math.min(Math.max(Math.round(parsed), 1), 300);
+  return Math.min(Math.max(Math.round(parsed), 1), 1000);
 }
 
 function buildKolesaPageUrl(sourceUrl, page) {
@@ -2127,7 +2127,7 @@ async function fetchKolesaListings(sourceUrl, limit = 100) {
   };
 }
 
-async function fetchKolesaListingsPreview(sourceUrl, limit = 300) {
+async function fetchKolesaListingsPreview(sourceUrl, limit = 1000) {
   const safeLimit = clampImportLimit(limit);
   const probeLimit = safeLimit + 1;
   const maxPages = Math.ceil(probeLimit / 20) + 2;
@@ -2534,7 +2534,7 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      const preview = await fetchKolesaListingsPreview(sourceUrl, 300);
+      const preview = await fetchKolesaListingsPreview(sourceUrl, 1000);
       sendJson(response, 200, {
         ok: true,
         source: "kolesa.kz",

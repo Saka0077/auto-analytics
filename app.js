@@ -1487,7 +1487,7 @@ function getImportLimit() {
   const value = Number(elements.importLimitSelect.value);
   const previewCap = state.importPreview.availableCount && !state.importPreview.hasMore
     ? state.importPreview.availableCount
-    : 300;
+    : 1000;
   if (!Number.isFinite(value) || value <= 0) {
     return 100;
   }
@@ -1544,7 +1544,7 @@ function markImportPreviewDirty() {
     hasMore: false,
     note: ""
   };
-  elements.importLimitSelect.max = "300";
+  elements.importLimitSelect.max = "1000";
   renderImportPreview();
 }
 
@@ -1603,7 +1603,7 @@ async function loadImportPreview(url) {
       }
       elements.importLimitSelect.max = String(maxAvailable);
     } else {
-      elements.importLimitSelect.max = "300";
+      elements.importLimitSelect.max = "1000";
     }
 
     renderImportPreview();
@@ -1619,7 +1619,7 @@ async function loadImportPreview(url) {
       hasMore: false,
       note: error.message || "Не удалось получить количество объявлений."
     };
-    elements.importLimitSelect.max = "300";
+    elements.importLimitSelect.max = "1000";
     renderImportPreview();
   }
 }
