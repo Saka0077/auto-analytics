@@ -230,6 +230,17 @@
           </label>
 
           <label class="field">
+            <span>Обслуживание</span>
+            <select id="maintenance-filter-select">
+              <option value="">Любое</option>
+              <option value="known">Только с базой запчастей</option>
+              <option value="cheap">Дешёвые запчасти</option>
+              <option value="medium">Средний ремонт</option>
+              <option value="expensive">Дорогой ремонт</option>
+            </select>
+          </label>
+
+          <label class="field">
             <span>Опция</span>
             <input id="option-search-input" type="text" placeholder="кожа, люк, камера, круиз...">
           </label>
@@ -240,6 +251,7 @@
               <option id="sort-score-option" value="score">Лучший для покупки</option>
               <option value="credit-desc">Лучшие в кредит</option>
               <option value="liquidity-desc">Ликвидные</option>
+              <option value="maintenance-desc">Дешевле в обслуживании</option>
               <option value="fresh-desc">Сначала свежие</option>
               <option value="risk-asc">Меньше риск</option>
               <option value="price-asc">Цена по возрастанию</option>

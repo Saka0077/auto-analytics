@@ -189,6 +189,7 @@ const elements = {
   transmissionFilterSelect: document.getElementById("transmission-filter-select"),
   bodyFilterSelect: document.getElementById("body-filter-select"),
   sellerFilterSelect: document.getElementById("seller-filter-select"),
+  maintenanceFilterSelect: document.getElementById("maintenance-filter-select"),
   optionSearchInput: document.getElementById("option-search-input"),
   sortSelect: document.getElementById("sort-select"),
   showInactiveToggle: document.getElementById("show-inactive-toggle"),
@@ -1752,6 +1753,7 @@ function getFilteredListings() {
   const steering = elements.steeringFilterSelect.value;
   const color = elements.colorFilterSelect.value;
   const seller = elements.sellerFilterSelect.value;
+  const maintenance = elements.maintenanceFilterSelect.value;
   const optionSearch = elements.optionSearchInput.value.trim().toLowerCase();
   const sort = elements.sortSelect.value;
   const showInactive = elements.showInactiveToggle.checked;
@@ -1781,8 +1783,13 @@ function getFilteredListings() {
     const steeringMatch = !steering || item.steeringSide === steering;
     const colorMatch = !color || item.color === color;
     const sellerMatch = !seller || getSellerFilterType(item) === seller;
+    const maintenanceMatch =
+      !maintenance ||
+      (maintenance === "known"
+        ? Boolean(item.autopartsProfile)
+        : item.autopartsProfile?.maintenanceBand === maintenance);
     const optionMatch = !optionSearch || item.options.some(option => option.toLowerCase().includes(optionSearch));
-    return actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && transmissionMatch && bodyTypeMatch && driveMatch && steeringMatch && colorMatch && sellerMatch && optionMatch;
+    return actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && transmissionMatch && bodyTypeMatch && driveMatch && steeringMatch && colorMatch && sellerMatch && maintenanceMatch && optionMatch;
   });
 
   switch (sort) {
@@ -1791,6 +1798,9 @@ function getFilteredListings() {
       break;
     case "liquidity-desc":
       results.sort((a, b) => b.liquidityScore - a.liquidityScore || getPrimaryScore(b) - getPrimaryScore(a));
+      break;
+    case "maintenance-desc":
+      results.sort((a, b) => (b.maintenanceScore ?? 0) - (a.maintenanceScore ?? 0) || getPrimaryScore(b) - getPrimaryScore(a) || a.price - b.price);
       break;
     case "fresh-desc":
       results.sort((a, b) => b.freshnessScore - a.freshnessScore || getPrimaryScore(b) - getPrimaryScore(a));
@@ -3370,6 +3380,7 @@ function resetFilters() {
   elements.steeringFilterSelect.value = "";
   elements.colorFilterSelect.value = "";
   elements.sellerFilterSelect.value = "";
+  elements.maintenanceFilterSelect.value = "";
   elements.optionSearchInput.value = "";
   elements.sortSelect.value = "score";
   elements.showInactiveToggle.checked = false;
@@ -3537,6 +3548,7 @@ async function handleFileUpload(event) {
   elements.steeringFilterSelect,
   elements.colorFilterSelect,
   elements.sellerFilterSelect,
+  elements.maintenanceFilterSelect,
   elements.optionSearchInput,
   elements.sortSelect,
   elements.showInactiveToggle
