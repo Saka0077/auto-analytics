@@ -350,6 +350,41 @@
       "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
       "pads_source_url": "https://oil-market.kz/p100601179-kashiyama-d2316-kolodki.html",
       "disc_source_url": "https://col.kz/p113678946-disk-tormoznoj-per.html"
+    },
+    {
+      "id": "toyota-windom-xv20",
+      "model_label": "Toyota Windom XV20",
+      "brand": "Toyota",
+      "brand_key": "toyota",
+      "primary_model": "Windom",
+      "model_aliases": [
+        "Windom",
+        "Windom XV20",
+        "Toyota Windom"
+      ],
+      "lookup_keys": [
+        "windom",
+        "windom xv20",
+        "toyota windom",
+        "toyota windom xv20"
+      ],
+      "segment": "E-седан",
+      "years": "1996-2001",
+      "front_pads_price_kzt": 18000,
+      "front_pads_stock": 1,
+      "front_disc_price_kzt": 13000,
+      "front_disc_stock": 1,
+      "service_basket_kzt": 31000,
+      "avg_stock": 1,
+      "price_score": 71,
+      "cheapness_score": 67,
+      "priority": 8,
+      "maintenance_band": "medium",
+      "maintenance_label": "Средние запчасти",
+      "comment": "Для старого Windom тормозная корзина уже не бюджетная, но всё ещё дешевле крупных SUV и премиума.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://oil-market.kz/p102208334-akebono-japan-an670k.html",
+      "disc_source_url": "https://speedrive.kz/p111997180-tormoznoj-disk-toyota.html"
     }
   ],
   "snapshot_conclusions": [
@@ -671,6 +706,68 @@
       "delivery_days": "in stock",
       "warranty_days": 14,
       "notes": "RX 350 09-15"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "Oil-market",
+      "source_url": "https://oil-market.kz/p102208334-akebono-japan-an670k.html",
+      "model_label": "Toyota Windom XV20",
+      "brand": "Toyota",
+      "brand_key": "toyota",
+      "primary_model": "Windom",
+      "model_aliases": [
+        "Windom",
+        "Windom XV20"
+      ],
+      "lookup_keys": [
+        "windom",
+        "windom xv20",
+        "toyota windom"
+      ],
+      "generation": "XV20",
+      "years": "1996-2001",
+      "engine": "3.0",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "Akebono",
+      "sku": "AN670K",
+      "price_kzt": 18000,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": 14,
+      "notes": "Windom >01 / Camry 30"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "Speedrive",
+      "source_url": "https://speedrive.kz/p111997180-tormoznoj-disk-toyota.html",
+      "model_label": "Toyota Windom XV20",
+      "brand": "Toyota",
+      "brand_key": "toyota",
+      "primary_model": "Windom",
+      "model_aliases": [
+        "Windom",
+        "Windom XV20"
+      ],
+      "lookup_keys": [
+        "windom",
+        "windom xv20",
+        "toyota windom"
+      ],
+      "generation": "XV20",
+      "years": "1996-2001",
+      "engine": "3.0",
+      "part_group": "Brakes",
+      "part_name": "Front disc",
+      "part_brand": "Okami",
+      "sku": "ATS20235",
+      "price_kzt": 13000,
+      "stock_qty": 1,
+      "delivery_days": "in stock",
+      "warranty_days": 14,
+      "notes": "Windom XV20 / Camry XV20"
     }
   ]
 }

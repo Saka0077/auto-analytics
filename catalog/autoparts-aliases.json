@@ -107,6 +107,15 @@
         "rx350 al10",
         "rx 350 awd"
       ]
+    },
+    {
+      "catalog_id": "toyota-windom-xv20",
+      "brand": "Toyota",
+      "aliases": [
+        "toyota windom",
+        "windom xv20",
+        "toyota windom xv20"
+      ]
     }
   ]
 }
