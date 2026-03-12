@@ -138,6 +138,7 @@ const state = {
     direction: "asc"
   },
   selectedListingId: null,
+  modalGalleryIndex: 0,
   compareIds: [],
   compareWinnerId: null,
   favoriteIds: [],
@@ -146,7 +147,8 @@ const state = {
   profiles: [{ id: "default", name: "Основной" }],
   authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
   currentUser: null,
-  listingInsights: {}
+  listingInsights: {},
+  listingGalleries: {}
 };
 
 const elements = {
@@ -282,7 +284,7 @@ function getTableSortValue(item, key) {
     case "year":
       return item.year;
     case "publicationDate":
-      return item.publicationDate || item.lastUpdate || item.lastCheckedAt || "";
+      return getListingDateMeta(item).value;
     case "mileage":
       return item.mileage;
     case "owners":
@@ -395,6 +397,24 @@ function booleanValue(value) {
   return value === true || value === "true" || value === 1 || value === "1";
 }
 
+function normalizePhotoGallery(value) {
+  const items = Array.isArray(value) ? value : [value];
+  const unique = [];
+  const seen = new Set();
+
+  items.forEach(item => {
+    const normalized = String(item || "").trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    unique.push(normalized);
+  });
+
+  return unique.slice(0, 30);
+}
+
 function normalizeVin(value) {
   return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -416,6 +436,10 @@ function normalizeRepairState(value) {
 }
 
 function normalizeRow(item) {
+  const photoGallery = normalizePhotoGallery(item.photo_gallery ?? item.photoGallery ?? []);
+  const image = String(item.image || photoGallery[0] || "").trim();
+  const normalizedGallery = photoGallery.length ? photoGallery : (image ? [image] : []);
+
   return {
     id: item.id || createListingId(item),
     title: item.title || item.name || "Без названия",
@@ -425,7 +449,8 @@ function normalizeRow(item) {
     owners: optionalPositiveNumber(item.owners),
     city: item.city || "",
     url: item.url || "",
-    image: item.image || "",
+    image,
+    photoGallery: normalizedGallery,
     description: item.description || "",
     source: item.source || "",
     brand: item.brand || "",
@@ -449,7 +474,7 @@ function normalizeRow(item) {
     lastCheckedAt: item.last_checked_at || item.lastCheckedAt || "",
     lastStatusChangeAt: item.last_status_change_at || item.lastStatusChangeAt || "",
     actualityStatus: normalizeActualityStatus(item.actuality_status || item.actualityStatus),
-    photoCount: optionalPositiveNumber(item.photo_count ?? item.photoCount),
+    photoCount: optionalPositiveNumber(item.photo_count ?? item.photoCount) || optionalPositiveNumber(normalizedGallery.length),
     phoneCount: optionalPositiveNumber(item.phone_count ?? item.phoneCount),
     phonePrefix: item.phone_prefix || item.phonePrefix || "",
     creditAvailable: booleanValue(item.credit_available ?? item.creditAvailable),
@@ -480,6 +505,10 @@ function normalizeRows(rows) {
 
 function formatPrice(value) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(value)) + " ₸";
+}
+
+function formatInteger(value) {
+  return new Intl.NumberFormat("ru-RU").format(Math.round(Number(value || 0)));
 }
 
 function formatMileage(value) {
@@ -561,8 +590,34 @@ function formatTime(value) {
   }).format(date);
 }
 
+function getListingDateMeta(item) {
+  const candidates = [
+    { value: item?.publicationDate, shortLabel: "Публ.", fullLabel: "Публикация" },
+    { value: item?.lastUpdate, shortLabel: "Обновл.", fullLabel: "Обновлено" },
+    { value: item?.firstSeenAt || item?.lastSeenAt, shortLabel: "Замеч.", fullLabel: "Замечено" },
+    { value: item?.lastCheckedAt, shortLabel: "Провер.", fullLabel: "Проверено" }
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate.value) {
+      continue;
+    }
+
+    const date = new Date(candidate.value);
+    if (!Number.isNaN(date.getTime())) {
+      return candidate;
+    }
+  }
+
+  return {
+    value: "",
+    shortLabel: "",
+    fullLabel: ""
+  };
+}
+
 function formatRelativeListingDate(item) {
-  const rawValue = item?.lastUpdate || item?.publicationDate || item?.lastCheckedAt || "";
+  const rawValue = getListingDateMeta(item).value;
   if (!rawValue) {
     return "-";
   }
@@ -591,6 +646,24 @@ function formatRelativeListingDate(item) {
   }
 
   return formatShortDate(rawValue);
+}
+
+function formatListingDateBadge(item) {
+  const meta = getListingDateMeta(item);
+  if (!meta.value) {
+    return "-";
+  }
+
+  return `${meta.shortLabel} ${formatRelativeListingDate(item)}`;
+}
+
+function formatListingDateDetailed(item) {
+  const meta = getListingDateMeta(item);
+  if (!meta.value) {
+    return "-";
+  }
+
+  return `${meta.fullLabel}: ${formatDateTime(meta.value)}`;
 }
 
 function formatDateTime(value) {
@@ -630,6 +703,21 @@ function isListingActual(item) {
 
 function isKolesaListing(item) {
   return Boolean(item?.url && item?.source === "kolesa.kz" && item.url.includes("kolesa.kz"));
+}
+
+function toProxiedImageUrl(imageUrl) {
+  return imageUrl ? `/api/image?url=${encodeURIComponent(imageUrl)}` : "";
+}
+
+function getListingGalleryState(item) {
+  const cached = item?.url ? state.listingGalleries[item.url] : null;
+  const cachedImages = normalizePhotoGallery(cached?.images || []);
+  const itemImages = normalizePhotoGallery(item?.photoGallery || (item?.image ? [item.image] : []));
+
+  return {
+    status: cached?.status || "",
+    images: cachedImages.length ? cachedImages : itemImages
+  };
 }
 
 function shouldAutoCheckActuality(item) {
@@ -1065,7 +1153,7 @@ function scoreListings(listings) {
   const monthlyPayments = listings.map(item => item.creditMonthlyPayment).filter(item => item !== null && item !== undefined);
   const freshnessValues = listings
     .map(item => {
-      const age = daysSince(item.publicationDate || item.lastUpdate || item.lastCheckedAt);
+      const age = daysSince(getListingDateMeta(item).value);
       return age === null ? null : Math.min(age, 60);
     })
     .filter(item => item !== null && item !== undefined);
@@ -1094,7 +1182,7 @@ function scoreListings(listings) {
     const yearScore = normalize(item.year, bounds.yearMin, bounds.yearMax);
     const mileageScore = normalize(item.mileage, bounds.mileageMin, bounds.mileageMax, true);
     const ownersScore = normalize(item.owners, bounds.ownersMin, bounds.ownersMax, true);
-    const freshAge = daysSince(item.publicationDate || item.lastUpdate || item.lastCheckedAt);
+    const freshAge = daysSince(getListingDateMeta(item).value);
     const freshnessScore = normalize(freshAge === null ? null : Math.min(freshAge, 60), bounds.freshMin, bounds.freshMax, true);
     const photoScore = normalize(item.photoCount, bounds.photoMin, bounds.photoMax);
     const riskSafetyScore = normalize(item.riskScore, bounds.riskMin, bounds.riskMax, true);
@@ -1352,7 +1440,7 @@ function getFilteredListings() {
 }
 
 function renderStats(listings) {
-  elements.totalCount.textContent = String(listings.length);
+  elements.totalCount.textContent = formatInteger(listings.length);
 
   if (!listings.length) {
     elements.avgPrice.textContent = "-";
@@ -1407,7 +1495,7 @@ function getAllScoredListings() {
 
 function renderThumb(imageUrl, className = "thumb") {
   if (imageUrl) {
-    const proxied = `/api/image?url=${encodeURIComponent(imageUrl)}`;
+    const proxied = toProxiedImageUrl(imageUrl);
     return `<div class="${className}"><img src="${proxied}" alt="Фото авто" loading="lazy"></div>`;
   }
 
@@ -1453,7 +1541,7 @@ function renderTopLists(listings) {
         ${renderThumb(item.image, "thumb thumb--small")}
         <div>
           <div class="top-item-title">${escapeHtml(item.title)}</div>
-          <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)} · ${formatRelativeListingDate(item)}</div>
+          <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)} · ${escapeHtml(formatListingDateBadge(item))}</div>
           <div class="top-item-badges">${renderListingBadges(item)}</div>
         </div>
         <div class="top-item-value">${formatScore(item[valueKey])} ${valueLabel}</div>
@@ -1472,7 +1560,7 @@ function renderTopLists(listings) {
 function renderTable(listings) {
   renderTableSortHeaders();
   elements.resultsBody.innerHTML = "";
-  elements.resultsCount.textContent = `${listings.length} результатов`;
+  elements.resultsCount.textContent = `${formatInteger(listings.length)} результатов`;
 
   if (!listings.length) {
     const row = document.createElement("tr");
@@ -1494,7 +1582,7 @@ function renderTable(listings) {
       </td>
       <td>${formatPrice(item.price)}</td>
       <td>${item.year ?? "-"}</td>
-      <td>${formatRelativeListingDate(item)}</td>
+      <td>${escapeHtml(formatListingDateBadge(item))}</td>
       <td>${item.mileage ? formatMileage(item.mileage) : "-"}</td>
       <td>${item.owners ?? "-"}</td>
       <td><span class="score-badge">${formatScore(item.score)}</span></td>
@@ -1580,7 +1668,7 @@ function getBreakdownComment(label, value, item) {
   }
 
   if (label === "Свежесть") {
-    return (item.publicationDate || item.lastUpdate) ? `публикация ${formatRelativeListingDate(item)}` : "дата не указана";
+    return getListingDateMeta(item).value ? formatListingDateDetailed(item).toLowerCase() : "дата не указана";
   }
 
   if (label === "Риск") {
@@ -1607,7 +1695,7 @@ function renderListingFacts(item) {
     renderFact("Качество", formatScore(item.qualityScore)),
     renderFact("Выгода", formatScore(item.dealScore)),
     ...renderMarketFacts(item),
-    renderFact("Дата публикации", formatRelativeListingDate(item)),
+    renderFact("Дата объявления", formatListingDateDetailed(item)),
     renderFact("Год", item.year ?? "-"),
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
     renderFact("Владельцы", item.owners ?? "-"),
@@ -1635,6 +1723,45 @@ function renderListingFacts(item) {
   ].join("");
 }
 
+function renderListingBreakdown(item) {
+  const parts = item.scoreParts || {
+    price: 0.5,
+    quality: 0.5,
+    year: 0.5,
+    mileage: 0.5,
+    owners: 0.5,
+    market: 0.5,
+    freshness: 0.5,
+    risk: 0.5,
+    photos: 0.5,
+    seller: 0.5
+  };
+
+  elements.modalBreakdown.innerHTML = [
+    ["Качество", parts.quality],
+    ["Цена", parts.price],
+    ["Рынок", parts.market],
+    ["Год", parts.year],
+    ["Пробег", parts.mileage],
+    ["Владельцы", parts.owners],
+    ["Свежесть", parts.freshness],
+    ["Риск", parts.risk],
+    ["Фото", parts.photos],
+    ["Продавец", parts.seller]
+  ]
+    .map(([label, value]) => `
+      <div class="breakdown-item">
+        <div class="breakdown-meta">
+          <span>${escapeHtml(label)}</span>
+          <small>${escapeHtml(getBreakdownComment(label, Number(value), item))}</small>
+        </div>
+        <div class="breakdown-track"><div class="breakdown-fill" style="width:${Math.max(Number(value) * 100, 4)}%"></div></div>
+        <strong>${formatScorePercent(value)}</strong>
+      </div>
+    `)
+    .join("");
+}
+
 function applyListingInsight(listingId, insight) {
   const mergeInsight = item => {
     if (!item || item.id !== listingId) {
@@ -1655,9 +1782,43 @@ function applyListingInsight(listingId, insight) {
 
 function replaceListing(updatedItem) {
   const normalized = normalizeRow(updatedItem);
+  if (normalized.url && normalized.photoGallery.length) {
+    state.listingGalleries[normalized.url] = {
+      status: normalized.photoGallery.length > 1 ? "loaded" : (state.listingGalleries[normalized.url]?.status || ""),
+      images: normalized.photoGallery
+    };
+  }
   const replace = item => (item.id === normalized.id ? { ...item, ...normalized } : item);
   state.listings = state.listings.map(replace);
   state.renderedListings = state.renderedListings.map(replace);
+}
+
+function applyListingGallery(listingId, payload) {
+  const current = getListingById(listingId);
+  if (!current) {
+    return;
+  }
+
+  const images = normalizePhotoGallery(payload.images ?? payload.photoGallery ?? []);
+  const photoGallery = images.length ? images : current.photoGallery;
+  const patch = {
+    image: String(payload.image || photoGallery[0] || current.image || "").trim(),
+    photoGallery,
+    photoCount:
+      optionalPositiveNumber(payload.photoCount ?? payload.photo_count)
+      || optionalPositiveNumber(photoGallery.length)
+      || current.photoCount
+  };
+  const merge = item => (item.id === listingId ? { ...item, ...patch } : item);
+
+  state.listings = state.listings.map(merge);
+  state.renderedListings = state.renderedListings.map(merge);
+  if (current.url) {
+    state.listingGalleries[current.url] = {
+      status: "loaded",
+      images: photoGallery
+    };
+  }
 }
 
 function renderSignals(item) {
@@ -1732,6 +1893,121 @@ function updateVinUi(item) {
   elements.modalVinInput.value = item?.vin || "";
   elements.modalVinNoteInput.value = item?.vinNote || "";
   elements.modalVinStatus.textContent = renderVinStatusText(item || {});
+}
+
+function renderModalGallery(item) {
+  const galleryState = getListingGalleryState(item);
+  const images = galleryState.images;
+  if (!images.length) {
+    elements.modalMedia.innerHTML = `<div class="modal-media-empty">Фото не найдено</div>`;
+    return;
+  }
+
+  const currentIndex = Math.max(0, Math.min(state.modalGalleryIndex, images.length - 1));
+  const currentImage = images[currentIndex];
+  const proxiedImage = toProxiedImageUrl(currentImage);
+  const hasMultiple = images.length > 1;
+  const loadingNote = galleryState.status === "loading"
+    ? `<span class="modal-gallery-note">Загружаем все фото...</span>`
+    : galleryState.status === "error"
+      ? `<span class="modal-gallery-note">Не удалось загрузить остальные фото</span>`
+      : "";
+
+  state.modalGalleryIndex = currentIndex;
+  elements.modalMedia.innerHTML = `
+    <div class="modal-gallery">
+      <div class="modal-gallery-main">
+        ${hasMultiple ? '<button class="modal-gallery-nav modal-gallery-nav--prev" type="button" data-gallery-step="-1" aria-label="Предыдущее фото">‹</button>' : ""}
+        <a class="modal-gallery-link" href="${escapeHtml(proxiedImage)}" target="_blank" rel="noreferrer">
+          <img src="${escapeHtml(proxiedImage)}" alt="${escapeHtml(item.title)}" loading="eager">
+        </a>
+        ${hasMultiple ? '<button class="modal-gallery-nav modal-gallery-nav--next" type="button" data-gallery-step="1" aria-label="Следующее фото">›</button>' : ""}
+      </div>
+      <div class="modal-gallery-caption">
+        <div class="modal-gallery-meta">
+          <strong>${currentIndex + 1} / ${images.length}</strong>
+          ${loadingNote}
+        </div>
+        <a class="modal-gallery-open" href="${escapeHtml(proxiedImage)}" target="_blank" rel="noreferrer">Открыть фото</a>
+      </div>
+      ${hasMultiple ? `
+        <div class="modal-gallery-thumbs">
+          ${images.map((image, index) => `
+            <button
+              class="modal-gallery-thumb ${index === currentIndex ? "is-active" : ""}"
+              type="button"
+              data-gallery-index="${index}"
+              aria-label="Фото ${index + 1}"
+            >
+              <img src="${escapeHtml(toProxiedImageUrl(image))}" alt="${escapeHtml(`${item.title} ${index + 1}`)}" loading="lazy">
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function stepModalGallery(direction) {
+  const item = getListingById(state.selectedListingId);
+  if (!item) {
+    return;
+  }
+
+  const { images } = getListingGalleryState(item);
+  if (images.length <= 1) {
+    return;
+  }
+
+  state.modalGalleryIndex = (state.modalGalleryIndex + direction + images.length) % images.length;
+  renderModalGallery(item);
+}
+
+async function loadListingGallery(item) {
+  if (!item?.url || !isKolesaListing(item) || !item.url.includes("/a/show/")) {
+    return;
+  }
+
+  const cached = state.listingGalleries[item.url];
+  const fallbackImages = normalizePhotoGallery(item.photoGallery || (item.image ? [item.image] : []));
+  if (cached?.status === "loading" || cached?.status === "loaded") {
+    return;
+  }
+
+  state.listingGalleries[item.url] = {
+    status: "loading",
+    images: fallbackImages
+  };
+  if (state.selectedListingId === item.id) {
+    renderModalGallery(getListingById(item.id) || item);
+  }
+
+  try {
+    const response = await fetch(`/api/listings/gallery?url=${encodeURIComponent(item.url)}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Gallery failed");
+    }
+
+    applyListingGallery(item.id, {
+      image: payload.image,
+      images: payload.images || [],
+      photoCount: payload.photoCount
+    });
+    if (state.selectedListingId === item.id) {
+      const updated = getListingById(item.id) || item;
+      renderModalGallery(updated);
+      renderListingFacts(updated);
+    }
+  } catch (error) {
+    state.listingGalleries[item.url] = {
+      status: "error",
+      images: fallbackImages
+    };
+    if (state.selectedListingId === item.id) {
+      renderModalGallery(getListingById(item.id) || item);
+    }
+  }
 }
 
 function getActualListingsCount(listings = state.listings) {
@@ -1823,6 +2099,7 @@ async function checkListingActuality(listingId, { silent = false } = {}) {
       elements.modalTitle.textContent = updated.title;
       elements.modalPrice.textContent = formatPrice(updated.price);
       elements.modalCity.textContent = updated.city || "-";
+      renderModalGallery(updated);
       renderListingFacts(updated);
       renderListingBreakdown(updated);
       elements.modalSignals.innerHTML = renderSignals(updated);
@@ -1918,6 +2195,7 @@ async function bulkCheckRenderedListings() {
             elements.modalTitle.textContent = selected.title;
             elements.modalPrice.textContent = formatPrice(selected.price);
             elements.modalCity.textContent = selected.city || "-";
+            renderModalGallery(selected);
             renderListingFacts(selected);
             renderListingBreakdown(selected);
           }
@@ -2142,7 +2420,7 @@ async function switchProfile(profileId) {
 }
 
 function updateComparePanel() {
-  elements.compareCount.textContent = `${state.compareIds.length} из 3 выбрано`;
+  elements.compareCount.textContent = `${formatInteger(state.compareIds.length)} из 3 выбрано`;
   elements.compareChips.innerHTML = "";
   elements.openCompareBtn.disabled = state.compareIds.length < 2;
   elements.pickBestCompareBtn.disabled = state.compareIds.length < 2;
@@ -2529,54 +2807,15 @@ function openListingDetails(listingId) {
     return;
   }
 
-  const imageUrl = item.image ? `/api/image?url=${encodeURIComponent(item.image)}` : "";
   state.selectedListingId = listingId;
-  elements.modalMedia.innerHTML = imageUrl
-    ? `<img src="${imageUrl}" alt="${escapeHtml(item.title)}">`
-    : `<div class="modal-media-empty">Фото не найдено</div>`;
+  state.modalGalleryIndex = 0;
+  renderModalGallery(item);
   elements.modalSource.textContent = item.source || "Карточка объявления";
   elements.modalTitle.textContent = item.title;
   elements.modalPrice.textContent = formatPrice(item.price);
   elements.modalCity.textContent = item.city || "Без города";
   renderListingFacts(item);
-
-  const parts = item.scoreParts || {
-    price: 0.5,
-    quality: 0.5,
-    year: 0.5,
-    mileage: 0.5,
-    owners: 0.5,
-    market: 0.5,
-    freshness: 0.5,
-    risk: 0.5,
-    photos: 0.5,
-    seller: 0.5
-  };
-
-  elements.modalBreakdown.innerHTML = [
-    ["Качество", parts.quality],
-    ["Цена", parts.price],
-    ["Рынок", parts.market],
-    ["Год", parts.year],
-    ["Пробег", parts.mileage],
-    ["Владельцы", parts.owners],
-    ["Свежесть", parts.freshness],
-    ["Риск", parts.risk],
-    ["Фото", parts.photos],
-    ["Продавец", parts.seller]
-  ]
-    .map(([label, value]) => `
-      <div class="breakdown-item">
-        <div class="breakdown-meta">
-          <span>${escapeHtml(label)}</span>
-          <small>${escapeHtml(getBreakdownComment(label, Number(value), item))}</small>
-        </div>
-        <div class="breakdown-track"><div class="breakdown-fill" style="width:${Math.max(Number(value) * 100, 4)}%"></div></div>
-        <strong>${formatScorePercent(value)}</strong>
-      </div>
-    `)
-    .join("");
-
+  renderListingBreakdown(item);
   elements.modalDescription.textContent = item.description || "Описание не указано.";
   elements.modalSignals.innerHTML = renderSignals(item);
   updateVinUi(item);
@@ -2602,6 +2841,7 @@ function openListingDetails(listingId) {
 
   elements.detailModal.hidden = false;
   document.body.style.overflow = "hidden";
+  void loadListingGallery(item);
   void loadKolesaPriceInsight(item);
   if (shouldAutoCheckActuality(item)) {
     void checkListingActuality(item.id, { silent: true });
@@ -2610,6 +2850,7 @@ function openListingDetails(listingId) {
 
 function closeListingDetails() {
   state.selectedListingId = null;
+  state.modalGalleryIndex = 0;
   elements.detailModal.hidden = true;
   if (elements.compareModal.hidden) {
     document.body.style.overflow = "";
@@ -2874,6 +3115,22 @@ elements.kolesaUrlInput.addEventListener("input", () => {
 });
 elements.modalCloseBtn.addEventListener("click", closeListingDetails);
 elements.modalBackdrop.addEventListener("click", closeListingDetails);
+elements.modalMedia.addEventListener("click", event => {
+  const thumb = event.target.closest("[data-gallery-index]");
+  if (thumb) {
+    state.modalGalleryIndex = Number(thumb.dataset.galleryIndex) || 0;
+    const item = getListingById(state.selectedListingId);
+    if (item) {
+      renderModalGallery(item);
+    }
+    return;
+  }
+
+  const nav = event.target.closest("[data-gallery-step]");
+  if (nav) {
+    stepModalGallery(Number(nav.dataset.galleryStep) || 0);
+  }
+});
 elements.modalFavoriteBtn.addEventListener("click", () => {
   if (state.selectedListingId) {
     toggleFavorite(state.selectedListingId);
@@ -2985,6 +3242,14 @@ document.addEventListener("keydown", event => {
     closeListingDetails();
   } else if (event.key === "Escape" && !elements.compareModal.hidden) {
     closeCompareModal();
+  } else if (!elements.detailModal.hidden && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+    const activeTag = document.activeElement?.tagName || "";
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(activeTag)) {
+      return;
+    }
+
+    event.preventDefault();
+    stepModalGallery(event.key === "ArrowRight" ? 1 : -1);
   }
 });
 

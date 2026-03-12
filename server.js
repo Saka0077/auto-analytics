@@ -101,6 +101,41 @@ function normalizeTextList(value) {
     : [];
 }
 
+function normalizeRemoteUrl(value, base = "https://kolesa.kz") {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  if (raw.startsWith("//")) {
+    return `https:${raw}`;
+  }
+
+  try {
+    return new URL(raw, base).toString();
+  } catch (error) {
+    return "";
+  }
+}
+
+function normalizePhotoGallery(value) {
+  const items = Array.isArray(value) ? value : [value];
+  const unique = [];
+  const seen = new Set();
+
+  items.forEach(item => {
+    const normalized = normalizeRemoteUrl(item);
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    unique.push(normalized);
+  });
+
+  return unique.slice(0, 30);
+}
+
 function pickDefined(...values) {
   for (const value of values) {
     if (value !== undefined && value !== null && value !== "") {
@@ -357,59 +392,68 @@ function buildRiskSummary(item) {
 
 function normalizeListings(rows) {
   return rows
-    .map(item => ({
-      title: String(item.title || item.name || "Без названия").trim(),
-      price: Number(item.price) || 0,
-      year: Number(item.year) > 0 ? Number(item.year) : null,
-      mileage: Number(item.mileage) > 0 ? Number(item.mileage) : null,
-      owners: Number.isFinite(Number(item.owners)) && Number(item.owners) > 0 ? Number(item.owners) : null,
-      city: String(item.city || "").trim(),
-      url: String(item.url || "").trim(),
-      image: String(item.image || "").trim(),
-      description: String(item.description || "").trim(),
-      source: String(item.source || "").trim(),
-      brand: String(item.brand || "").trim(),
-      model: String(item.model || "").trim(),
-      fuel_type: String(item.fuel_type || "").trim(),
-      transmission: String(item.transmission || "").trim(),
-      body_type: String(item.body_type || "").trim(),
-      drive_type: String(item.drive_type || "").trim(),
-      steering_side: String(item.steering_side || "").trim(),
-      color: String(item.color || "").trim(),
-      options: normalizeTextList(item.options),
-      vin: normalizeVin(item.vin),
-      vin_note: String(item.vin_note || "").trim(),
-      repair_state: normalizeRepairState(item.repair_state),
-      advert_id: String(item.advert_id || extractAdvertIdFromUrl(item.url)).trim(),
-      engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null,
-      publication_date: String(item.publication_date || "").trim(),
-      last_update: String(item.last_update || "").trim(),
-      first_seen_at: normalizeIsoDate(item.first_seen_at),
-      last_seen_at: normalizeIsoDate(item.last_seen_at),
-      last_checked_at: normalizeIsoDate(item.last_checked_at),
-      last_status_change_at: normalizeIsoDate(item.last_status_change_at),
-      actuality_status: normalizeActualityStatus(item.actuality_status),
-      avg_price: Number(item.avg_price) > 0 ? Number(item.avg_price) : null,
-      market_difference: Number.isFinite(Number(item.market_difference)) ? Number(item.market_difference) : null,
-      market_difference_percent: Number.isFinite(Number(item.market_difference_percent))
-        ? Number(item.market_difference_percent)
-        : null,
-      photo_count: Number(item.photo_count) > 0 ? Number(item.photo_count) : null,
-      phone_count: Number(item.phone_count) > 0 ? Number(item.phone_count) : null,
-      phone_prefix: String(item.phone_prefix || "").trim(),
-      credit_available: normalizeBoolean(item.credit_available),
-      paid_services: normalizeTextList(item.paid_services),
-      credit_monthly_payment: Number(item.credit_monthly_payment) > 0 ? Number(item.credit_monthly_payment) : null,
-      credit_down_payment: Number(item.credit_down_payment) > 0 ? Number(item.credit_down_payment) : null,
-      seller_user_id: String(item.seller_user_id || "").trim(),
-      seller_type_id: Number(item.seller_type_id) > 0 ? Number(item.seller_type_id) : null,
-      is_verified_dealer: normalizeBoolean(item.is_verified_dealer),
-      is_used_car_dealer: normalizeBoolean(item.is_used_car_dealer),
-      public_history_available: normalizeBoolean(item.public_history_available),
-      history_summary: String(item.history_summary || "").trim(),
-      risk_score: Number(item.risk_score) >= 0 ? Number(item.risk_score) : null,
-      risk_flags: normalizeTextList(item.risk_flags)
-    }))
+    .map(item => {
+      const photoGallery = normalizePhotoGallery(item.photo_gallery || item.photoGallery || []);
+      const image = normalizeRemoteUrl(item.image) || photoGallery[0] || "";
+      const photoCount = Number(item.photo_count) > 0
+        ? Number(item.photo_count)
+        : (photoGallery.length || null);
+
+      return {
+        title: String(item.title || item.name || "Без названия").trim(),
+        price: Number(item.price) || 0,
+        year: Number(item.year) > 0 ? Number(item.year) : null,
+        mileage: Number(item.mileage) > 0 ? Number(item.mileage) : null,
+        owners: Number.isFinite(Number(item.owners)) && Number(item.owners) > 0 ? Number(item.owners) : null,
+        city: String(item.city || "").trim(),
+        url: String(item.url || "").trim(),
+        image,
+        photo_gallery: photoGallery.length ? photoGallery : (image ? [image] : []),
+        description: String(item.description || "").trim(),
+        source: String(item.source || "").trim(),
+        brand: String(item.brand || "").trim(),
+        model: String(item.model || "").trim(),
+        fuel_type: String(item.fuel_type || "").trim(),
+        transmission: String(item.transmission || "").trim(),
+        body_type: String(item.body_type || "").trim(),
+        drive_type: String(item.drive_type || "").trim(),
+        steering_side: String(item.steering_side || "").trim(),
+        color: String(item.color || "").trim(),
+        options: normalizeTextList(item.options),
+        vin: normalizeVin(item.vin),
+        vin_note: String(item.vin_note || "").trim(),
+        repair_state: normalizeRepairState(item.repair_state),
+        advert_id: String(item.advert_id || extractAdvertIdFromUrl(item.url)).trim(),
+        engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null,
+        publication_date: String(item.publication_date || "").trim(),
+        last_update: String(item.last_update || "").trim(),
+        first_seen_at: normalizeIsoDate(item.first_seen_at),
+        last_seen_at: normalizeIsoDate(item.last_seen_at),
+        last_checked_at: normalizeIsoDate(item.last_checked_at),
+        last_status_change_at: normalizeIsoDate(item.last_status_change_at),
+        actuality_status: normalizeActualityStatus(item.actuality_status),
+        avg_price: Number(item.avg_price) > 0 ? Number(item.avg_price) : null,
+        market_difference: Number.isFinite(Number(item.market_difference)) ? Number(item.market_difference) : null,
+        market_difference_percent: Number.isFinite(Number(item.market_difference_percent))
+          ? Number(item.market_difference_percent)
+          : null,
+        photo_count: photoCount,
+        phone_count: Number(item.phone_count) > 0 ? Number(item.phone_count) : null,
+        phone_prefix: String(item.phone_prefix || "").trim(),
+        credit_available: normalizeBoolean(item.credit_available),
+        paid_services: normalizeTextList(item.paid_services),
+        credit_monthly_payment: Number(item.credit_monthly_payment) > 0 ? Number(item.credit_monthly_payment) : null,
+        credit_down_payment: Number(item.credit_down_payment) > 0 ? Number(item.credit_down_payment) : null,
+        seller_user_id: String(item.seller_user_id || "").trim(),
+        seller_type_id: Number(item.seller_type_id) > 0 ? Number(item.seller_type_id) : null,
+        is_verified_dealer: normalizeBoolean(item.is_verified_dealer),
+        is_used_car_dealer: normalizeBoolean(item.is_used_car_dealer),
+        public_history_available: normalizeBoolean(item.public_history_available),
+        history_summary: String(item.history_summary || "").trim(),
+        risk_score: Number(item.risk_score) >= 0 ? Number(item.risk_score) : null,
+        risk_flags: normalizeTextList(item.risk_flags)
+      };
+    })
     .map(item => ({
       ...item,
       actuality_status: resolveActualityStatus(item)
@@ -753,7 +797,29 @@ function extractImage(card) {
     card.find(".thumb-gallery__pic img").first().attr("src") ||
     card.find("img").first().attr("src") ||
     "";
-  return src.trim();
+  return normalizeRemoteUrl(src);
+}
+
+function extractGalleryImages($, advertData = {}) {
+  const candidates = [];
+  const pushCandidate = value => {
+    if (value) {
+      candidates.push(value);
+    }
+  };
+
+  $(".gallery__main [data-href], .gallery__thumb-image[data-href], .js__gallery-thumb[data-href]").each((_, element) => {
+    pushCandidate($(element).attr("data-href"));
+  });
+
+  $(".gallery__main img, .gallery__thumb-image img").each((_, element) => {
+    pushCandidate($(element).attr("src"));
+    pushCandidate($(element).attr("data-src"));
+  });
+
+  pushCandidate(advertData?.photo?.path);
+  pushCandidate(advertData?.photo?.src);
+  return normalizePhotoGallery(candidates);
 }
 
 function extractAssignedJsonObject(html, marker) {
@@ -978,6 +1044,7 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     : null;
   const creditTerms = extractCreditTerms($);
   const publicHistory = extractPublicHistorySummary(html);
+  const photoGallery = extractGalleryImages($, advertData);
   const description = normalizeWhitespace(
     String(advertData?.descriptionText || "")
       .replace(/<br\s*\/?>/gi, "\n")
@@ -994,6 +1061,8 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     advert_id: String(product?.id || extractAdvertIdFromUrl(advertUrl)),
     title,
     price: currentPrice || null,
+    image: photoGallery[0] || normalizeRemoteUrl(advertData?.photo?.src || advertData?.photo?.path),
+    photo_gallery: photoGallery,
     publication_date: String(product?.publicationDate || ""),
     last_update: String(product?.lastUpdate || ""),
     avg_price: avgPrice || null,
@@ -1012,7 +1081,7 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     engine_volume: descriptionMeta.engineVolume || null,
     city: String(advertData?.region || product?.city || ""),
     description,
-    photo_count: Number(product?.photoCount || 0) || null,
+    photo_count: Number(product?.photoCount || photoGallery.length || 0) || null,
     phone_count: Number(advertData?.nbPhones || 0) || null,
     phone_prefix: String(advertData?.phonePrefix || ""),
     credit_available: Boolean(product?.isCreditAvailable || advertData?.hasAcrCredit),
@@ -1160,6 +1229,7 @@ async function fetchKolesaPage(pageUrl) {
       city,
       url: href.startsWith("http") ? href : `https://kolesa.kz${href}`,
       image,
+      photo_gallery: image ? [image] : [],
       description,
       source: "kolesa.kz",
       brand: titleMeta.brand,
@@ -1244,6 +1314,8 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
       price: pickDefined(snapshot.price, item.price) || item.price,
       city: pickDefined(snapshot.city, item.city) || item.city,
       description: pickDefined(snapshot.description, item.description) || item.description,
+      image: pickDefined(snapshot.image, item.image) || item.image,
+      photo_gallery: normalizePhotoGallery([...(item.photo_gallery || []), ...(snapshot.photo_gallery || [])]),
       brand: pickDefined(snapshot.brand, item.brand) || item.brand,
       model: pickDefined(snapshot.model, item.model) || item.model,
       fuel_type: pickDefined(snapshot.fuel_type, item.fuel_type) || item.fuel_type,
@@ -1684,6 +1756,8 @@ const server = http.createServer(async (request, response) => {
           publication_date: snapshot.publication_date || item.publication_date,
           last_update: snapshot.last_update || item.last_update,
           description: snapshot.description || item.description,
+          image: snapshot.image || item.image,
+          photo_gallery: normalizePhotoGallery([...(item.photo_gallery || []), ...(snapshot.photo_gallery || [])]),
           avg_price: pickDefined(snapshot.avg_price, item.avg_price),
           market_difference:
             snapshot.market_difference !== null && snapshot.market_difference !== undefined
@@ -1795,6 +1869,46 @@ const server = http.createServer(async (request, response) => {
         error.message === "unsupported-host"
           ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
           : "Не удалось получить аналитику цены по объявлению.";
+      sendJson(response, 400, { error: message, detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname === "/api/listings/gallery" && request.method === "GET") {
+    const advertUrl = String(requestUrl.searchParams.get("url") || "").trim();
+    if (!advertUrl) {
+      sendJson(response, 400, { error: "Нужен url объявления." });
+      return;
+    }
+
+    try {
+      const current = readListings().find(item => item.url === advertUrl);
+      if (current && current.source !== "kolesa.kz") {
+        const images = normalizePhotoGallery(current.photo_gallery || [current.image]);
+        sendJson(response, 200, {
+          ok: true,
+          url: advertUrl,
+          image: current.image || images[0] || "",
+          images,
+          photoCount: current.photo_count || images.length || null
+        });
+        return;
+      }
+
+      const snapshot = await fetchKolesaListingSnapshot(advertUrl);
+      const images = normalizePhotoGallery(snapshot.photo_gallery || [snapshot.image]);
+      sendJson(response, 200, {
+        ok: true,
+        url: advertUrl,
+        image: snapshot.image || images[0] || "",
+        images,
+        photoCount: pickDefined(snapshot.photo_count, current?.photo_count, images.length || null)
+      });
+    } catch (error) {
+      const message =
+        error.message === "unsupported-host"
+          ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
+          : "Не удалось получить фотографии объявления.";
       sendJson(response, 400, { error: message, detail: String(error.message || error) });
     }
     return;
