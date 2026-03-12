@@ -230,6 +230,7 @@ const elements = {
   topFreshList: document.getElementById("top-fresh-list"),
   topBadList: document.getElementById("top-bad-list"),
   topCreditList: document.getElementById("top-credit-list"),
+  topMaintenanceList: document.getElementById("top-maintenance-list"),
   bestMetricLabel: document.getElementById("best-metric-label"),
   bestTitle: document.getElementById("best-title"),
   bestPrice: document.getElementById("best-price"),
@@ -1901,6 +1902,7 @@ function renderTopLists(listings) {
   elements.topFreshList.innerHTML = "";
   elements.topBadList.innerHTML = "";
   elements.topCreditList.innerHTML = "";
+  elements.topMaintenanceList.innerHTML = "";
 
   const topByScore = [...listings]
     .sort((a, b) => getPrimaryScore(b) - getPrimaryScore(a) || a.price - b.price)
@@ -1917,6 +1919,10 @@ function renderTopLists(listings) {
   const topCredit = [...listings]
     .filter(item => item.creditAvailable && item.creditMonthlyPayment)
     .sort((a, b) => b.creditScore - a.creditScore || getPrimaryScore(b) - getPrimaryScore(a) || a.creditMonthlyPayment - b.creditMonthlyPayment)
+    .slice(0, 5);
+  const topMaintenance = [...listings]
+    .filter(item => item.autopartsProfile)
+    .sort((a, b) => (b.maintenanceScore ?? 0) - (a.maintenanceScore ?? 0) || getPrimaryScore(b) - getPrimaryScore(a) || a.price - b.price)
     .slice(0, 5);
 
   const renderList = (target, items, valueKey, valueLabel) => {
@@ -1948,6 +1954,7 @@ function renderTopLists(listings) {
   renderList(elements.topFreshList, topByFresh, "freshnessScore", "fresh");
   renderList(elements.topBadList, topBad, "badScore", "bad");
   renderList(elements.topCreditList, topCredit, "creditScore", "credit");
+  renderList(elements.topMaintenanceList, topMaintenance, "maintenanceScore", "содерж.");
 }
 
 function renderTable(listings) {
@@ -3700,7 +3707,8 @@ elements.resultsBody.addEventListener("click", event => {
   elements.topDealList,
   elements.topFreshList,
   elements.topBadList,
-  elements.topCreditList
+  elements.topCreditList,
+  elements.topMaintenanceList
 ].forEach(container => {
   container.addEventListener("click", event => {
     const item = event.target.closest("[data-id]");
