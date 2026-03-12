@@ -1137,6 +1137,22 @@ function shouldAutoCheckActuality(item) {
     return true;
   }
 
+  if (!item.driveType || !item.steeringSide) {
+    return true;
+  }
+
+  if (item.creditAvailable && (!item.creditMonthlyPayment || !item.creditDownPayment)) {
+    return true;
+  }
+
+  if (item.photoCount && item.photoGallery.length < item.photoCount) {
+    return true;
+  }
+
+  if (!item.phoneCount) {
+    return true;
+  }
+
   if (!item.lastCheckedAt) {
     return true;
   }

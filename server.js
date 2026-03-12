@@ -630,10 +630,10 @@ function detectDriveType(text) {
 
 function detectSteeringSide(text) {
   const normalized = normalizeTextValue(text);
-  if (/левый руль/i.test(normalized)) {
+  if (/левый руль|слева/i.test(normalized)) {
     return "Левый";
   }
-  if (/правый руль/i.test(normalized)) {
+  if (/правый руль|справа/i.test(normalized)) {
     return "Правый";
   }
   return "";
@@ -1470,6 +1470,76 @@ function extractImage(card) {
   return normalizeRemoteUrl(src);
 }
 
+function extractOfferParameters($) {
+  const parameters = {
+    city: "",
+    generation: "",
+    bodyType: "",
+    engineVolume: null,
+    fuelType: "",
+    mileage: null,
+    transmission: "",
+    driveType: "",
+    steeringSide: "",
+    color: ""
+  };
+
+  $(".offer__parameters dl").each((_, element) => {
+    const key = normalizeWhitespace($(element).find("dt").first().text()).toLowerCase();
+    const value = normalizeWhitespace($(element).find("dd").first().text());
+    if (!key || !value) {
+      return;
+    }
+
+    if (/^город/.test(key)) {
+      parameters.city = value.split(",")[0].trim();
+      return;
+    }
+
+    if (/^поколение/.test(key)) {
+      parameters.generation = value;
+      return;
+    }
+
+    if (/^кузов/.test(key)) {
+      parameters.bodyType = value.toLowerCase();
+      return;
+    }
+
+    if (/объем двигателя/.test(key)) {
+      parameters.engineVolume = extractEngineVolume(value);
+      parameters.fuelType = detectFuelType(value) || parameters.fuelType;
+      return;
+    }
+
+    if (/^пробег/.test(key)) {
+      parameters.mileage = parseNumber(value);
+      return;
+    }
+
+    if (/коробка передач/.test(key)) {
+      parameters.transmission = detectTransmission(value) || value;
+      return;
+    }
+
+    if (/^привод/.test(key)) {
+      parameters.driveType = detectDriveType(value) || value;
+      return;
+    }
+
+    if (/^руль/.test(key)) {
+      parameters.steeringSide = detectSteeringSide(value) || value;
+      return;
+    }
+
+    if (/^цвет/.test(key)) {
+      parameters.color = detectColor(value) || value;
+    }
+  });
+
+  return parameters;
+}
+
 function extractGalleryImages($, advertData = {}) {
   const candidates = [];
   const pushCandidate = value => {
@@ -1723,6 +1793,7 @@ async function fetchKolesaListingSnapshot(advertUrl) {
   const creditTerms = extractCreditTerms($);
   const publicHistory = extractPublicHistorySummary(html);
   const photoGallery = extractGalleryImages($, advertData);
+  const offerParams = extractOfferParameters($);
   const description = normalizeWhitespace(
     String(advertData?.descriptionText || "")
       .replace(/<br\s*\/?>/gi, "\n")
@@ -1748,17 +1819,18 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     market_difference_percent: avgPrice && currentPrice ? marketDifferencePercent : null,
     brand: titleMeta.brand,
     model: titleMeta.model,
-    fuel_type: descriptionMeta.fuelType,
-    drive_type: descriptionMeta.driveType,
-    steering_side: descriptionMeta.steeringSide,
-    color: descriptionMeta.color,
+    fuel_type: offerParams.fuelType || descriptionMeta.fuelType,
+    drive_type: offerParams.driveType || descriptionMeta.driveType,
+    steering_side: offerParams.steeringSide || descriptionMeta.steeringSide,
+    color: offerParams.color || descriptionMeta.color,
     options: descriptionMeta.options,
     repair_state: descriptionMeta.repairState,
-    transmission: descriptionMeta.transmission,
-    body_type: descriptionMeta.bodyType,
-    engine_volume: descriptionMeta.engineVolume || null,
-    city: String(advertData?.region || product?.city || ""),
+    transmission: offerParams.transmission || descriptionMeta.transmission,
+    body_type: offerParams.bodyType || descriptionMeta.bodyType,
+    engine_volume: offerParams.engineVolume || descriptionMeta.engineVolume || null,
+    city: offerParams.city || String(advertData?.region || product?.city || ""),
     description,
+    mileage: offerParams.mileage || descriptionMeta.mileage || null,
     photo_count: Number(product?.photoCount || photoGallery.length || 0) || null,
     phone_count: Number(advertData?.nbPhones || 0) || null,
     phone_prefix: String(advertData?.phonePrefix || ""),
@@ -1832,6 +1904,7 @@ function applyKolesaSnapshotToListing(item, snapshot, { checkedAt } = {}) {
     title: snapshot.title || item.title,
     advert_id: snapshot.advert_id || item.advert_id || extractAdvertIdFromUrl(item.url),
     price: pickDefined(snapshot.price, item.price),
+    mileage: pickDefined(snapshot.mileage, item.mileage),
     publication_date: snapshot.publication_date || item.publication_date,
     last_update: snapshot.last_update || item.last_update,
     description: snapshot.description || item.description,
@@ -1849,6 +1922,13 @@ function applyKolesaSnapshotToListing(item, snapshot, { checkedAt } = {}) {
     photo_count: pickDefined(snapshot.photo_count, item.photo_count),
     phone_count: pickDefined(snapshot.phone_count, item.phone_count),
     phone_prefix: snapshot.phone_prefix || item.phone_prefix,
+    fuel_type: pickDefined(snapshot.fuel_type, item.fuel_type) || item.fuel_type,
+    transmission: pickDefined(snapshot.transmission, item.transmission) || item.transmission,
+    body_type: pickDefined(snapshot.body_type, item.body_type) || item.body_type,
+    drive_type: pickDefined(snapshot.drive_type, item.drive_type) || item.drive_type,
+    steering_side: pickDefined(snapshot.steering_side, item.steering_side) || item.steering_side,
+    color: pickDefined(snapshot.color, item.color) || item.color,
+    engine_volume: pickDefined(snapshot.engine_volume, item.engine_volume),
     credit_available: snapshot.credit_available !== undefined
       ? normalizeBoolean(snapshot.credit_available)
       : normalizeBoolean(item.credit_available),
