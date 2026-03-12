@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "catalog_id": "chevrolet-cobalt",
+      "brand": "Chevrolet",
+      "aliases": [
+        "cobalt ii",
+        "chevrolet cobalt ii",
+        "cobalt 2"
+      ]
+    },
+    {
+      "catalog_id": "hyundai-solaris-accent",
+      "brand": "Hyundai",
+      "aliases": [
+        "solaris rb",
+        "hyundai solaris rb",
+        "accent rb",
+        "hyundai accent rb",
+        "solaris accent"
+      ]
+    },
+    {
+      "catalog_id": "kia-rio",
+      "brand": "Kia",
+      "aliases": [
+        "rio ub",
+        "kia rio ub",
+        "rio qb",
+        "kia rio qb"
+      ]
+    },
+    {
+      "catalog_id": "hyundai-elantra",
+      "brand": "Hyundai",
+      "aliases": [
+        "elantra md",
+        "hyundai elantra md",
+        "elantra ad",
+        "hyundai elantra ad"
+      ]
+    }
+  ]
+}

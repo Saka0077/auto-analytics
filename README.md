@@ -30,6 +30,7 @@ npm start
 - `app.js` - клиентская логика
 - `server.js` - API и сервер
 - `catalog/autoparts-catalog.json` - seed-справочник по рынку запчастей
+- `catalog/autoparts-aliases.json` - ручные алиасы для матчинга моделей к базе запчастей
 - `scripts/import-autoparts-workbook.js` - импорт Excel в каталог запчастей
 - `package.json` - команды запуска
 - `.gitignore` - исключения для Git
@@ -43,6 +44,19 @@ npm run import:autoparts -- "C:\Users\Sayat\Downloads\kz_autoparts_market_snapsh
 ```
 
 После этого обновится файл `catalog/autoparts-catalog.json`, а объявления с подходящими моделями начнут получать профиль запчастей в API и в карточке машины.
+
+Если нужно расширить покрытие без нового Excel, можно дополнять `catalog/autoparts-aliases.json` вариантами названий моделей и поколений.
+
+Для проверки покрытия есть API:
+
+```text
+GET /api/autoparts/coverage
+```
+
+Он показывает:
+- сколько объявлений покрыто базой запчастей;
+- какие профили матчатся чаще всего;
+- какие марки/модели пока не покрыты.
 
 ## Деплой на Render
 

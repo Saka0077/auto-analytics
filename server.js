@@ -12,6 +12,7 @@ const CATALOG_DIR = path.join(ROOT, "catalog");
 const DATA_FILE = path.join(DATA_DIR, "listings.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth-store.json");
 const AUTOPARTS_FILE = path.join(CATALOG_DIR, "autoparts-catalog.json");
+const AUTOPARTS_ALIASES_FILE = path.join(CATALOG_DIR, "autoparts-aliases.json");
 const SAMPLE_FILE = path.join(ROOT, "sample_listings.json");
 const STALE_AFTER_HOURS = Number(process.env.LISTING_STALE_AFTER_HOURS) > 0
   ? Number(process.env.LISTING_STALE_AFTER_HOURS)
@@ -92,6 +93,10 @@ function createEmptyAutopartsCatalog() {
   };
 }
 
+function createEmptyAutopartsAliases() {
+  return { items: [] };
+}
+
 function readAutopartsCatalog() {
   if (!fs.existsSync(AUTOPARTS_FILE)) {
     return createEmptyAutopartsCatalog();
@@ -118,6 +123,32 @@ function readAutopartsCatalog() {
     };
   } catch (error) {
     return createEmptyAutopartsCatalog();
+  }
+}
+
+function readAutopartsAliases() {
+  if (!fs.existsSync(AUTOPARTS_ALIASES_FILE)) {
+    return createEmptyAutopartsAliases();
+  }
+
+  try {
+    const raw = fs.readFileSync(AUTOPARTS_ALIASES_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    return {
+      items: items
+        .filter(item => item && typeof item === "object")
+        .map(item => ({
+          catalog_id: String(item.catalog_id || "").trim(),
+          brand: String(item.brand || "").trim(),
+          aliases: Array.isArray(item.aliases)
+            ? item.aliases.map(value => String(value || "").trim()).filter(Boolean)
+            : []
+        }))
+        .filter(item => item.catalog_id && item.aliases.length)
+    };
+  } catch (error) {
+    return createEmptyAutopartsAliases();
   }
 }
 
@@ -153,6 +184,60 @@ function normalizeLookupText(value) {
     .replace(/\s+/g, " ");
 }
 
+function splitLookupWords(value) {
+  return normalizeLookupText(value).split(" ").filter(Boolean);
+}
+
+function parseYearRange(value) {
+  const normalized = String(value || "").trim();
+  const match = normalized.match(/(\d{4})\s*-\s*(\d{4})/);
+  if (!match) {
+    return null;
+  }
+
+  const min = Number(match[1]);
+  const max = Number(match[2]);
+  return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
+}
+
+function isTrimToken(word) {
+  return /^(comfort|comfort\+|prestige|style|premium|sport|sportline|elegance|lux|luxe|limited|exclusive|active|drive|trend|status|deluxe|base|luxury|flagship|premium\+|elite|plus|pro|max|awd|4wd|2wd|at|mt|cvt|dsg|tsi|tdi|mpi|gdi|hybrid|ev|электро|автомат|механика|робот|вариатор)$/i.test(word)
+    || /^\d+(\.\d+)?[ldt]?$/.test(word)
+    || /^\d{2,3}h?$/.test(word);
+}
+
+function buildAutopartsModelCandidates(item) {
+  const values = [item.model, item.title]
+    .map(value => normalizeLookupText(value))
+    .filter(Boolean);
+  const candidates = new Set();
+
+  values.forEach(value => {
+    const tokens = splitLookupWords(value)
+      .filter(token => !/^(\d{4}|г|года)$/.test(token))
+      .filter(token => !/^(toyota|hyundai|kia|chevrolet|daewoo|ravon|lexus|nissan|tesla|byd|tank|dongfeng|mercedes|benz|volkswagen|lada|ваз)$/i.test(token));
+
+    if (!tokens.length) {
+      return;
+    }
+
+    candidates.add(tokens.join(" "));
+
+    while (tokens.length > 1 && isTrimToken(tokens[tokens.length - 1])) {
+      tokens.pop();
+      if (tokens.length) {
+        candidates.add(tokens.join(" "));
+      }
+    }
+
+    for (let length = tokens.length - 1; length >= 1; length -= 1) {
+      candidates.add(tokens.slice(0, length).join(" "));
+    }
+  });
+
+  return [...candidates].filter(Boolean);
+}
+
 function normalizeRemoteUrl(value, base = "https://kolesa.kz") {
   const raw = String(value || "").trim();
   if (!raw) {
@@ -174,45 +259,116 @@ function getAutopartsMatchText(item) {
   return normalizeLookupText([item.brand, item.model, item.title].filter(Boolean).join(" "));
 }
 
-function findAutopartsProfile(item, catalog = readAutopartsCatalog()) {
+function buildAutopartsLookupMap(catalog = readAutopartsCatalog(), aliasesStore = readAutopartsAliases()) {
   const snapshotItems = Array.isArray(catalog?.snapshot_items) ? catalog.snapshot_items : [];
-  if (!snapshotItems.length) {
+  const aliases = Array.isArray(aliasesStore?.items) ? aliasesStore.items : [];
+  const aliasMap = new Map();
+
+  aliases.forEach(item => {
+    const key = String(item.catalog_id || "").trim();
+    if (!key) {
+      return;
+    }
+    aliasMap.set(key, item);
+  });
+
+  return snapshotItems.map(profile => {
+    const aliasEntry = aliasMap.get(String(profile.id || "").trim());
+    const brandKey = normalizeLookupText(profile.brand_key || profile.brand);
+    const directKeys = Array.isArray(profile.lookup_keys)
+      ? profile.lookup_keys.map(normalizeLookupText).filter(Boolean)
+      : [];
+    const aliasKeys = Array.isArray(aliasEntry?.aliases)
+      ? aliasEntry.aliases.map(normalizeLookupText).filter(Boolean)
+      : [];
+    const yearRange = parseYearRange(profile.years);
+    return {
+      profile,
+      brandKey,
+      yearRange,
+      lookupKeys: [...new Set([...directKeys, ...aliasKeys])]
+    };
+  });
+}
+
+function findAutopartsProfile(item, catalog = readAutopartsCatalog(), aliasesStore = readAutopartsAliases()) {
+  const lookup = buildAutopartsLookupMap(catalog, aliasesStore);
+  if (!lookup.length) {
     return null;
   }
 
   const listingText = getAutopartsMatchText(item);
   const listingBrand = normalizeLookupText(item.brand);
-  const listingModel = normalizeLookupText(item.model);
-  let match = null;
+  const listingCandidates = buildAutopartsModelCandidates(item);
+  let bestMatch = null;
 
-  snapshotItems.forEach(profile => {
-    const brandKey = normalizeLookupText(profile.brand_key || profile.brand);
-    const lookupKeys = Array.isArray(profile.lookup_keys)
-      ? profile.lookup_keys.map(normalizeLookupText).filter(Boolean)
-      : [];
-
-    if (!lookupKeys.length) {
+  lookup.forEach(entry => {
+    if (!entry.lookupKeys.length) {
       return;
     }
 
-    if (brandKey && listingBrand && brandKey !== listingBrand) {
+    let score = 0;
+    const reasons = [];
+
+    if (entry.brandKey && listingBrand) {
+      if (entry.brandKey !== listingBrand) {
+        return;
+      }
+      score += 35;
+      reasons.push("brand");
+    }
+
+    entry.lookupKeys.forEach(key => {
+      if (listingCandidates.some(candidate => candidate === key)) {
+        score = Math.max(score, score + 50);
+        reasons.push(`model:${key}`);
+        return;
+      }
+
+      if (listingCandidates.some(candidate => candidate.startsWith(`${key} `) || key.startsWith(`${candidate} `))) {
+        score = Math.max(score, score + 34);
+        reasons.push(`prefix:${key}`);
+        return;
+      }
+
+      if (listingText.includes(key)) {
+        score = Math.max(score, score + 24);
+        reasons.push(`text:${key}`);
+      }
+    });
+
+    if (!score) {
       return;
     }
 
-    const modelMatches = lookupKeys.some(key => listingModel === key || listingText.includes(key));
-    if (!modelMatches) {
-      return;
+    if (entry.yearRange && Number.isFinite(Number(item.year))) {
+      const year = Number(item.year);
+      if (year >= entry.yearRange.min && year <= entry.yearRange.max) {
+        score += 12;
+        reasons.push("year");
+      } else {
+        score -= 8;
+      }
     }
 
-    if (!match || Number(profile.cheapness_score || 0) > Number(match.cheapness_score || 0)) {
-      match = profile;
+    if (
+      !bestMatch ||
+      score > bestMatch.score ||
+      (score === bestMatch.score && Number(entry.profile.cheapness_score || 0) > Number(bestMatch.profile.cheapness_score || 0))
+    ) {
+      bestMatch = {
+        profile: entry.profile,
+        score,
+        reasons
+      };
     }
   });
 
-  if (!match) {
+  if (!bestMatch || bestMatch.score < 40) {
     return null;
   }
 
+  const match = bestMatch.profile;
   return {
     id: String(match.id || ""),
     model_label: String(match.model_label || ""),
@@ -235,15 +391,63 @@ function findAutopartsProfile(item, catalog = readAutopartsCatalog()) {
     comment: String(match.comment || ""),
     market_source_url: String(match.market_source_url || ""),
     pads_source_url: String(match.pads_source_url || ""),
-    disc_source_url: String(match.disc_source_url || "")
+    disc_source_url: String(match.disc_source_url || ""),
+    match_score: Number(bestMatch.score || 0),
+    match_reason: bestMatch.reasons.join(", ")
   };
 }
 
-function enrichListingsWithAutoparts(listings, catalog = readAutopartsCatalog()) {
+function enrichListingsWithAutoparts(listings, catalog = readAutopartsCatalog(), aliasesStore = readAutopartsAliases()) {
   return listings.map(item => {
-    const profile = findAutopartsProfile(item, catalog);
+    const profile = findAutopartsProfile(item, catalog, aliasesStore);
     return profile ? { ...item, autoparts_profile: profile } : item;
   });
+}
+
+function getAutopartsCoverage(listings, catalog = readAutopartsCatalog(), aliasesStore = readAutopartsAliases()) {
+  const enriched = enrichListingsWithAutoparts(listings, catalog, aliasesStore);
+  const matched = [];
+  const unmatchedBuckets = new Map();
+  const matchedBuckets = new Map();
+
+  enriched.forEach(item => {
+    const brand = String(item.brand || "").trim() || "Без марки";
+    const model = String(item.model || "").trim() || "Без модели";
+    const key = `${brand} | ${model}`;
+
+    if (item.autoparts_profile) {
+      matched.push(item);
+      const profileKey = item.autoparts_profile.model_label || key;
+      matchedBuckets.set(profileKey, (matchedBuckets.get(profileKey) || 0) + 1);
+      return;
+    }
+
+    const bucket = unmatchedBuckets.get(key) || {
+      brand,
+      model,
+      count: 0,
+      examples: []
+    };
+    bucket.count += 1;
+    if (bucket.examples.length < 3) {
+      bucket.examples.push(String(item.title || "").trim());
+    }
+    unmatchedBuckets.set(key, bucket);
+  });
+
+  return {
+    total: enriched.length,
+    matched: matched.length,
+    unmatched: enriched.length - matched.length,
+    coverage_percent: enriched.length ? Number(((matched.length / enriched.length) * 100).toFixed(1)) : 0,
+    matched_profiles: [...matchedBuckets.entries()]
+      .map(([model_label, count]) => ({ model_label, count }))
+      .sort((a, b) => b.count - a.count || a.model_label.localeCompare(b.model_label, "ru"))
+      .slice(0, 20),
+    missing_models: [...unmatchedBuckets.values()]
+      .sort((a, b) => b.count - a.count || `${a.brand} ${a.model}`.localeCompare(`${b.brand} ${b.model}`, "ru"))
+      .slice(0, 20)
+  };
 }
 
 function getPhotoIdentityKey(urlValue) {
@@ -1772,6 +1976,11 @@ const server = http.createServer(async (request, response) => {
 
   if (pathname === "/api/autoparts/catalog" && request.method === "GET") {
     sendJson(response, 200, readAutopartsCatalog());
+    return;
+  }
+
+  if (pathname === "/api/autoparts/coverage" && request.method === "GET") {
+    sendJson(response, 200, getAutopartsCoverage(readListings()));
     return;
   }
 
