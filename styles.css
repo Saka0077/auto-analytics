@@ -168,13 +168,55 @@ h1 {
 }
 
 .controls-panel {
+  position: sticky;
+  top: 16px;
+  align-self: start;
   display: grid;
-  gap: 18px;
+  gap: 16px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
-.controls-section + .controls-section {
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+.controls-section {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.controls-section--import {
+  order: -1;
+}
+
+.controls-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.control-group {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+
+.control-group-head {
+  margin-bottom: 12px;
+}
+
+.control-group-head h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.control-group-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .section-note {
@@ -198,7 +240,7 @@ h1 {
   margin-bottom: 12px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: var(--surface);
+  background: #fff;
 }
 
 .auth-actions,
@@ -317,7 +359,7 @@ select:focus {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: var(--surface);
+  background: var(--surface-soft);
 }
 
 .import-field {
@@ -1293,6 +1335,10 @@ a:hover {
     grid-template-columns: 1fr;
   }
 
+  .controls-panel {
+    position: static;
+  }
+
   .compare-panel,
   .modal-facts,
   .modal-sections,
@@ -1310,7 +1356,8 @@ a:hover {
 
   .hero-copy,
   .hero-card,
-  .panel {
+  .panel,
+  .controls-section {
     padding: 18px;
     border-radius: 16px;
   }
@@ -1342,6 +1389,10 @@ a:hover {
 
   .modal-head {
     flex-direction: column;
+  }
+
+  .control-group {
+    padding: 12px;
   }
 
   .modal-price-box {

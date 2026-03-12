@@ -45,228 +45,6 @@
 
     <main class="layout">
       <section class="panel controls-panel">
-        <div class="controls-section">
-          <div class="panel-head">
-            <h2>Фильтры</h2>
-            <button id="reset-btn" class="ghost-btn" type="button">Сбросить</button>
-          </div>
-
-          <div class="auth-box">
-            <div id="auth-guest-view">
-              <label class="field">
-                <span>Логин</span>
-                <input id="auth-username-input" type="text" placeholder="sayat">
-              </label>
-              <label class="field">
-                <span>Пароль</span>
-                <input id="auth-password-input" type="password" placeholder="Пароль">
-              </label>
-              <div class="auth-actions">
-                <button id="login-btn" class="primary-btn" type="button">Войти</button>
-                <button id="register-btn" class="ghost-btn" type="button">Регистрация</button>
-              </div>
-            </div>
-            <div id="auth-user-view" hidden>
-              <p id="auth-user-text" class="auth-user-text">Вход выполнен</p>
-              <button id="logout-btn" class="ghost-btn" type="button">Выйти</button>
-            </div>
-          </div>
-
-          <div id="profile-box" class="profile-box">
-            <label class="field">
-              <span>Профиль</span>
-              <select id="profile-select">
-                <option value="">Загрузка...</option>
-              </select>
-            </label>
-            <div class="profile-create">
-              <input id="profile-name-input" type="text" placeholder="Новый профиль">
-              <button id="create-profile-btn" class="ghost-btn" type="button">Создать</button>
-            </div>
-          </div>
-
-          <label class="field">
-            <span>Поиск по названию</span>
-            <input id="search-input" type="text" placeholder="Camry, Elantra, Kia...">
-          </label>
-
-          <div class="field-row">
-            <label class="field">
-              <span>Год от</span>
-              <input id="year-from-input" type="number" placeholder="2018">
-            </label>
-
-            <label class="field">
-              <span>Год до</span>
-              <input id="year-to-input" type="number" placeholder="2024">
-            </label>
-          </div>
-
-          <div class="field-row">
-            <label class="field">
-              <span>Цена от</span>
-              <input id="price-from-input" type="number" placeholder="3000000">
-            </label>
-
-            <label class="field">
-              <span>Цена до</span>
-              <input id="price-to-input" type="number" placeholder="12000000">
-            </label>
-          </div>
-
-          <div class="field-row">
-            <label class="field">
-              <span>Пробег от</span>
-              <input id="mileage-from-input" type="number" placeholder="0">
-            </label>
-
-            <label class="field">
-              <span>Пробег до</span>
-              <input id="mileage-to-input" type="number" placeholder="150000">
-            </label>
-          </div>
-
-          <label class="field">
-            <span>Город</span>
-            <select id="city-select">
-              <option value="">Все города</option>
-            </select>
-          </label>
-
-          <div class="field-row">
-            <label class="field">
-              <span>Марка</span>
-              <select id="mark-filter-select">
-                <option value="">Все марки</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Модель</span>
-              <select id="model-filter-select">
-                <option value="">Все модели</option>
-              </select>
-            </label>
-          </div>
-
-          <label class="field">
-            <span>Кредит</span>
-            <select id="credit-filter-select">
-              <option value="">Неважно</option>
-              <option value="yes">Только с кредитом</option>
-              <option value="no">Только без кредита</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Макс. платёж в месяц</span>
-            <input id="max-monthly-payment-input" type="number" placeholder="350000">
-          </label>
-
-          <label class="field">
-            <span>Состояние</span>
-            <select id="repair-filter-select">
-              <option value="">Неважно</option>
-              <option value="yes">Аварийная / не на ходу</option>
-              <option value="no">Не аварийная</option>
-            </select>
-          </label>
-
-          <div class="field-row">
-            <label class="field">
-              <span>Топливо</span>
-              <select id="fuel-filter-select">
-                <option value="">Любое</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Привод</span>
-              <select id="drive-filter-select">
-                <option value="">Любой</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="field-row">
-            <label class="field">
-              <span>Руль</span>
-              <select id="steering-filter-select">
-                <option value="">Любой</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Цвет</span>
-              <select id="color-filter-select">
-                <option value="">Любой</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="field-row">
-            <label class="field">
-              <span>КПП</span>
-              <select id="transmission-filter-select">
-                <option value="">Любая</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Кузов</span>
-              <select id="body-filter-select">
-                <option value="">Любой</option>
-              </select>
-            </label>
-          </div>
-
-          <label class="field">
-            <span>Продавец</span>
-            <select id="seller-filter-select">
-              <option value="">Любой</option>
-              <option value="private">Частник</option>
-              <option value="dealer">Дилер / салон</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Обслуживание</span>
-            <select id="maintenance-filter-select">
-              <option value="">Любое</option>
-              <option value="known">Только с базой запчастей</option>
-              <option value="cheap">Дешёвые запчасти</option>
-              <option value="medium">Средний ремонт</option>
-              <option value="expensive">Дорогой ремонт</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Опция</span>
-            <input id="option-search-input" type="text" placeholder="кожа, люк, камера, круиз...">
-          </label>
-
-          <label class="field">
-            <span>Сортировка</span>
-            <select id="sort-select">
-              <option id="sort-score-option" value="score">Лучший для покупки</option>
-              <option value="credit-desc">Лучшие в кредит</option>
-              <option value="liquidity-desc">Ликвидные</option>
-              <option value="maintenance-desc">Дешевле в обслуживании</option>
-              <option value="fresh-desc">Сначала свежие</option>
-              <option value="risk-asc">Меньше риск</option>
-              <option value="price-asc">Цена по возрастанию</option>
-              <option value="price-desc">Цена по убыванию</option>
-              <option value="year-desc">Сначала новее</option>
-              <option value="mileage-asc">Меньше пробег</option>
-            </select>
-          </label>
-
-          <label class="check-field">
-            <input id="show-inactive-toggle" type="checkbox">
-            <span>Показывать неактуальные объявления</span>
-          </label>
-        </div>
-
         <div class="controls-section controls-section--import">
           <div class="panel-head">
             <h2>Импорт</h2>
@@ -355,6 +133,258 @@
               Импорт с Kolesa идет через сервер. Можно вставить готовую ссылку или выбрать город, марку, кузов,
               КПП и цену, чтобы сайт сам собрал узкий поиск и снизил нагрузку.
             </p>
+          </div>
+        </div>
+
+        <div class="controls-section">
+          <div class="panel-head">
+            <h2>Фильтры</h2>
+            <button id="reset-btn" class="ghost-btn" type="button">Сбросить</button>
+          </div>
+
+          <div class="controls-groups">
+            <div class="control-group">
+              <div class="control-group-head">
+                <h3>Аккаунт и профиль</h3>
+                <p>Сохраняй сравнения, избранное и свои сценарии.</p>
+              </div>
+
+              <div class="auth-box">
+                <div id="auth-guest-view">
+                  <label class="field">
+                    <span>Логин</span>
+                    <input id="auth-username-input" type="text" placeholder="sayat">
+                  </label>
+                  <label class="field">
+                    <span>Пароль</span>
+                    <input id="auth-password-input" type="password" placeholder="Пароль">
+                  </label>
+                  <div class="auth-actions">
+                    <button id="login-btn" class="primary-btn" type="button">Войти</button>
+                    <button id="register-btn" class="ghost-btn" type="button">Регистрация</button>
+                  </div>
+                </div>
+                <div id="auth-user-view" hidden>
+                  <p id="auth-user-text" class="auth-user-text">Вход выполнен</p>
+                  <button id="logout-btn" class="ghost-btn" type="button">Выйти</button>
+                </div>
+              </div>
+
+              <div id="profile-box" class="profile-box">
+                <label class="field">
+                  <span>Профиль</span>
+                  <select id="profile-select">
+                    <option value="">Загрузка...</option>
+                  </select>
+                </label>
+                <div class="profile-create">
+                  <input id="profile-name-input" type="text" placeholder="Новый профиль">
+                  <button id="create-profile-btn" class="ghost-btn" type="button">Создать</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="control-group">
+              <div class="control-group-head">
+                <h3>Быстрый отбор</h3>
+                <p>Сузь рынок по цене, году, городу и основным параметрам.</p>
+              </div>
+
+              <label class="field">
+                <span>Поиск по названию</span>
+                <input id="search-input" type="text" placeholder="Camry, Elantra, Kia...">
+              </label>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Год от</span>
+                  <input id="year-from-input" type="number" placeholder="2018">
+                </label>
+
+                <label class="field">
+                  <span>Год до</span>
+                  <input id="year-to-input" type="number" placeholder="2024">
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Цена от</span>
+                  <input id="price-from-input" type="number" placeholder="3000000">
+                </label>
+
+                <label class="field">
+                  <span>Цена до</span>
+                  <input id="price-to-input" type="number" placeholder="12000000">
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Пробег от</span>
+                  <input id="mileage-from-input" type="number" placeholder="0">
+                </label>
+
+                <label class="field">
+                  <span>Пробег до</span>
+                  <input id="mileage-to-input" type="number" placeholder="150000">
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Город</span>
+                <select id="city-select">
+                  <option value="">Все города</option>
+                </select>
+              </label>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Марка</span>
+                  <select id="mark-filter-select">
+                    <option value="">Все марки</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Модель</span>
+                  <select id="model-filter-select">
+                    <option value="">Все модели</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Сортировка</span>
+                <select id="sort-select">
+                  <option id="sort-score-option" value="score">Лучший для покупки</option>
+                  <option value="credit-desc">Лучшие в кредит</option>
+                  <option value="liquidity-desc">Ликвидные</option>
+                  <option value="maintenance-desc">Дешевле в обслуживании</option>
+                  <option value="fresh-desc">Сначала свежие</option>
+                  <option value="risk-asc">Меньше риск</option>
+                  <option value="price-asc">Цена по возрастанию</option>
+                  <option value="price-desc">Цена по убыванию</option>
+                  <option value="year-desc">Сначала новее</option>
+                  <option value="mileage-asc">Меньше пробег</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="control-group">
+              <div class="control-group-head">
+                <h3>Характеристики</h3>
+                <p>Фильтруй по технике, состоянию и комплектации.</p>
+              </div>
+
+              <label class="field">
+                <span>Состояние</span>
+                <select id="repair-filter-select">
+                  <option value="">Неважно</option>
+                  <option value="yes">Аварийная / не на ходу</option>
+                  <option value="no">Не аварийная</option>
+                </select>
+              </label>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Топливо</span>
+                  <select id="fuel-filter-select">
+                    <option value="">Любое</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Привод</span>
+                  <select id="drive-filter-select">
+                    <option value="">Любой</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>Руль</span>
+                  <select id="steering-filter-select">
+                    <option value="">Любой</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Цвет</span>
+                  <select id="color-filter-select">
+                    <option value="">Любой</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="field-row">
+                <label class="field">
+                  <span>КПП</span>
+                  <select id="transmission-filter-select">
+                    <option value="">Любая</option>
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Кузов</span>
+                  <select id="body-filter-select">
+                    <option value="">Любой</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="field">
+                <span>Опция</span>
+                <input id="option-search-input" type="text" placeholder="кожа, люк, камера, круиз...">
+              </label>
+            </div>
+
+            <div class="control-group">
+              <div class="control-group-head">
+                <h3>Деньги и риск</h3>
+                <p>Оцени кредит, продавца и стоимость обслуживания.</p>
+              </div>
+
+              <label class="field">
+                <span>Кредит</span>
+                <select id="credit-filter-select">
+                  <option value="">Неважно</option>
+                  <option value="yes">Только с кредитом</option>
+                  <option value="no">Только без кредита</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Макс. платёж в месяц</span>
+                <input id="max-monthly-payment-input" type="number" placeholder="350000">
+              </label>
+
+              <label class="field">
+                <span>Продавец</span>
+                <select id="seller-filter-select">
+                  <option value="">Любой</option>
+                  <option value="private">Частник</option>
+                  <option value="dealer">Дилер / салон</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Обслуживание</span>
+                <select id="maintenance-filter-select">
+                  <option value="">Любое</option>
+                  <option value="known">Только с базой запчастей</option>
+                  <option value="cheap">Дешёвые запчасти</option>
+                  <option value="medium">Средний ремонт</option>
+                  <option value="expensive">Дорогой ремонт</option>
+                </select>
+              </label>
+
+              <label class="check-field">
+                <input id="show-inactive-toggle" type="checkbox">
+                <span>Показывать неактуальные объявления</span>
+              </label>
+            </div>
           </div>
         </div>
       </section>
