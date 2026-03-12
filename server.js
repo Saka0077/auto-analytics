@@ -118,19 +118,58 @@ function normalizeRemoteUrl(value, base = "https://kolesa.kz") {
   }
 }
 
+function getPhotoIdentityKey(urlValue) {
+  const normalized = normalizeRemoteUrl(urlValue);
+  if (!normalized) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const pathname = parsed.pathname.replace(/\/+/g, "/");
+    const identityPath = pathname.replace(/\/([^/]+?)(?:-(?:full|\d+x\d+))(\.[a-z0-9]+)$/i, "/$1");
+    return `${parsed.hostname}${identityPath}`;
+  } catch (error) {
+    return normalized;
+  }
+}
+
+function getPhotoQualityScore(urlValue) {
+  const normalized = String(urlValue || "").trim().toLowerCase();
+  if (/-full\./.test(normalized)) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  if (/-\d+x\d+\./.test(normalized)) {
+    const match = normalized.match(/-(\d+)x(\d+)\./);
+    if (match) {
+      return Number(match[1]) * Number(match[2]);
+    }
+  }
+  return 2;
+}
+
 function normalizePhotoGallery(value) {
   const items = Array.isArray(value) ? value : [value];
   const unique = [];
-  const seen = new Set();
+  const indexByIdentity = new Map();
 
   items.forEach(item => {
     const normalized = normalizeRemoteUrl(item);
-    if (!normalized || seen.has(normalized)) {
+    if (!normalized) {
       return;
     }
 
-    seen.add(normalized);
-    unique.push(normalized);
+    const identity = getPhotoIdentityKey(normalized) || normalized;
+    const existingIndex = indexByIdentity.get(identity);
+    if (existingIndex === undefined) {
+      indexByIdentity.set(identity, unique.length);
+      unique.push(normalized);
+      return;
+    }
+
+    if (getPhotoQualityScore(normalized) > getPhotoQualityScore(unique[existingIndex])) {
+      unique[existingIndex] = normalized;
+    }
   });
 
   return unique.slice(0, 30);
@@ -158,6 +197,28 @@ function normalizeRepairState(value) {
 
 function normalizeTextValue(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function textField(item, snakeCaseKey, camelCaseKey = "") {
+  return String(
+    item?.[snakeCaseKey]
+    ?? (camelCaseKey ? item?.[camelCaseKey] : undefined)
+    ?? ""
+  ).trim();
+}
+
+function numberField(item, snakeCaseKey, camelCaseKey = "") {
+  const value = item?.[snakeCaseKey] ?? (camelCaseKey ? item?.[camelCaseKey] : undefined);
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function booleanField(item, snakeCaseKey, camelCaseKey = "") {
+  return normalizeBoolean(item?.[snakeCaseKey] ?? (camelCaseKey ? item?.[camelCaseKey] : undefined));
+}
+
+function listField(item, snakeCaseKey, camelCaseKey = "") {
+  return normalizeTextList(item?.[snakeCaseKey] ?? (camelCaseKey ? item?.[camelCaseKey] : undefined));
 }
 
 function detectFuelType(text) {
@@ -394,71 +455,79 @@ function normalizeListings(rows) {
   return rows
     .map(item => {
       const title = String(item.title || item.name || "Без названия").trim();
-      const description = String(item.description || "").trim();
+      const description = textField(item, "description");
       const titleMeta = extractTitleBrandModel(title, item.brand, item.model);
       const descriptionMeta = extractDescriptionMeta(description, { title, alt: "" });
       const photoGallery = normalizePhotoGallery(item.photo_gallery || item.photoGallery || []);
       const image = normalizeRemoteUrl(item.image) || photoGallery[0] || "";
       const resolvedPhotoGallery = photoGallery.length ? photoGallery : (image ? [image] : []);
-      const mileage = Number(item.mileage) > 0 ? Number(item.mileage) : (descriptionMeta.mileage || null);
-      const engineVolume = Number(item.engine_volume) > 0 ? Number(item.engine_volume) : (descriptionMeta.engineVolume || null);
-      const photoCount = Number(item.photo_count) > 0
-        ? Number(item.photo_count)
+      const mileage = numberField(item, "mileage") > 0 ? numberField(item, "mileage") : (descriptionMeta.mileage || null);
+      const engineVolume = numberField(item, "engine_volume", "engineVolume") > 0
+        ? numberField(item, "engine_volume", "engineVolume")
+        : (descriptionMeta.engineVolume || null);
+      const photoCount = numberField(item, "photo_count", "photoCount") > 0
+        ? numberField(item, "photo_count", "photoCount")
         : (resolvedPhotoGallery.length || null);
+      const marketDifference = numberField(item, "market_difference", "marketDifference");
+      const marketDifferencePercent = numberField(item, "market_difference_percent", "marketDifferencePercent");
 
       return {
         title,
-        price: Number(item.price) || 0,
-        year: Number(item.year) > 0 ? Number(item.year) : null,
+        price: numberField(item, "price") || 0,
+        year: numberField(item, "year") > 0 ? numberField(item, "year") : null,
         mileage,
-        owners: Number.isFinite(Number(item.owners)) && Number(item.owners) > 0 ? Number(item.owners) : null,
-        city: String(item.city || "").trim(),
-        url: String(item.url || "").trim(),
+        owners: numberField(item, "owners") > 0 ? numberField(item, "owners") : null,
+        city: textField(item, "city"),
+        url: textField(item, "url"),
         image,
         photo_gallery: resolvedPhotoGallery,
         description,
-        source: String(item.source || "").trim(),
-        brand: String(item.brand || titleMeta.brand || "").trim(),
-        model: String(item.model || titleMeta.model || "").trim(),
-        fuel_type: String(item.fuel_type || descriptionMeta.fuelType || "").trim(),
-        transmission: String(item.transmission || descriptionMeta.transmission || "").trim(),
-        body_type: String(item.body_type || descriptionMeta.bodyType || "").trim(),
-        drive_type: String(item.drive_type || descriptionMeta.driveType || "").trim(),
-        steering_side: String(item.steering_side || descriptionMeta.steeringSide || "").trim(),
-        color: String(item.color || descriptionMeta.color || "").trim(),
-        options: normalizeTextList(item.options),
-        vin: normalizeVin(item.vin),
-        vin_note: String(item.vin_note || "").trim(),
-        repair_state: normalizeRepairState(item.repair_state || descriptionMeta.repairState),
-        advert_id: String(item.advert_id || extractAdvertIdFromUrl(item.url)).trim(),
+        source: textField(item, "source"),
+        brand: textField(item, "brand") || titleMeta.brand,
+        model: textField(item, "model") || titleMeta.model,
+        fuel_type: textField(item, "fuel_type", "fuelType") || descriptionMeta.fuelType,
+        transmission: textField(item, "transmission") || descriptionMeta.transmission,
+        body_type: textField(item, "body_type", "bodyType") || descriptionMeta.bodyType,
+        drive_type: textField(item, "drive_type", "driveType") || descriptionMeta.driveType,
+        steering_side: textField(item, "steering_side", "steeringSide") || descriptionMeta.steeringSide,
+        color: textField(item, "color") || descriptionMeta.color,
+        options: listField(item, "options"),
+        vin: normalizeVin(textField(item, "vin")),
+        vin_note: textField(item, "vin_note", "vinNote"),
+        repair_state: normalizeRepairState(item.repair_state ?? item.repairState ?? descriptionMeta.repairState),
+        advert_id: textField(item, "advert_id", "advertId") || extractAdvertIdFromUrl(item.url),
         engine_volume: engineVolume,
-        publication_date: String(item.publication_date || "").trim(),
-        last_update: String(item.last_update || "").trim(),
-        first_seen_at: normalizeIsoDate(item.first_seen_at),
-        last_seen_at: normalizeIsoDate(item.last_seen_at),
-        last_checked_at: normalizeIsoDate(item.last_checked_at),
-        last_status_change_at: normalizeIsoDate(item.last_status_change_at),
-        actuality_status: normalizeActualityStatus(item.actuality_status),
-        avg_price: Number(item.avg_price) > 0 ? Number(item.avg_price) : null,
-        market_difference: Number.isFinite(Number(item.market_difference)) ? Number(item.market_difference) : null,
-        market_difference_percent: Number.isFinite(Number(item.market_difference_percent))
-          ? Number(item.market_difference_percent)
-          : null,
+        publication_date: textField(item, "publication_date", "publicationDate"),
+        last_update: textField(item, "last_update", "lastUpdate"),
+        first_seen_at: normalizeIsoDate(item.first_seen_at ?? item.firstSeenAt),
+        last_seen_at: normalizeIsoDate(item.last_seen_at ?? item.lastSeenAt),
+        last_checked_at: normalizeIsoDate(item.last_checked_at ?? item.lastCheckedAt),
+        last_status_change_at: normalizeIsoDate(item.last_status_change_at ?? item.lastStatusChangeAt),
+        actuality_status: normalizeActualityStatus(item.actuality_status ?? item.actualityStatus),
+        avg_price: numberField(item, "avg_price", "avgPrice") > 0 ? numberField(item, "avg_price", "avgPrice") : null,
+        market_difference: marketDifference,
+        market_difference_percent: marketDifferencePercent,
         photo_count: photoCount,
-        phone_count: Number(item.phone_count) > 0 ? Number(item.phone_count) : null,
-        phone_prefix: String(item.phone_prefix || "").trim(),
-        credit_available: normalizeBoolean(item.credit_available),
-        paid_services: normalizeTextList(item.paid_services),
-        credit_monthly_payment: Number(item.credit_monthly_payment) > 0 ? Number(item.credit_monthly_payment) : null,
-        credit_down_payment: Number(item.credit_down_payment) > 0 ? Number(item.credit_down_payment) : null,
-        seller_user_id: String(item.seller_user_id || "").trim(),
-        seller_type_id: Number(item.seller_type_id) > 0 ? Number(item.seller_type_id) : null,
-        is_verified_dealer: normalizeBoolean(item.is_verified_dealer),
-        is_used_car_dealer: normalizeBoolean(item.is_used_car_dealer),
-        public_history_available: normalizeBoolean(item.public_history_available),
-        history_summary: String(item.history_summary || "").trim(),
-        risk_score: Number(item.risk_score) >= 0 ? Number(item.risk_score) : null,
-        risk_flags: normalizeTextList(item.risk_flags)
+        phone_count: numberField(item, "phone_count", "phoneCount") > 0 ? numberField(item, "phone_count", "phoneCount") : null,
+        phone_prefix: textField(item, "phone_prefix", "phonePrefix"),
+        credit_available: booleanField(item, "credit_available", "creditAvailable"),
+        paid_services: listField(item, "paid_services", "paidServices"),
+        credit_monthly_payment: numberField(item, "credit_monthly_payment", "creditMonthlyPayment") > 0
+          ? numberField(item, "credit_monthly_payment", "creditMonthlyPayment")
+          : null,
+        credit_down_payment: numberField(item, "credit_down_payment", "creditDownPayment") > 0
+          ? numberField(item, "credit_down_payment", "creditDownPayment")
+          : null,
+        seller_user_id: textField(item, "seller_user_id", "sellerUserId"),
+        seller_type_id: numberField(item, "seller_type_id", "sellerTypeId") > 0
+          ? numberField(item, "seller_type_id", "sellerTypeId")
+          : null,
+        is_verified_dealer: booleanField(item, "is_verified_dealer", "isVerifiedDealer"),
+        is_used_car_dealer: booleanField(item, "is_used_car_dealer", "isUsedCarDealer"),
+        public_history_available: booleanField(item, "public_history_available", "publicHistoryAvailable"),
+        history_summary: textField(item, "history_summary", "historySummary"),
+        risk_score: numberField(item, "risk_score", "riskScore"),
+        risk_flags: listField(item, "risk_flags", "riskFlags")
       };
     })
     .map(item => ({
@@ -810,8 +879,16 @@ function extractImage(card) {
 function extractGalleryImages($, advertData = {}) {
   const candidates = [];
   const pushCandidate = value => {
-    if (value) {
-      candidates.push(value);
+    const normalized = normalizeRemoteUrl(value);
+    if (!normalized) {
+      return;
+    }
+
+    candidates.push(normalized);
+
+    const fullVariant = normalized.replace(/-\d+x\d+\.(?:jpg|jpeg|png|webp)$/i, "-full.jpg");
+    if (fullVariant !== normalized) {
+      candidates.push(fullVariant);
     }
   };
 
@@ -1940,6 +2017,27 @@ const server = http.createServer(async (request, response) => {
   }
 
   serveStaticFile(resolvedPath, response);
+});
+
+server.on("error", async error => {
+  if (error.code !== "EADDRINUSE") {
+    console.error(error);
+    process.exit(1);
+  }
+
+  try {
+    const response = await fetch(`http://localhost:${PORT}/api/health`);
+    if (response.ok) {
+      console.log(`Server already running: http://localhost:${PORT}`);
+      process.exit(0);
+      return;
+    }
+  } catch (healthError) {
+    // Ignore and report the original port collision below.
+  }
+
+  console.error(`Port ${PORT} is already in use.`);
+  process.exit(1);
 });
 
 server.listen(PORT, () => {

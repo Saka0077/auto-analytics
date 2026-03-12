@@ -416,6 +416,61 @@ function normalizePhotoGallery(value) {
   return unique.slice(0, 30);
 }
 
+function serializeRowForServer(item) {
+  return {
+    title: item.title,
+    price: item.price,
+    year: item.year,
+    mileage: item.mileage,
+    owners: item.owners,
+    city: item.city,
+    url: item.url,
+    image: item.image,
+    photo_gallery: item.photoGallery,
+    description: item.description,
+    source: item.source,
+    brand: item.brand,
+    model: item.model,
+    fuel_type: item.fuelType,
+    transmission: item.transmission,
+    body_type: item.bodyType,
+    drive_type: item.driveType,
+    steering_side: item.steeringSide,
+    color: item.color,
+    options: item.options,
+    vin: item.vin,
+    vin_note: item.vinNote,
+    repair_state: item.repairState,
+    advert_id: item.advertId,
+    engine_volume: item.engineVolume,
+    publication_date: item.publicationDate,
+    last_update: item.lastUpdate,
+    first_seen_at: item.firstSeenAt,
+    last_seen_at: item.lastSeenAt,
+    last_checked_at: item.lastCheckedAt,
+    last_status_change_at: item.lastStatusChangeAt,
+    actuality_status: item.actualityStatus,
+    photo_count: item.photoCount,
+    phone_count: item.phoneCount,
+    phone_prefix: item.phonePrefix,
+    credit_available: item.creditAvailable,
+    paid_services: item.paidServices,
+    credit_monthly_payment: item.creditMonthlyPayment,
+    credit_down_payment: item.creditDownPayment,
+    seller_user_id: item.sellerUserId,
+    seller_type_id: item.sellerTypeId,
+    is_verified_dealer: item.isVerifiedDealer,
+    is_used_car_dealer: item.isUsedCarDealer,
+    public_history_available: item.publicHistoryAvailable,
+    history_summary: item.historySummary,
+    risk_score: item.riskScore,
+    risk_flags: item.riskFlags,
+    avg_price: item.avgPrice,
+    market_difference: item.marketDifference,
+    market_difference_percent: item.marketDifferencePercent
+  };
+}
+
 function normalizeVin(value) {
   return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -2910,6 +2965,8 @@ function resetFilters() {
   elements.optionSearchInput.value = "";
   elements.sortSelect.value = "score";
   elements.showInactiveToggle.checked = false;
+  state.tableSort.key = "";
+  state.tableSort.direction = "asc";
   render();
 }
 
@@ -2920,7 +2977,7 @@ async function saveListingsToServer(listings) {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(listings)
+      body: JSON.stringify(listings.map(serializeRowForServer))
     });
 
     if (!response.ok) {
