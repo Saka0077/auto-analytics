@@ -104,14 +104,16 @@
             <span>Ссылка Kolesa или авто-сборка</span>
             <input id="kolesa-url-input" type="url" placeholder="Если пусто, ссылка соберётся из фильтров выше">
           </label>
+          <div id="import-preview-box" class="import-preview-box">
+            <div class="import-preview-head">
+              <strong>Доступно по текущему поиску</strong>
+              <span id="import-preview-status" class="muted">Пока не проверено</span>
+            </div>
+            <p id="import-preview-note" class="import-preview-note">Выбери город, марку и цену. Сайт сам покажет, сколько объявлений найдено до импорта.</p>
+          </div>
           <label class="field import-field">
-            <span>Сколько объявлений</span>
-            <select id="import-limit-select">
-              <option value="20">20 авто</option>
-              <option value="100" selected>100 авто</option>
-              <option value="200">200 авто</option>
-              <option value="300">300 авто</option>
-            </select>
+            <span>Сколько импортировать</span>
+            <input id="import-limit-select" type="number" min="1" max="300" step="1" value="100" placeholder="Например: 80">
           </label>
           <div class="import-actions">
             <button id="import-kolesa-btn" class="primary-btn" type="button">Импортировать</button>

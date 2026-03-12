@@ -150,7 +150,14 @@ const state = {
   authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
   currentUser: null,
   listingInsights: {},
-  listingGalleries: {}
+  listingGalleries: {},
+  importPreview: {
+    status: "idle",
+    url: "",
+    availableCount: null,
+    hasMore: false,
+    note: ""
+  }
 };
 
 const elements = {
@@ -203,6 +210,9 @@ const elements = {
   importPriceToInput: document.getElementById("import-price-to-input"),
   kolesaUrlInput: document.getElementById("kolesa-url-input"),
   importLimitSelect: document.getElementById("import-limit-select"),
+  importPreviewBox: document.getElementById("import-preview-box"),
+  importPreviewStatus: document.getElementById("import-preview-status"),
+  importPreviewNote: document.getElementById("import-preview-note"),
   importKolesaBtn: document.getElementById("import-kolesa-btn"),
   importAktauBtn: document.getElementById("import-aktau-btn"),
   fileInput: document.getElementById("file-input"),
@@ -275,6 +285,8 @@ const elements = {
   exportCompareCsvBtn: document.getElementById("export-compare-csv-btn"),
   exportComparePdfBtn: document.getElementById("export-compare-pdf-btn")
 };
+
+let importPreviewTimer = null;
 
 function normalizeSortValue(value) {
   if (value === null || value === undefined || value === "") {
@@ -1294,10 +1306,133 @@ function setImportBusy(isBusy) {
 
 function getImportLimit() {
   const value = Number(elements.importLimitSelect.value);
+  const previewCap = state.importPreview.availableCount && !state.importPreview.hasMore
+    ? state.importPreview.availableCount
+    : 300;
   if (!Number.isFinite(value) || value <= 0) {
     return 100;
   }
-  return Math.min(Math.max(Math.round(value), 20), 300);
+  return Math.min(Math.max(Math.round(value), 1), Math.max(1, previewCap));
+}
+
+function renderImportPreview() {
+  if (!elements.importPreviewStatus || !elements.importPreviewNote) {
+    return;
+  }
+
+  const preview = state.importPreview;
+  elements.importPreviewBox?.classList.remove("is-loading", "is-ready", "is-error");
+
+  if (preview.status === "loading") {
+    elements.importPreviewBox?.classList.add("is-loading");
+    elements.importPreviewStatus.textContent = "Считаю...";
+    elements.importPreviewNote.textContent = "Проверяю, сколько объявлений доступно по текущему поиску.";
+    return;
+  }
+
+  if (preview.status === "error") {
+    elements.importPreviewBox?.classList.add("is-error");
+    elements.importPreviewStatus.textContent = "Не удалось получить";
+    elements.importPreviewNote.textContent = preview.note || "Kolesa сейчас не ответил. Можно импортировать вручную по ссылке.";
+    return;
+  }
+
+  if (preview.status === "ready" && Number.isFinite(preview.availableCount)) {
+    elements.importPreviewBox?.classList.add("is-ready");
+    const totalText = preview.hasMore ? `${formatInteger(preview.availableCount)}+ авто` : `${formatInteger(preview.availableCount)} авто`;
+    elements.importPreviewStatus.textContent = totalText;
+    elements.importPreviewNote.textContent = preview.hasMore
+      ? `По текущему поиску найдено больше ${formatInteger(preview.availableCount)} объявлений. Выбери, сколько импортировать сейчас.`
+      : `По текущему поиску найдено ${formatInteger(preview.availableCount)} объявлений. Теперь выбери, сколько импортировать.`;
+    return;
+  }
+
+  elements.importPreviewStatus.textContent = "Пока не проверено";
+  elements.importPreviewNote.textContent = "Выбери город, марку и цену. Сайт сам покажет, сколько объявлений найдено до импорта.";
+}
+
+async function loadImportPreview(url) {
+  const trimmedUrl = String(url || "").trim();
+  if (!trimmedUrl) {
+    state.importPreview = {
+      status: "idle",
+      url: "",
+      availableCount: null,
+      hasMore: false,
+      note: ""
+    };
+    renderImportPreview();
+    return;
+  }
+
+  state.importPreview = {
+    status: "loading",
+    url: trimmedUrl,
+    availableCount: null,
+    hasMore: false,
+    note: ""
+  };
+  renderImportPreview();
+
+  try {
+    const response = await fetch("/api/import/kolesa/preview", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ url: trimmedUrl })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Preview failed");
+    }
+
+    if (state.importPreview.url !== trimmedUrl) {
+      return;
+    }
+
+    state.importPreview = {
+      status: "ready",
+      url: trimmedUrl,
+      availableCount: Number(payload.availableCount) || 0,
+      hasMore: Boolean(payload.hasMore),
+      note: ""
+    };
+
+    if (!state.importPreview.hasMore) {
+      const maxAvailable = Math.max(1, state.importPreview.availableCount);
+      if (Number(elements.importLimitSelect.value) > maxAvailable) {
+        elements.importLimitSelect.value = String(maxAvailable);
+      }
+      elements.importLimitSelect.max = String(maxAvailable);
+    } else {
+      elements.importLimitSelect.max = "300";
+    }
+
+    renderImportPreview();
+  } catch (error) {
+    if (state.importPreview.url !== trimmedUrl) {
+      return;
+    }
+
+    state.importPreview = {
+      status: "error",
+      url: trimmedUrl,
+      availableCount: null,
+      hasMore: false,
+      note: error.message || "Не удалось получить количество объявлений."
+    };
+    elements.importLimitSelect.max = "300";
+    renderImportPreview();
+  }
+}
+
+function scheduleImportPreview() {
+  const url = elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters();
+  clearTimeout(importPreviewTimer);
+  importPreviewTimer = setTimeout(() => {
+    void loadImportPreview(url);
+  }, 700);
 }
 
 function fillSelectOptions(element, options, selectedValue = "") {
@@ -3749,6 +3884,14 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
       void saveAppState();
     }
     const pagesLoaded = Number(payload.pagesLoaded) || 1;
+    state.importPreview = {
+      status: "ready",
+      url: trimmedUrl,
+      availableCount: Number(payload.availableCount || payload.count || state.importPreview.availableCount || 0),
+      hasMore: Boolean(payload.hasMore),
+      note: ""
+    };
+    renderImportPreview();
     setStatus(`Источник: Kolesa, активных ${getActualListingsCount()} из ${state.listings.length}, ${pagesLoaded} стр.`);
   } catch (error) {
     window.alert(error.message || "Не удалось импортировать данные.");
@@ -3846,6 +3989,7 @@ elements.importAktauBtn.addEventListener("click", () => {
   elements.importCitySelect.value = "aktau";
   elements.kolesaUrlInput.dataset.manual = "false";
   syncImportUrlPreview();
+  scheduleImportPreview();
   void importFromKolesaUrl(buildImportUrlFromFilters(), getImportLimit());
 });
 [
@@ -3861,14 +4005,17 @@ elements.importAktauBtn.addEventListener("click", () => {
   element.addEventListener("input", () => {
     elements.kolesaUrlInput.dataset.manual = "false";
     syncImportUrlPreview();
+    scheduleImportPreview();
   });
   element.addEventListener("change", () => {
     elements.kolesaUrlInput.dataset.manual = "false";
     syncImportUrlPreview();
+    scheduleImportPreview();
   });
 });
 elements.kolesaUrlInput.addEventListener("input", () => {
   elements.kolesaUrlInput.dataset.manual = elements.kolesaUrlInput.value.trim() ? "true" : "false";
+  scheduleImportPreview();
 });
 elements.modalCloseBtn.addEventListener("click", closeListingDetails);
 elements.modalBackdrop.addEventListener("click", closeListingDetails);
@@ -4016,6 +4163,8 @@ populateImportFilters();
 updateAnalysisModeUI();
 elements.kolesaUrlInput.dataset.manual = "false";
 syncImportUrlPreview();
+renderImportPreview();
+scheduleImportPreview();
 updateComparePanel();
 Promise.all([loadAppState(), loadListingsFromServer()]).finally(() => {
   render();

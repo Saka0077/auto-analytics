@@ -1557,7 +1557,7 @@ function clampImportLimit(value) {
   if (!Number.isFinite(parsed)) {
     return 100;
   }
-  return Math.min(Math.max(Math.round(parsed), 20), 300);
+  return Math.min(Math.max(Math.round(parsed), 1), 300);
 }
 
 function buildKolesaPageUrl(sourceUrl, page) {
@@ -1802,6 +1802,40 @@ async function fetchKolesaListings(sourceUrl, limit = 100) {
       ...item,
       repair_state: item.repair_state && item.repair_state !== "unknown" ? item.repair_state : repairState
     })),
+    pagesLoaded: pages.length
+  };
+}
+
+async function fetchKolesaListingsPreview(sourceUrl, limit = 300) {
+  const safeLimit = clampImportLimit(limit);
+  const probeLimit = safeLimit + 1;
+  const maxPages = Math.ceil(probeLimit / 20) + 2;
+  const pages = [];
+  let combined = [];
+
+  for (let page = 1; page <= maxPages && combined.length < probeLimit; page += 1) {
+    const pageUrl = buildKolesaPageUrl(sourceUrl, page);
+    const pageItems = await fetchKolesaPage(pageUrl);
+    if (!pageItems.length) {
+      break;
+    }
+
+    pages.push(pageUrl);
+    combined = uniqueListings([...combined, ...pageItems]);
+
+    if (pageItems.length < 20) {
+      break;
+    }
+
+    if (combined.length < probeLimit) {
+      await wait(200);
+    }
+  }
+
+  const hasMore = combined.length > safeLimit;
+  return {
+    availableCount: hasMore ? safeLimit : combined.length,
+    hasMore,
     pagesLoaded: pages.length
   };
 }
@@ -2139,6 +2173,34 @@ const server = http.createServer(async (request, response) => {
           ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
           : "Не удалось импортировать объявления с Kolesa.";
       console.error("Kolesa import failed:", error);
+      sendJson(response, 400, { error: message, detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname === "/api/import/kolesa/preview" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const sourceUrl = String(payload.url || "").trim();
+
+      if (!sourceUrl) {
+        sendJson(response, 400, { error: "Нужна ссылка на поиск Kolesa." });
+        return;
+      }
+
+      const preview = await fetchKolesaListingsPreview(sourceUrl, 300);
+      sendJson(response, 200, {
+        ok: true,
+        source: "kolesa.kz",
+        sourceUrl,
+        ...preview
+      });
+    } catch (error) {
+      const message =
+        error.message === "unsupported-host"
+          ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
+          : "Не удалось получить количество объявлений с Kolesa.";
+      console.error("Kolesa preview failed:", error);
       sendJson(response, 400, { error: message, detail: String(error.message || error) });
     }
     return;

@@ -362,6 +362,47 @@ select:focus {
   background: var(--surface-soft);
 }
 
+.import-preview-box {
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.import-preview-box.is-loading {
+  background: #f8fafc;
+}
+
+.import-preview-box.is-ready {
+  background: #edf7f0;
+  border-color: #c9e4d0;
+}
+
+.import-preview-box.is-error {
+  background: #fff2f0;
+  border-color: #f2c7bf;
+}
+
+.import-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.import-preview-head strong {
+  font-size: 14px;
+}
+
+.import-preview-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 13px;
+}
+
 .import-field {
   margin-bottom: 10px;
 }
@@ -383,7 +424,7 @@ select:focus {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .stat-card {
@@ -404,7 +445,7 @@ select:focus {
 .chart-card,
 .table-card {
   padding: 16px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .compare-panel {
@@ -1393,6 +1434,10 @@ a:hover {
 
   .control-group {
     padding: 12px;
+  }
+
+  .import-preview-head {
+    flex-direction: column;
   }
 
   .modal-price-box {
