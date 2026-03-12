@@ -403,6 +403,11 @@ select:focus {
   font-size: 13px;
 }
 
+.import-preview-btn {
+  margin-top: 12px;
+  width: 100%;
+}
+
 .import-field {
   margin-bottom: 10px;
 }

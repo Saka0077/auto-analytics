@@ -93,11 +93,11 @@
           <div class="field-row">
             <label class="field import-field">
               <span>Цена от</span>
-              <input id="import-price-from-input" type="number" placeholder="3000000">
+              <input id="import-price-from-input" type="text" inputmode="numeric" placeholder="3 000 000 или 3 млн">
             </label>
             <label class="field import-field">
               <span>Цена до</span>
-              <input id="import-price-to-input" type="number" placeholder="12000000">
+              <input id="import-price-to-input" type="text" inputmode="numeric" placeholder="12 000 000 или 12 млн">
             </label>
           </div>
           <label class="field import-field">
@@ -109,7 +109,8 @@
               <strong>Доступно по текущему поиску</strong>
               <span id="import-preview-status" class="muted">Пока не проверено</span>
             </div>
-            <p id="import-preview-note" class="import-preview-note">Выбери город, марку и цену. Сайт сам покажет, сколько объявлений найдено до импорта.</p>
+            <p id="import-preview-note" class="import-preview-note">Выбери город, марку и цену, потом нажми кнопку ниже.</p>
+            <button id="import-preview-btn" class="ghost-btn import-preview-btn" type="button">Показать сколько авто</button>
           </div>
           <label class="field import-field">
             <span>Сколько импортировать</span>

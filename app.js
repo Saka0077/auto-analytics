@@ -213,6 +213,7 @@ const elements = {
   importPreviewBox: document.getElementById("import-preview-box"),
   importPreviewStatus: document.getElementById("import-preview-status"),
   importPreviewNote: document.getElementById("import-preview-note"),
+  importPreviewBtn: document.getElementById("import-preview-btn"),
   importKolesaBtn: document.getElementById("import-kolesa-btn"),
   importAktauBtn: document.getElementById("import-aktau-btn"),
   fileInput: document.getElementById("file-input"),
@@ -292,8 +293,6 @@ const elements = {
   exportCompareCsvBtn: document.getElementById("export-compare-csv-btn"),
   exportComparePdfBtn: document.getElementById("export-compare-pdf-btn")
 };
-
-let importPreviewTimer = null;
 
 function normalizeSortValue(value) {
   if (value === null || value === undefined || value === "") {
@@ -414,6 +413,49 @@ function number(value) {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseMoneyInput(value) {
+  const source = String(value ?? "").trim().toLowerCase().replace(/,/g, ".");
+  if (!source) {
+    return null;
+  }
+
+  const compact = source.replace(/\s+/g, "");
+  let multiplier = 1;
+  let numericText = compact;
+
+  if (/(млн|million|kk|m)$/.test(compact)) {
+    multiplier = 1000000;
+    numericText = compact.replace(/(млн|million|kk|m)$/g, "");
+  } else if (/(тыс|thousand|k)$/.test(compact)) {
+    multiplier = 1000;
+    numericText = compact.replace(/(тыс|thousand|k)$/g, "");
+  }
+
+  if (!numericText) {
+    return null;
+  }
+
+  const normalizedNumericText = multiplier === 1
+    ? numericText.replace(/[^\d]/g, "")
+    : numericText.replace(/[^\d.]/g, "");
+
+  if (!normalizedNumericText) {
+    return null;
+  }
+
+  const parsed = Number(normalizedNumericText);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Math.round(parsed * multiplier);
+}
+
+function formatMoneyInputValue(value) {
+  const parsed = parseMoneyInput(value);
+  return parsed ? formatInteger(parsed) : "";
 }
 
 function getNormalizedRange(minValue, maxValue) {
@@ -1360,6 +1402,7 @@ function wait(ms) {
 function setImportBusy(isBusy) {
   elements.importKolesaBtn.disabled = isBusy;
   elements.importAktauBtn.disabled = isBusy;
+  elements.importPreviewBtn.disabled = isBusy;
   elements.importLimitSelect.disabled = isBusy;
   elements.kolesaUrlInput.disabled = isBusy;
   elements.importCitySelect.disabled = isBusy;
@@ -1391,6 +1434,12 @@ function renderImportPreview() {
 
   const preview = state.importPreview;
   elements.importPreviewBox?.classList.remove("is-loading", "is-ready", "is-error");
+  if (elements.importPreviewBtn) {
+    elements.importPreviewBtn.disabled = preview.status === "loading";
+    elements.importPreviewBtn.textContent = preview.status === "loading"
+      ? "Считаю..."
+      : "Показать сколько авто";
+  }
 
   if (preview.status === "loading") {
     elements.importPreviewBox?.classList.add("is-loading");
@@ -1417,7 +1466,19 @@ function renderImportPreview() {
   }
 
   elements.importPreviewStatus.textContent = "Пока не проверено";
-  elements.importPreviewNote.textContent = "Выбери город, марку и цену. Сайт сам покажет, сколько объявлений найдено до импорта.";
+  elements.importPreviewNote.textContent = "Измени фильтры и нажми кнопку, чтобы посчитать объявления без лишней нагрузки.";
+}
+
+function markImportPreviewDirty() {
+  state.importPreview = {
+    status: "idle",
+    url: elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters(),
+    availableCount: null,
+    hasMore: false,
+    note: ""
+  };
+  elements.importLimitSelect.max = "300";
+  renderImportPreview();
 }
 
 async function loadImportPreview(url) {
@@ -1496,14 +1557,6 @@ async function loadImportPreview(url) {
   }
 }
 
-function scheduleImportPreview() {
-  const url = elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters();
-  clearTimeout(importPreviewTimer);
-  importPreviewTimer = setTimeout(() => {
-    void loadImportPreview(url);
-  }, 700);
-}
-
 function fillSelectOptions(element, options, selectedValue = "") {
   element.innerHTML = "";
   options.forEach(optionData => {
@@ -1529,6 +1582,20 @@ function syncImportUrlPreview() {
   elements.kolesaUrlInput.value = buildImportUrlFromFilters();
 }
 
+function handleImportPriceFocus(event) {
+  const parsed = parseMoneyInput(event.target.value);
+  event.target.value = parsed ? String(parsed) : "";
+}
+
+function handleImportPriceBlur(event) {
+  event.target.value = formatMoneyInputValue(event.target.value);
+}
+
+function requestImportPreview() {
+  const url = elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters();
+  void loadImportPreview(url);
+}
+
 function buildImportUrlFromFilters() {
   const city = elements.importCitySelect.value;
   const mark = elements.importMarkSelect.value;
@@ -1536,8 +1603,8 @@ function buildImportUrlFromFilters() {
   const transmission = elements.importTransmissionSelect.value;
   const custom = elements.importCustomSelect.value;
   const needRepair = elements.importNeedRepairSelect.value;
-  const priceFrom = number(elements.importPriceFromInput.value);
-  const priceTo = number(elements.importPriceToInput.value);
+  const priceFrom = parseMoneyInput(elements.importPriceFromInput.value);
+  const priceTo = parseMoneyInput(elements.importPriceToInput.value);
 
   let url = "https://kolesa.kz/cars/";
   if (city) {
@@ -4108,11 +4175,12 @@ elements.profileSelect.addEventListener("change", event => {
 });
 elements.fileInput.addEventListener("change", handleFileUpload);
 elements.importKolesaBtn.addEventListener("click", importFromKolesa);
+elements.importPreviewBtn.addEventListener("click", requestImportPreview);
 elements.importAktauBtn.addEventListener("click", () => {
   elements.importCitySelect.value = "aktau";
   elements.kolesaUrlInput.dataset.manual = "false";
   syncImportUrlPreview();
-  scheduleImportPreview();
+  markImportPreviewDirty();
   void importFromKolesaUrl(buildImportUrlFromFilters(), getImportLimit());
 });
 [
@@ -4128,17 +4196,25 @@ elements.importAktauBtn.addEventListener("click", () => {
   element.addEventListener("input", () => {
     elements.kolesaUrlInput.dataset.manual = "false";
     syncImportUrlPreview();
-    scheduleImportPreview();
+    markImportPreviewDirty();
   });
   element.addEventListener("change", () => {
     elements.kolesaUrlInput.dataset.manual = "false";
     syncImportUrlPreview();
-    scheduleImportPreview();
+    markImportPreviewDirty();
   });
 });
 elements.kolesaUrlInput.addEventListener("input", () => {
   elements.kolesaUrlInput.dataset.manual = elements.kolesaUrlInput.value.trim() ? "true" : "false";
-  scheduleImportPreview();
+  markImportPreviewDirty();
+});
+[
+  elements.importPriceFromInput,
+  elements.importPriceToInput
+].forEach(element => {
+  element.addEventListener("focus", handleImportPriceFocus);
+  element.addEventListener("blur", handleImportPriceBlur);
+  element.value = formatMoneyInputValue(element.value);
 });
 elements.modalCloseBtn.addEventListener("click", closeListingDetails);
 elements.modalBackdrop.addEventListener("click", closeListingDetails);
@@ -4286,8 +4362,7 @@ populateImportFilters();
 updateAnalysisModeUI();
 elements.kolesaUrlInput.dataset.manual = "false";
 syncImportUrlPreview();
-renderImportPreview();
-scheduleImportPreview();
+markImportPreviewDirty();
 updateComparePanel();
 Promise.all([loadAppState(), loadListingsFromServer()]).finally(() => {
   render();
