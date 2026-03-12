@@ -179,6 +179,9 @@ const elements = {
   driveFilterSelect: document.getElementById("drive-filter-select"),
   steeringFilterSelect: document.getElementById("steering-filter-select"),
   colorFilterSelect: document.getElementById("color-filter-select"),
+  transmissionFilterSelect: document.getElementById("transmission-filter-select"),
+  bodyFilterSelect: document.getElementById("body-filter-select"),
+  sellerFilterSelect: document.getElementById("seller-filter-select"),
   optionSearchInput: document.getElementById("option-search-input"),
   sortSelect: document.getElementById("sort-select"),
   showInactiveToggle: document.getElementById("show-inactive-toggle"),
@@ -428,6 +431,8 @@ function normalizeRow(item) {
     brand: item.brand || "",
     model: item.model || "",
     fuelType: item.fuel_type || item.fuelType || "",
+    transmission: item.transmission || "",
+    bodyType: item.body_type || item.bodyType || "",
     driveType: item.drive_type || item.driveType || "",
     steeringSide: item.steering_side || item.steeringSide || "",
     color: item.color || "",
@@ -525,10 +530,67 @@ function formatShortDate(value) {
     return "-";
   }
 
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000));
+
+  if (diffDays === 0) {
+    return "сегодня";
+  }
+
+  if (diffDays === 1) {
+    return "вчера";
+  }
+
   return new Intl.DateTimeFormat("ru-RU", {
     day: "numeric",
     month: "short"
   }).format(date);
+}
+
+function formatTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatRelativeListingDate(item) {
+  const rawValue = item?.lastUpdate || item?.publicationDate || item?.lastCheckedAt || "";
+  if (!rawValue) {
+    return "-";
+  }
+
+  const date = new Date(rawValue);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000));
+
+  if (diffDays === 0) {
+    const time = formatTime(rawValue);
+    return time ? `сегодня ${time}` : "сегодня";
+  }
+
+  if (diffDays === 1) {
+    return "вчера";
+  }
+
+  if (diffDays > 1 && diffDays <= 7) {
+    return `${diffDays} дн. назад`;
+  }
+
+  return formatShortDate(rawValue);
 }
 
 function formatDateTime(value) {
@@ -656,6 +718,12 @@ function getRepairStateLabel(item) {
     default:
       return "";
   }
+}
+
+function getSellerFilterType(item) {
+  return item.isUsedCarDealer || item.isVerifiedDealer || Number(item.sellerTypeId) === 2
+    ? "dealer"
+    : "private";
 }
 
 function renderListingBadges(item) {
@@ -1185,11 +1253,15 @@ function populateAttributeSelect(element, values, placeholder) {
 
 function populateAttributeFilters() {
   const fuels = [...new Set(state.listings.map(item => item.fuelType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const transmissions = [...new Set(state.listings.map(item => item.transmission).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const bodyTypes = [...new Set(state.listings.map(item => item.bodyType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
   const drives = [...new Set(state.listings.map(item => item.driveType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
   const steerings = [...new Set(state.listings.map(item => item.steeringSide).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
   const colors = [...new Set(state.listings.map(item => item.color).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
 
   populateAttributeSelect(elements.fuelFilterSelect, fuels, "Любое");
+  populateAttributeSelect(elements.transmissionFilterSelect, transmissions, "Любая");
+  populateAttributeSelect(elements.bodyFilterSelect, bodyTypes, "Любой");
   populateAttributeSelect(elements.driveFilterSelect, drives, "Любой");
   populateAttributeSelect(elements.steeringFilterSelect, steerings, "Любой");
   populateAttributeSelect(elements.colorFilterSelect, colors, "Любой");
@@ -1207,9 +1279,12 @@ function getFilteredListings() {
   const maxMonthlyPayment = number(elements.maxMonthlyPaymentInput.value);
   const repair = elements.repairFilterSelect.value;
   const fuel = elements.fuelFilterSelect.value;
+  const transmission = elements.transmissionFilterSelect.value;
+  const bodyType = elements.bodyFilterSelect.value;
   const drive = elements.driveFilterSelect.value;
   const steering = elements.steeringFilterSelect.value;
   const color = elements.colorFilterSelect.value;
+  const seller = elements.sellerFilterSelect.value;
   const optionSearch = elements.optionSearchInput.value.trim().toLowerCase();
   const sort = elements.sortSelect.value;
   const showInactive = elements.showInactiveToggle.checked;
@@ -1233,11 +1308,14 @@ function getFilteredListings() {
     const monthlyPaymentMatch = !maxMonthlyPayment || (item.creditMonthlyPayment !== null && item.creditMonthlyPayment <= maxMonthlyPayment);
     const repairMatch = !repair || item.repairState === repair;
     const fuelMatch = !fuel || item.fuelType === fuel;
+    const transmissionMatch = !transmission || item.transmission === transmission;
+    const bodyTypeMatch = !bodyType || item.bodyType === bodyType;
     const driveMatch = !drive || item.driveType === drive;
     const steeringMatch = !steering || item.steeringSide === steering;
     const colorMatch = !color || item.color === color;
+    const sellerMatch = !seller || getSellerFilterType(item) === seller;
     const optionMatch = !optionSearch || item.options.some(option => option.toLowerCase().includes(optionSearch));
-    return actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && driveMatch && steeringMatch && colorMatch && optionMatch;
+    return actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && transmissionMatch && bodyTypeMatch && driveMatch && steeringMatch && colorMatch && sellerMatch && optionMatch;
   });
 
   switch (sort) {
@@ -1375,7 +1453,7 @@ function renderTopLists(listings) {
         ${renderThumb(item.image, "thumb thumb--small")}
         <div>
           <div class="top-item-title">${escapeHtml(item.title)}</div>
-          <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)} · ${formatShortDate(item.publicationDate)}</div>
+          <div class="top-item-meta">${escapeHtml(item.city || "Без города")} · ${formatPrice(item.price)} · ${formatRelativeListingDate(item)}</div>
           <div class="top-item-badges">${renderListingBadges(item)}</div>
         </div>
         <div class="top-item-value">${formatScore(item[valueKey])} ${valueLabel}</div>
@@ -1416,7 +1494,7 @@ function renderTable(listings) {
       </td>
       <td>${formatPrice(item.price)}</td>
       <td>${item.year ?? "-"}</td>
-      <td>${formatShortDate(item.publicationDate)}</td>
+      <td>${formatRelativeListingDate(item)}</td>
       <td>${item.mileage ? formatMileage(item.mileage) : "-"}</td>
       <td>${item.owners ?? "-"}</td>
       <td><span class="score-badge">${formatScore(item.score)}</span></td>
@@ -1502,7 +1580,7 @@ function getBreakdownComment(label, value, item) {
   }
 
   if (label === "Свежесть") {
-    return item.publicationDate ? `публикация ${formatShortDate(item.publicationDate)}` : "дата не указана";
+    return (item.publicationDate || item.lastUpdate) ? `публикация ${formatRelativeListingDate(item)}` : "дата не указана";
   }
 
   if (label === "Риск") {
@@ -1529,7 +1607,7 @@ function renderListingFacts(item) {
     renderFact("Качество", formatScore(item.qualityScore)),
     renderFact("Выгода", formatScore(item.dealScore)),
     ...renderMarketFacts(item),
-    renderFact("Дата публикации", formatShortDate(item.publicationDate)),
+    renderFact("Дата публикации", formatRelativeListingDate(item)),
     renderFact("Год", item.year ?? "-"),
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
     renderFact("Владельцы", item.owners ?? "-"),
@@ -1538,6 +1616,8 @@ function renderListingFacts(item) {
     renderFact("Марка", item.brand || "-"),
     renderFact("Модель", item.model || "-"),
     renderFact("Топливо", item.fuelType || "-"),
+    renderFact("КПП", item.transmission || "-"),
+    renderFact("Кузов", item.bodyType || "-"),
     renderFact("Привод", item.driveType || "-"),
     renderFact("Руль", item.steeringSide || "-"),
     renderFact("Цвет", item.color || "-"),
@@ -2567,9 +2647,12 @@ function resetFilters() {
   elements.creditFilterSelect.value = "";
   elements.repairFilterSelect.value = "";
   elements.fuelFilterSelect.value = "";
+  elements.transmissionFilterSelect.value = "";
+  elements.bodyFilterSelect.value = "";
   elements.driveFilterSelect.value = "";
   elements.steeringFilterSelect.value = "";
   elements.colorFilterSelect.value = "";
+  elements.sellerFilterSelect.value = "";
   elements.optionSearchInput.value = "";
   elements.sortSelect.value = "score";
   elements.showInactiveToggle.checked = false;
@@ -2729,9 +2812,12 @@ async function handleFileUpload(event) {
   elements.creditFilterSelect,
   elements.repairFilterSelect,
   elements.fuelFilterSelect,
+  elements.transmissionFilterSelect,
+  elements.bodyFilterSelect,
   elements.driveFilterSelect,
   elements.steeringFilterSelect,
   elements.colorFilterSelect,
+  elements.sellerFilterSelect,
   elements.optionSearchInput,
   elements.sortSelect,
   elements.showInactiveToggle

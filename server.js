@@ -127,7 +127,7 @@ function normalizeTextValue(value) {
 
 function detectFuelType(text) {
   const normalized = normalizeTextValue(text);
-  if (/электро|электромоб/i.test(normalized)) {
+  if (/\bэлектричество\b|\bэлектромоб/i.test(normalized)) {
     return "Электро";
   }
   if (/гибрид/i.test(normalized)) {
@@ -145,15 +145,35 @@ function detectFuelType(text) {
   return "";
 }
 
+function detectTransmission(text) {
+  const normalized = normalizeTextValue(text);
+  if (/кпп\s+автомат|автоматическая кпп|\bакпп\b/i.test(normalized)) {
+    return "Автомат";
+  }
+  if (/кпп\s+механика|механическая кпп|\bмкпп\b/i.test(normalized)) {
+    return "Механика";
+  }
+  if (/кпп\s+вариатор|вариатор/i.test(normalized)) {
+    return "Вариатор";
+  }
+  if (/кпп\s+робот|робот/i.test(normalized)) {
+    return "Робот";
+  }
+  if (/кпп\s+типтроник|типтроник/i.test(normalized)) {
+    return "Типтроник";
+  }
+  return "";
+}
+
 function detectDriveType(text) {
   const normalized = normalizeTextValue(text);
-  if (/4wd|awd|полный привод/i.test(normalized)) {
+  if (/4wd|awd|полный привод|привод[:\s-]*полный/i.test(normalized)) {
     return "Полный";
   }
-  if (/передний привод/i.test(normalized)) {
+  if (/передний привод|привод[:\s-]*передний/i.test(normalized)) {
     return "Передний";
   }
-  if (/задний привод/i.test(normalized)) {
+  if (/задний привод|привод[:\s-]*задний/i.test(normalized)) {
     return "Задний";
   }
   return "";
@@ -173,17 +193,21 @@ function detectSteeringSide(text) {
 function detectColor(text) {
   const normalized = normalizeTextValue(text);
   const colors = [
+    ["Серебристый", /серебрист|серебр/i],
+    ["Черный", /черн|чёрн/i],
     ["Белый", /бел/i],
-    ["Черный", /черн/i],
-    ["Серый", /сер/i],
-    ["Серебристый", /сереб/i],
+    ["Серый", /(^|[\s,])сер(ый|ая|ого|ом)?([\s,.]|$)/i],
     ["Синий", /син/i],
+    ["Голубой", /голуб/i],
     ["Красный", /красн/i],
-    ["Зеленый", /зелен/i],
+    ["Бордовый", /бордов|вишн/i],
+    ["Зеленый", /зелен|зелён/i],
     ["Коричневый", /корич/i],
     ["Бежевый", /беж/i],
-    ["Желтый", /желт/i],
-    ["Оранжевый", /оранж/i]
+    ["Желтый", /желт|жёлт/i],
+    ["Оранжевый", /оранж/i],
+    ["Фиолетовый", /фиолет|сиренев/i],
+    ["Золотистый", /золот/i]
   ];
 
   for (const [label, pattern] of colors) {
@@ -216,6 +240,44 @@ function detectOptions(text) {
     .filter(([, pattern]) => pattern.test(normalized))
     .map(([label]) => label)
     .slice(0, 12);
+}
+
+function extractTitleBrandModel(title, brand = "", model = "") {
+  const normalizedTitle = normalizeWhitespace(title).replace(/\s+\d{4}\s*г\.?$/i, "");
+  const normalizedBrand = normalizeWhitespace(brand);
+  const normalizedModel = normalizeWhitespace(model);
+  if (normalizedBrand && normalizedModel) {
+    return { brand: normalizedBrand, model: normalizedModel };
+  }
+
+  if (normalizedBrand && !normalizedModel) {
+    const nextModel = normalizeWhitespace(normalizedTitle.replace(new RegExp(`^${normalizedBrand}\\s*`, "i"), ""));
+    return { brand: normalizedBrand, model: nextModel };
+  }
+
+  const multiWordBrands = [
+    "Mercedes-Benz",
+    "Land Rover",
+    "Alfa Romeo",
+    "Aston Martin",
+    "Great Wall",
+    "Hongqi",
+    "Rolls-Royce",
+    "ВАЗ (Lada)"
+  ];
+  const matchedBrand = multiWordBrands.find(item => normalizedTitle.toLowerCase().startsWith(item.toLowerCase()));
+  if (matchedBrand) {
+    return {
+      brand: matchedBrand,
+      model: normalizeWhitespace(normalizedTitle.slice(matchedBrand.length))
+    };
+  }
+
+  const [firstWord, ...rest] = normalizedTitle.split(" ");
+  return {
+    brand: firstWord || "",
+    model: rest.join(" ").trim()
+  };
 }
 
 function normalizeVin(value) {
@@ -309,6 +371,8 @@ function normalizeListings(rows) {
       brand: String(item.brand || "").trim(),
       model: String(item.model || "").trim(),
       fuel_type: String(item.fuel_type || "").trim(),
+      transmission: String(item.transmission || "").trim(),
+      body_type: String(item.body_type || "").trim(),
       drive_type: String(item.drive_type || "").trim(),
       steering_side: String(item.steering_side || "").trim(),
       color: String(item.color || "").trim(),
@@ -560,6 +624,57 @@ function parseNumber(value) {
   return digits ? Number(digits) : 0;
 }
 
+const KOLESA_MONTHS = {
+  "января": 0,
+  "февраля": 1,
+  "марта": 2,
+  "апреля": 3,
+  "мая": 4,
+  "июня": 5,
+  "июля": 6,
+  "августа": 7,
+  "сентября": 8,
+  "октября": 9,
+  "ноября": 10,
+  "декабря": 11
+};
+
+function parseKolesaCardDate(text, now = new Date()) {
+  const normalized = normalizeWhitespace(text).toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  const baseDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (normalized === "сегодня") {
+    return baseDate.toISOString();
+  }
+
+  if (normalized === "вчера") {
+    baseDate.setUTCDate(baseDate.getUTCDate() - 1);
+    return baseDate.toISOString();
+  }
+
+  const match = normalized.match(/^(\d{1,2})\s+([а-яё]+)$/i);
+  if (!match) {
+    return "";
+  }
+
+  const day = Number(match[1]);
+  const monthIndex = KOLESA_MONTHS[match[2]];
+  if (!Number.isFinite(day) || monthIndex === undefined) {
+    return "";
+  }
+
+  let year = now.getUTCFullYear();
+  if (monthIndex > now.getUTCMonth()) {
+    year -= 1;
+  }
+
+  const date = new Date(Date.UTC(year, monthIndex, day));
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
 function extractCityFromAlt(alt) {
   const match = normalizeWhitespace(alt).match(/в\s+([^–-]+?)(?:\s+[–-]|$)/i);
   return match ? match[1].trim() : "";
@@ -584,6 +699,53 @@ function extractMileage(description) {
 function extractEngineVolume(description) {
   const match = normalizeWhitespace(description).match(/(\d(?:[.,]\d)?)\s*л\b/i);
   return match ? Number(match[1].replace(",", ".")) : 0;
+}
+
+function extractDescriptionMeta(description, { title = "", alt = "" } = {}) {
+  const normalizedDescription = normalizeWhitespace(description);
+  const sourceText = [title, normalizedDescription, alt].filter(Boolean).join(", ");
+  const transmission = detectTransmission(sourceText);
+  const fuelType = detectFuelType(sourceText);
+  const driveType = detectDriveType(sourceText);
+  const steeringSide = detectSteeringSide(sourceText);
+  const color = detectColor(sourceText);
+  const options = detectOptions(sourceText);
+  const repairState = /не на ходу|после дтп|аварийн|требует ремонта|на разбор/i.test(sourceText)
+    ? "yes"
+    : /не аварийн|в хорошем состоянии|в отличном состоянии/i.test(sourceText)
+      ? "no"
+      : "unknown";
+  const bodyTypeMatch = normalizedDescription.match(
+    /\b(седан|универсал|хэтчбек|купе|кабриолет|микровэн|фургон|внедорожник|пикап|кроссовер|минивэн|микроавтобус|лифтбек)\b/i
+  );
+
+  return {
+    year: extractYear(normalizedDescription, alt),
+    mileage: extractMileage(normalizedDescription),
+    engineVolume: extractEngineVolume(normalizedDescription),
+    fuelType,
+    driveType,
+    steeringSide,
+    color,
+    options,
+    repairState,
+    bodyType: bodyTypeMatch ? bodyTypeMatch[1] : "",
+    transmission
+  };
+}
+
+function extractCardRegion(card) {
+  return normalizeWhitespace(
+    card.find('[data-test="region"]').first().text() ||
+    card.find(".a-card__data .a-card__param").first().text()
+  );
+}
+
+function extractCardPublicationDate(card) {
+  const rawDate = normalizeWhitespace(
+    card.find(".a-card__param--date").first().text()
+  );
+  return parseKolesaCardDate(rawDate);
 }
 
 function extractImage(card) {
@@ -820,32 +982,35 @@ async function fetchKolesaListingSnapshot(advertUrl) {
     String(advertData?.descriptionText || "")
       .replace(/<br\s*\/?>/gi, "\n")
   );
-  const sourceText = [
-    advertData?.title,
-    advertData?.descriptionText,
-    product?.name,
-    product?.attributes?.brand,
-    product?.attributes?.model
-  ].filter(Boolean).join(" ");
+  const title = String(advertData?.title || product?.name || "");
+  const titleMeta = extractTitleBrandModel(title, product?.attributes?.brand, product?.attributes?.model);
+  const descriptionMeta = extractDescriptionMeta(description, {
+    title,
+    alt: String(advertData?.photo?.alt || "")
+  });
 
   return {
     actuality_status: "active",
     advert_id: String(product?.id || extractAdvertIdFromUrl(advertUrl)),
-    title: String(advertData?.title || product?.name || ""),
+    title,
     price: currentPrice || null,
     publication_date: String(product?.publicationDate || ""),
     last_update: String(product?.lastUpdate || ""),
     avg_price: avgPrice || null,
     market_difference: avgPrice && currentPrice ? marketDifference : null,
     market_difference_percent: avgPrice && currentPrice ? marketDifferencePercent : null,
-    brand: String(product?.attributes?.brand || ""),
-    model: String(product?.attributes?.model || ""),
-    fuel_type: detectFuelType(sourceText),
-    drive_type: detectDriveType(sourceText),
-    steering_side: detectSteeringSide(sourceText),
-    color: detectColor(sourceText),
-    options: detectOptions(sourceText),
-    city: String(product?.city || ""),
+    brand: titleMeta.brand,
+    model: titleMeta.model,
+    fuel_type: descriptionMeta.fuelType,
+    drive_type: descriptionMeta.driveType,
+    steering_side: descriptionMeta.steeringSide,
+    color: descriptionMeta.color,
+    options: descriptionMeta.options,
+    repair_state: descriptionMeta.repairState,
+    transmission: descriptionMeta.transmission,
+    body_type: descriptionMeta.bodyType,
+    engine_volume: descriptionMeta.engineVolume || null,
+    city: String(advertData?.region || product?.city || ""),
     description,
     photo_count: Number(product?.photoCount || 0) || null,
     phone_count: Number(advertData?.nbPhones || 0) || null,
@@ -964,12 +1129,15 @@ async function fetchKolesaPage(pageUrl) {
     const image = extractImage(card);
     const alt = normalizeWhitespace(card.find("img").first().attr("alt"));
     const price = parseNumber(priceText);
-    const year = extractYear(description, alt);
-    const mileage = extractMileage(description);
-    const engineVolume = extractEngineVolume(description);
-    const city = extractCityFromAlt(alt);
     const advertId = extractAdvertIdFromUrl(href);
     const meta = advertId ? listingMeta.get(advertId) : null;
+    const titleMeta = extractTitleBrandModel(title, meta?.attributes?.brand, meta?.attributes?.model);
+    const descriptionMeta = extractDescriptionMeta(description, { title, alt });
+    const year = descriptionMeta.year;
+    const mileage = descriptionMeta.mileage;
+    const engineVolume = descriptionMeta.engineVolume;
+    const city = extractCardRegion(card) || extractCityFromAlt(alt);
+    const cardPublicationDate = extractCardPublicationDate(card);
     const avgPrice = Number(meta?.attributes?.avgPrice) || 0;
     const unitPrice = Number(meta?.unitPrice) || price;
     const marketDifference = avgPrice && unitPrice ? avgPrice - unitPrice : null;
@@ -980,10 +1148,6 @@ async function fetchKolesaPage(pageUrl) {
     if (!title || !price) {
       return;
     }
-
-    const sourceText = [title, description, alt, meta?.attributes?.brand, meta?.attributes?.model]
-      .filter(Boolean)
-      .join(" ");
 
     items.push({
       title,
@@ -998,14 +1162,17 @@ async function fetchKolesaPage(pageUrl) {
       image,
       description,
       source: "kolesa.kz",
-      brand: String(meta?.attributes?.brand || ""),
-      model: String(meta?.attributes?.model || ""),
-      fuel_type: detectFuelType(sourceText),
-      drive_type: detectDriveType(sourceText),
-      steering_side: detectSteeringSide(sourceText),
-      color: detectColor(sourceText),
-      options: detectOptions(sourceText),
-      publication_date: String(meta?.publicationDate || ""),
+      brand: titleMeta.brand,
+      model: titleMeta.model,
+      fuel_type: descriptionMeta.fuelType,
+      drive_type: descriptionMeta.driveType,
+      steering_side: descriptionMeta.steeringSide,
+      color: descriptionMeta.color,
+      options: descriptionMeta.options,
+      repair_state: descriptionMeta.repairState,
+      transmission: descriptionMeta.transmission,
+      body_type: descriptionMeta.bodyType,
+      publication_date: String(meta?.publicationDate || cardPublicationDate || ""),
       last_update: String(meta?.lastUpdate || ""),
       first_seen_at: checkedAt,
       last_seen_at: checkedAt,
@@ -1015,6 +1182,8 @@ async function fetchKolesaPage(pageUrl) {
       photo_count: Number(meta?.photoCount || 0) || null,
       credit_available: Boolean(meta?.isCreditAvailable),
       paid_services: normalizeTextList(meta?.appliedPaidServices),
+      seller_user_id: String(meta?.seller?.userId || ""),
+      seller_type_id: Number(meta?.seller?.userTypeId || 0) || null,
       avg_price: avgPrice || null,
       market_difference: marketDifference,
       market_difference_percent: marketDifferencePercent
@@ -1026,6 +1195,86 @@ async function fetchKolesaPage(pageUrl) {
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, concurrency = 3 } = {}) {
+  const targets = listings
+    .filter(item => item?.url && item.url.includes("/a/show/"))
+    .slice(0, Math.max(0, maxItems));
+
+  if (!targets.length) {
+    return listings;
+  }
+
+  const snapshotMap = new Map();
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < targets.length) {
+      const index = cursor;
+      cursor += 1;
+      const item = targets[index];
+      try {
+        const snapshot = await fetchKolesaListingSnapshot(item.url);
+        if (snapshot?.actuality_status === "active") {
+          snapshotMap.set(item.url, snapshot);
+        }
+      } catch (error) {
+        // Keep imported list usable even if some detail pages fail to load.
+      }
+      if (index < targets.length - 1) {
+        await wait(120);
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, targets.length) }, () => worker())
+  );
+
+  return listings.map(item => {
+    const snapshot = snapshotMap.get(item.url);
+    if (!snapshot) {
+      return item;
+    }
+
+    return {
+      ...item,
+      title: pickDefined(snapshot.title, item.title) || item.title,
+      price: pickDefined(snapshot.price, item.price) || item.price,
+      city: pickDefined(snapshot.city, item.city) || item.city,
+      description: pickDefined(snapshot.description, item.description) || item.description,
+      brand: pickDefined(snapshot.brand, item.brand) || item.brand,
+      model: pickDefined(snapshot.model, item.model) || item.model,
+      fuel_type: pickDefined(snapshot.fuel_type, item.fuel_type) || item.fuel_type,
+      drive_type: pickDefined(snapshot.drive_type, item.drive_type) || item.drive_type,
+      steering_side: pickDefined(snapshot.steering_side, item.steering_side) || item.steering_side,
+      color: pickDefined(snapshot.color, item.color) || item.color,
+      options: normalizeTextList([...(item.options || []), ...(snapshot.options || [])]),
+      repair_state: pickDefined(snapshot.repair_state, item.repair_state) || item.repair_state,
+      transmission: pickDefined(snapshot.transmission, item.transmission) || item.transmission,
+      body_type: pickDefined(snapshot.body_type, item.body_type) || item.body_type,
+      engine_volume: pickDefined(snapshot.engine_volume, item.engine_volume),
+      publication_date: pickDefined(snapshot.publication_date, item.publication_date) || item.publication_date,
+      last_update: pickDefined(snapshot.last_update, item.last_update) || item.last_update,
+      photo_count: pickDefined(snapshot.photo_count, item.photo_count),
+      phone_count: pickDefined(snapshot.phone_count, item.phone_count),
+      phone_prefix: pickDefined(snapshot.phone_prefix, item.phone_prefix) || item.phone_prefix,
+      credit_available: snapshot.credit_available ?? item.credit_available,
+      credit_monthly_payment: pickDefined(snapshot.credit_monthly_payment, item.credit_monthly_payment),
+      credit_down_payment: pickDefined(snapshot.credit_down_payment, item.credit_down_payment),
+      seller_user_id: pickDefined(snapshot.seller_user_id, item.seller_user_id) || item.seller_user_id,
+      seller_type_id: pickDefined(snapshot.seller_type_id, item.seller_type_id),
+      is_verified_dealer: snapshot.is_verified_dealer ?? item.is_verified_dealer,
+      is_used_car_dealer: snapshot.is_used_car_dealer ?? item.is_used_car_dealer,
+      public_history_available: snapshot.public_history_available ?? item.public_history_available,
+      history_summary: pickDefined(snapshot.history_summary, item.history_summary) || item.history_summary,
+      avg_price: pickDefined(snapshot.avg_price, item.avg_price),
+      market_difference: pickDefined(snapshot.market_difference, item.market_difference),
+      market_difference_percent: pickDefined(snapshot.market_difference_percent, item.market_difference_percent),
+      last_checked_at: pickDefined(snapshot.last_checked_at, item.last_checked_at) || item.last_checked_at
+    };
+  });
 }
 
 async function fetchKolesaListings(sourceUrl, limit = 100) {
@@ -1055,8 +1304,13 @@ async function fetchKolesaListings(sourceUrl, limit = 100) {
     }
   }
 
+  const enriched = await enrichKolesaListingsWithSnapshots(combined.slice(0, safeLimit), {
+    maxItems: safeLimit <= 40 ? safeLimit : 15,
+    concurrency: 3
+  });
+
   return {
-    items: combined.slice(0, safeLimit).map(item => ({
+    items: enriched.map(item => ({
       ...item,
       repair_state: item.repair_state && item.repair_state !== "unknown" ? item.repair_state : repairState
     })),
