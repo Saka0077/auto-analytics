@@ -638,6 +638,34 @@ function normalizeAutopartsProfile(profile) {
   };
 }
 
+function normalizeSellerAnalysis(analysis) {
+  if (!analysis || typeof analysis !== "object") {
+    return null;
+  }
+
+  return {
+    sellerUserId: String(analysis.seller_user_id ?? analysis.sellerUserId ?? "").trim(),
+    profileType: String(analysis.profile_type ?? analysis.profileType ?? "").trim(),
+    profileLabel: String(analysis.profile_label ?? analysis.profileLabel ?? "").trim(),
+    traderScore: nonNegativeNumber(analysis.trader_score ?? analysis.traderScore),
+    totalListingCount: nonNegativeNumber(analysis.total_listing_count ?? analysis.totalListingCount),
+    activeListingCount: nonNegativeNumber(analysis.active_listing_count ?? analysis.activeListingCount),
+    brandCount: nonNegativeNumber(analysis.brand_count ?? analysis.brandCount),
+    modelCount: nonNegativeNumber(analysis.model_count ?? analysis.modelCount),
+    cityCount: nonNegativeNumber(analysis.city_count ?? analysis.cityCount),
+    dominantBrand: String(analysis.dominant_brand ?? analysis.dominantBrand ?? "").trim(),
+    dominantBrandCount: nonNegativeNumber(analysis.dominant_brand_count ?? analysis.dominantBrandCount),
+    dominantModel: String(analysis.dominant_model ?? analysis.dominantModel ?? "").trim(),
+    dominantModelCount: nonNegativeNumber(analysis.dominant_model_count ?? analysis.dominantModelCount),
+    belowMarketCount: nonNegativeNumber(analysis.below_market_count ?? analysis.belowMarketCount),
+    staleCount: nonNegativeNumber(analysis.stale_count ?? analysis.staleCount),
+    promotedCount: nonNegativeNumber(analysis.promoted_count ?? analysis.promotedCount),
+    relistedCount: nonNegativeNumber(analysis.relisted_count ?? analysis.relistedCount),
+    averageRisk: number(analysis.average_risk ?? analysis.averageRisk),
+    note: String(analysis.note || "").trim()
+  };
+}
+
 function normalizeRow(item) {
   const photoGallery = normalizePhotoGallery(item.photo_gallery ?? item.photoGallery ?? []);
   const image = String(item.image || photoGallery[0] || "").trim();
@@ -702,6 +730,7 @@ function normalizeRow(item) {
     sellerTypeId: optionalPositiveNumber(item.seller_type_id ?? item.sellerTypeId),
     isVerifiedDealer: booleanValue(item.is_verified_dealer ?? item.isVerifiedDealer),
     isUsedCarDealer: booleanValue(item.is_used_car_dealer ?? item.isUsedCarDealer),
+    sellerAnalysis: normalizeSellerAnalysis(item.seller_analysis ?? item.sellerAnalysis),
     publicHistoryAvailable: booleanValue(item.public_history_available ?? item.publicHistoryAvailable),
     historySummary: item.history_summary || item.historySummary || "",
     riskScore: number(item.risk_score ?? item.riskScore),
@@ -1463,6 +1492,10 @@ function hasDetailEnrichment(item) {
 }
 
 function getSellerLabel(item) {
+  if (item.sellerAnalysis?.profileLabel) {
+    return item.sellerAnalysis.profileLabel;
+  }
+
   if (item.isVerifiedDealer || item.isUsedCarDealer) {
     return "Дилер";
   }
@@ -1472,6 +1505,27 @@ function getSellerLabel(item) {
   }
 
   return "-";
+}
+
+function getSellerProfileSummary(item) {
+  const analysis = item?.sellerAnalysis;
+  if (!analysis) {
+    return {
+      label: getSellerLabel(item),
+      total: null,
+      active: null,
+      traderScore: null,
+      note: ""
+    };
+  }
+
+  return {
+    label: analysis.profileLabel || getSellerLabel(item),
+    total: Number.isFinite(analysis.totalListingCount) ? analysis.totalListingCount : null,
+    active: Number.isFinite(analysis.activeListingCount) ? analysis.activeListingCount : null,
+    traderScore: Number.isFinite(analysis.traderScore) ? analysis.traderScore : null,
+    note: analysis.note || ""
+  };
 }
 
 function setStatus(text) {
@@ -2040,7 +2094,7 @@ function scoreListings(listings) {
       : 1;
     const maintenanceScore = Math.max(0, Math.min(1, maintenanceBaseScore * maintenanceCoverageFactor));
     const sellerPenalty = item.isUsedCarDealer ? 0.2 : 0;
-    const sellerSignalScore = Math.max(
+    const sellerBaseSignal = Math.max(
       0,
       Math.min(
         1,
@@ -2051,6 +2105,32 @@ function scoreListings(listings) {
           ((item.description || "").length < 80 ? 0.1 : 0)
       )
     );
+    const sellerAnalysis = item.sellerAnalysis;
+    const sellerProfileSignal = sellerAnalysis
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            (sellerAnalysis.profileType === "dealer"
+              ? 0.62
+              : sellerAnalysis.profileType === "reseller"
+                ? 0.54
+                : sellerAnalysis.profileType === "multi_listing"
+                  ? 0.38
+                  : 0.14) +
+            Math.min(Number(sellerAnalysis.traderScore || 0) / 100, 1) * 0.18 +
+            ((sellerAnalysis.totalListingCount || 0) >= 6 ? 0.08 : (sellerAnalysis.totalListingCount || 0) >= 3 ? 0.04 : 0) +
+            ((sellerAnalysis.brandCount || 0) >= 3 ? 0.05 : 0) +
+            ((sellerAnalysis.cityCount || 0) >= 2 ? 0.04 : 0) -
+            (sellerAnalysis.profileType === "private" && (sellerAnalysis.totalListingCount || 0) <= 2 ? 0.06 : 0)
+          )
+        )
+      : null;
+    const sellerSignalScore = sellerProfileSignal === null
+      ? sellerBaseSignal
+      : sellerAnalysis.profileType === "private" && (sellerAnalysis.totalListingCount || 0) <= 2 && !item.isUsedCarDealer
+        ? Math.max(0, Math.min(1, sellerBaseSignal * 0.82))
+        : Math.max(sellerBaseSignal, Math.min(1, sellerBaseSignal * 0.7 + sellerProfileSignal * 0.3));
     const sellerTrustScore = Math.max(0, 1 - sellerSignalScore);
     const qualityScore =
       yearScore * 0.2 +
@@ -2894,6 +2974,10 @@ function getBreakdownComment(label, value, item) {
   }
 
   if (label === "Продавец") {
+    const summary = getSellerProfileSummary(item);
+    if (summary.note) {
+      return `${summary.label.toLowerCase()}: ${summary.note}`;
+    }
     return item.isUsedCarDealer ? "похоже на автосалон или перекупа" : "ближе к частному продавцу";
   }
 
@@ -2905,6 +2989,7 @@ function renderListingFacts(item) {
   const config = getAnalysisModeConfig();
   const currentDecision = getCurrentDecisionMeta(item);
   const autoparts = item.autopartsProfile;
+  const sellerSummary = getSellerProfileSummary(item);
   elements.modalFacts.innerHTML = [
     renderFact("Статус", actualityMeta.label),
     renderFact("Проверено", formatDateTime(item.lastCheckedAt)),
@@ -2943,6 +3028,15 @@ function renderListingFacts(item) {
     renderFact("Платёж / мес", item.creditMonthlyPayment ? formatPrice(item.creditMonthlyPayment) : "-"),
     renderFact("Кредит-скор", Number.isFinite(item.creditScore) ? `${(item.creditScore * 100).toFixed(0)}%` : "-"),
     renderFact("Продавец", getSellerLabel(item)),
+    renderFact("Профиль продавца", sellerSummary.label || "-"),
+    renderFact(
+      "Объявлений продавца",
+      sellerSummary.total !== null
+        ? `${sellerSummary.active ?? sellerSummary.total} акт. / ${sellerSummary.total}`
+        : "-"
+    ),
+    renderFact("Поток продавца", sellerSummary.traderScore !== null ? `${Math.round(sellerSummary.traderScore)}%` : "-"),
+    renderFact("Анализ продавца", sellerSummary.note || "-"),
     renderFact("Риск", Number.isFinite(item.riskScore) ? `${Math.round(item.riskScore)}/100` : "-"),
     renderFact("Ликвидность", Number.isFinite(item.liquidityScore) ? `${(item.liquidityScore * 100).toFixed(0)}%` : "-"),
     renderFact("Признак перекупа", Number.isFinite(item.sellerSignalScore) ? `${(item.sellerSignalScore * 100).toFixed(0)}%` : "-"),
@@ -3089,6 +3183,7 @@ function renderSignals(item) {
   const buyerDecision = getBuyerDecisionMeta(item);
   const resellerDecision = getResellerDecisionMeta(item);
   const autoparts = item.autopartsProfile;
+  const sellerSummary = getSellerProfileSummary(item);
   const finance = [];
   const signals = [
     `${config.scoreLabel}: ${currentDecision.label}. ${currentDecision.note}`,
@@ -3131,6 +3226,18 @@ function renderSignals(item) {
   }
   if (item.paidServices.length) {
     signals.push(`Продвижение: ${item.paidServices.join(", ")}`);
+  }
+  if (sellerSummary.label && sellerSummary.label !== "-") {
+    const baseLine = sellerSummary.total !== null
+      ? `Профиль продавца по базе: ${sellerSummary.label}, ${sellerSummary.active ?? sellerSummary.total} акт. из ${sellerSummary.total}`
+      : `Профиль продавца по базе: ${sellerSummary.label}`;
+    signals.push(baseLine);
+  }
+  if (sellerSummary.traderScore !== null) {
+    signals.push(`Поток продавца по базе: ${Math.round(sellerSummary.traderScore)}%`);
+  }
+  if (sellerSummary.note) {
+    signals.push(`Анализ продавца: ${sellerSummary.note}`);
   }
   if (item.publicHistoryAvailable) {
     signals.push(`Есть публичная история авто на странице`);

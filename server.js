@@ -1155,6 +1155,167 @@ function enrichListingsWithHistory(listings, snapshotRows = readListingSnapshots
   });
 }
 
+function buildSellerAnalysisMap(listings) {
+  const groups = new Map();
+
+  listings.forEach(item => {
+    const sellerUserId = String(item.seller_user_id || "").trim();
+    if (!sellerUserId) {
+      return;
+    }
+
+    const bucket = groups.get(sellerUserId) || [];
+    bucket.push(item);
+    groups.set(sellerUserId, bucket);
+  });
+
+  const analysisMap = new Map();
+
+  groups.forEach((items, sellerUserId) => {
+    const totalListingCount = items.length;
+    const activeItems = items.filter(item => normalizeActualityStatus(item.actuality_status) === "active");
+    const activeListingCount = activeItems.length;
+    const brandCounts = new Map();
+    const modelCounts = new Map();
+    const cityCounts = new Map();
+    let belowMarketCount = 0;
+    let staleCount = 0;
+    let promotedCount = 0;
+    let relistedCount = 0;
+    let dealerSignals = 0;
+    let riskSum = 0;
+    let riskCount = 0;
+
+    items.forEach(item => {
+      const brandKey = normalizeLookupText(item.brand);
+      const modelKey = normalizeLookupText([item.brand, item.model].filter(Boolean).join(" "));
+      const cityKey = normalizeLookupText(item.city);
+
+      if (brandKey) {
+        brandCounts.set(brandKey, (brandCounts.get(brandKey) || 0) + 1);
+      }
+      if (modelKey) {
+        modelCounts.set(modelKey, (modelCounts.get(modelKey) || 0) + 1);
+      }
+      if (cityKey) {
+        cityCounts.set(cityKey, (cityCounts.get(cityKey) || 0) + 1);
+      }
+      if (Number(item.market_difference_percent) >= 12) {
+        belowMarketCount += 1;
+      }
+      if (
+        normalizeActualityStatus(item.actuality_status) === "stale" ||
+        Number(item.days_on_market) >= 30
+      ) {
+        staleCount += 1;
+      }
+      if (Array.isArray(item.paid_services) && item.paid_services.length) {
+        promotedCount += 1;
+      }
+      if (item.was_relisted) {
+        relistedCount += 1;
+      }
+      if (item.is_verified_dealer || item.is_used_car_dealer || [2, 4, 5].includes(Number(item.seller_type_id))) {
+        dealerSignals += 1;
+      }
+      if (Number.isFinite(Number(item.risk_score))) {
+        riskSum += Number(item.risk_score);
+        riskCount += 1;
+      }
+    });
+
+    const brandEntries = [...brandCounts.entries()].sort((left, right) => right[1] - left[1]);
+    const modelEntries = [...modelCounts.entries()].sort((left, right) => right[1] - left[1]);
+    const cityEntries = [...cityCounts.entries()].sort((left, right) => right[1] - left[1]);
+    const brandCount = brandEntries.length;
+    const modelCount = modelEntries.length;
+    const cityCount = cityEntries.length;
+    const dominantBrand = brandEntries[0]?.[0] || "";
+    const dominantBrandCount = brandEntries[0]?.[1] || 0;
+    const dominantModel = modelEntries[0]?.[0] || "";
+    const dominantModelCount = modelEntries[0]?.[1] || 0;
+    const averageRisk = riskCount ? Number((riskSum / riskCount).toFixed(1)) : null;
+    const belowMarketShare = totalListingCount ? belowMarketCount / totalListingCount : 0;
+    const staleShare = totalListingCount ? staleCount / totalListingCount : 0;
+    const promotedShare = totalListingCount ? promotedCount / totalListingCount : 0;
+    const relistedShare = totalListingCount ? relistedCount / totalListingCount : 0;
+
+    let traderScore = 12;
+    traderScore += Math.min(totalListingCount - 1, 8) * 6;
+    traderScore += Math.max(0, brandCount - 1) * 7;
+    traderScore += Math.max(0, cityCount - 1) * 5;
+    traderScore += dealerSignals > 0 ? 26 : 0;
+    traderScore += promotedShare >= 0.6 ? 8 : 0;
+    traderScore += dominantModelCount >= 2 ? 6 : 0;
+    traderScore += relistedShare >= 0.4 ? 4 : 0;
+    traderScore -= totalListingCount === 1 && dealerSignals === 0 ? 8 : 0;
+    traderScore = Math.max(0, Math.min(100, Math.round(traderScore)));
+
+    let profileType = "private";
+    let profileLabel = "Частник";
+    if (dealerSignals > 0) {
+      profileType = "dealer";
+      profileLabel = "Дилер";
+    } else if (totalListingCount >= 7 || (totalListingCount >= 4 && brandCount >= 2)) {
+      profileType = "reseller";
+      profileLabel = "Похоже на поток";
+    } else if (totalListingCount >= 3) {
+      profileType = "multi_listing";
+      profileLabel = "Несколько авто";
+    }
+
+    const notes = [
+      `${activeListingCount} акт. из ${totalListingCount} в базе`,
+      brandCount > 0 ? `${brandCount} марок` : "",
+      cityCount > 1 ? `${cityCount} городов` : "",
+      belowMarketShare >= 0.35 ? "часто ниже рынка" : "",
+      staleShare >= 0.5 ? "много долгих объявлений" : "",
+      dealerSignals > 0 ? "есть дилерские сигналы" : ""
+    ].filter(Boolean);
+
+    analysisMap.set(sellerUserId, {
+      seller_user_id: sellerUserId,
+      profile_type: profileType,
+      profile_label: profileLabel,
+      trader_score: traderScore,
+      total_listing_count: totalListingCount,
+      active_listing_count: activeListingCount,
+      brand_count: brandCount,
+      model_count: modelCount,
+      city_count: cityCount,
+      dominant_brand: dominantBrand,
+      dominant_brand_count: dominantBrandCount,
+      dominant_model: dominantModel,
+      dominant_model_count: dominantModelCount,
+      below_market_count: belowMarketCount,
+      stale_count: staleCount,
+      promoted_count: promotedCount,
+      relisted_count: relistedCount,
+      average_risk: averageRisk,
+      note: notes.join(" · ")
+    });
+  });
+
+  return analysisMap;
+}
+
+function enrichListingsWithSellerAnalysis(listings) {
+  const analysisMap = buildSellerAnalysisMap(listings);
+  return listings.map(item => {
+    const sellerUserId = String(item.seller_user_id || "").trim();
+    const sellerAnalysis = sellerUserId ? analysisMap.get(sellerUserId) : null;
+    return sellerAnalysis
+      ? { ...item, seller_analysis: sellerAnalysis }
+      : item;
+  });
+}
+
+function enrichListingsForClient(listings, snapshotRows = readListingSnapshots(), catalog = readAutopartsCatalog(), aliasesStore = readAutopartsAliases()) {
+  const withHistory = enrichListingsWithHistory(listings, snapshotRows);
+  const withAutoparts = enrichListingsWithAutoparts(withHistory, catalog, aliasesStore);
+  return enrichListingsWithSellerAnalysis(withAutoparts);
+}
+
 function buildRiskSummary(item) {
   let score = 0;
   const flags = [];
@@ -2804,7 +2965,7 @@ const server = http.createServer(async (request, response) => {
     try {
       const baseListings = readListings();
       const snapshots = ensureListingSnapshotsForListings(baseListings);
-      const listings = enrichListingsWithAutoparts(enrichListingsWithHistory(baseListings, snapshots));
+      const listings = enrichListingsForClient(baseListings, snapshots);
       sendJson(response, 200, { items: listings, count: listings.length });
     } catch (error) {
       sendJson(response, 500, { error: "Не удалось прочитать объявления." });
@@ -2978,11 +3139,11 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      let responseItems = enrichListingsWithAutoparts(listings);
+      let responseItems = enrichListingsForClient(listings, readListingSnapshots());
       if (save) {
         const savedListings = saveListingsWithSnapshots(mergeImportedListings(readListings(), listings));
         const savedSnapshots = readListingSnapshots();
-        responseItems = enrichListingsWithAutoparts(enrichListingsWithHistory(savedListings, savedSnapshots));
+        responseItems = enrichListingsForClient(savedListings, savedSnapshots);
       }
 
       sendJson(response, 200, {
@@ -3092,7 +3253,7 @@ const server = http.createServer(async (request, response) => {
       const nextListings = listings.map(item => updatedByUrl.get(item.url) || item);
       const savedListings = saveListingsWithSnapshots(nextListings);
       const savedSnapshots = readListingSnapshots();
-      const enriched = enrichListingsWithAutoparts(enrichListingsWithHistory(savedListings, savedSnapshots));
+      const enriched = enrichListingsForClient(savedListings, savedSnapshots);
 
       sendJson(response, 200, {
         ok: true,
@@ -3140,7 +3301,7 @@ const server = http.createServer(async (request, response) => {
       saveListingsWithSnapshots(updatedListings, { capturedAt: checkedAt });
       const refreshedListings = readListings();
       const refreshedSnapshots = readListingSnapshots();
-      const updated = enrichListingsWithAutoparts(enrichListingsWithHistory(refreshedListings, refreshedSnapshots)).find(item => item.url === targetUrl);
+      const updated = enrichListingsForClient(refreshedListings, refreshedSnapshots).find(item => item.url === targetUrl);
       sendJson(response, 200, { ok: true, item: updated });
     } catch (error) {
       const message =
@@ -3194,7 +3355,7 @@ const server = http.createServer(async (request, response) => {
       writeListings(updatedListings);
       sendJson(response, 200, {
         ok: true,
-        item: enrichListingsWithAutoparts(readListings()).find(item => item.url === updated.url) || updated
+        item: enrichListingsForClient(readListings()).find(item => item.url === updated.url) || updated
       });
     } catch (error) {
       sendJson(response, 400, { error: "Не удалось сохранить VIN." });
