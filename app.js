@@ -850,14 +850,23 @@ function renderListingBadges(item) {
 }
 
 function hasDetailEnrichment(item) {
-  return Boolean(
-    item.photoCount ||
-    item.creditAvailable ||
-    item.creditMonthlyPayment ||
-    item.phoneCount ||
-    item.riskScore !== null ||
-    item.historySummary
-  );
+  const detailFields = [
+    item.publicationDate,
+    item.lastUpdate,
+    item.brand,
+    item.model,
+    item.fuelType,
+    item.transmission,
+    item.bodyType,
+    item.driveType,
+    item.color,
+    item.engineVolume,
+    item.phoneCount,
+    item.photoCount,
+    item.avgPrice
+  ];
+
+  return detailFields.filter(value => value !== null && value !== undefined && value !== "").length >= 5;
 }
 
 function getSellerLabel(item) {

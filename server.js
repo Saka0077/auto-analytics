@@ -162,7 +162,7 @@ function normalizeTextValue(value) {
 
 function detectFuelType(text) {
   const normalized = normalizeTextValue(text);
-  if (/\bэлектричество\b|\bэлектромоб/i.test(normalized)) {
+  if (/электрич|электромоб|электрокар/i.test(normalized)) {
     return "Электро";
   }
   if (/гибрид/i.test(normalized)) {
@@ -171,7 +171,7 @@ function detectFuelType(text) {
   if (/дизел/i.test(normalized)) {
     return "Дизель";
   }
-  if (/газ\b|гбо/i.test(normalized)) {
+  if (/(^|[\s,.;:()/-])газ(?=$|[\s,.;:()/-])|гбо/i.test(normalized)) {
     return "Газ";
   }
   if (/бензин/i.test(normalized)) {
@@ -393,38 +393,45 @@ function buildRiskSummary(item) {
 function normalizeListings(rows) {
   return rows
     .map(item => {
+      const title = String(item.title || item.name || "Без названия").trim();
+      const description = String(item.description || "").trim();
+      const titleMeta = extractTitleBrandModel(title, item.brand, item.model);
+      const descriptionMeta = extractDescriptionMeta(description, { title, alt: "" });
       const photoGallery = normalizePhotoGallery(item.photo_gallery || item.photoGallery || []);
       const image = normalizeRemoteUrl(item.image) || photoGallery[0] || "";
+      const resolvedPhotoGallery = photoGallery.length ? photoGallery : (image ? [image] : []);
+      const mileage = Number(item.mileage) > 0 ? Number(item.mileage) : (descriptionMeta.mileage || null);
+      const engineVolume = Number(item.engine_volume) > 0 ? Number(item.engine_volume) : (descriptionMeta.engineVolume || null);
       const photoCount = Number(item.photo_count) > 0
         ? Number(item.photo_count)
-        : (photoGallery.length || null);
+        : (resolvedPhotoGallery.length || null);
 
       return {
-        title: String(item.title || item.name || "Без названия").trim(),
+        title,
         price: Number(item.price) || 0,
         year: Number(item.year) > 0 ? Number(item.year) : null,
-        mileage: Number(item.mileage) > 0 ? Number(item.mileage) : null,
+        mileage,
         owners: Number.isFinite(Number(item.owners)) && Number(item.owners) > 0 ? Number(item.owners) : null,
         city: String(item.city || "").trim(),
         url: String(item.url || "").trim(),
         image,
-        photo_gallery: photoGallery.length ? photoGallery : (image ? [image] : []),
-        description: String(item.description || "").trim(),
+        photo_gallery: resolvedPhotoGallery,
+        description,
         source: String(item.source || "").trim(),
-        brand: String(item.brand || "").trim(),
-        model: String(item.model || "").trim(),
-        fuel_type: String(item.fuel_type || "").trim(),
-        transmission: String(item.transmission || "").trim(),
-        body_type: String(item.body_type || "").trim(),
-        drive_type: String(item.drive_type || "").trim(),
-        steering_side: String(item.steering_side || "").trim(),
-        color: String(item.color || "").trim(),
+        brand: String(item.brand || titleMeta.brand || "").trim(),
+        model: String(item.model || titleMeta.model || "").trim(),
+        fuel_type: String(item.fuel_type || descriptionMeta.fuelType || "").trim(),
+        transmission: String(item.transmission || descriptionMeta.transmission || "").trim(),
+        body_type: String(item.body_type || descriptionMeta.bodyType || "").trim(),
+        drive_type: String(item.drive_type || descriptionMeta.driveType || "").trim(),
+        steering_side: String(item.steering_side || descriptionMeta.steeringSide || "").trim(),
+        color: String(item.color || descriptionMeta.color || "").trim(),
         options: normalizeTextList(item.options),
         vin: normalizeVin(item.vin),
         vin_note: String(item.vin_note || "").trim(),
-        repair_state: normalizeRepairState(item.repair_state),
+        repair_state: normalizeRepairState(item.repair_state || descriptionMeta.repairState),
         advert_id: String(item.advert_id || extractAdvertIdFromUrl(item.url)).trim(),
-        engine_volume: Number(item.engine_volume) > 0 ? Number(item.engine_volume) : null,
+        engine_volume: engineVolume,
         publication_date: String(item.publication_date || "").trim(),
         last_update: String(item.last_update || "").trim(),
         first_seen_at: normalizeIsoDate(item.first_seen_at),
@@ -741,7 +748,7 @@ function extractMileage(description) {
 }
 
 function extractEngineVolume(description) {
-  const match = normalizeWhitespace(description).match(/(\d(?:[.,]\d)?)\s*л\b/i);
+  const match = normalizeWhitespace(description).match(/(\d(?:[.,]\d)?)\s*л(?:[\s,.;:/-]|$)/i);
   return match ? Number(match[1].replace(",", ".")) : 0;
 }
 
@@ -760,7 +767,7 @@ function extractDescriptionMeta(description, { title = "", alt = "" } = {}) {
       ? "no"
       : "unknown";
   const bodyTypeMatch = normalizedDescription.match(
-    /\b(седан|универсал|хэтчбек|купе|кабриолет|микровэн|фургон|внедорожник|пикап|кроссовер|минивэн|микроавтобус|лифтбек)\b/i
+    /(?:^|[\s,.;:()/-])(седан|универсал|хэтчбек|купе|кабриолет|микровэн|фургон|внедорожник|пикап|кроссовер|минивэн|микроавтобус|лифтбек)(?=$|[\s,.;:()/-])/i
   );
 
   return {
