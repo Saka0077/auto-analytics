@@ -6,9 +6,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "import:autoparts": "node scripts/import-autoparts-workbook.js"
   },
   "dependencies": {
-    "cheerio": "^1.2.0"
+    "cheerio": "^1.2.0",
+    "xlsx": "^0.18.5"
   }
 }

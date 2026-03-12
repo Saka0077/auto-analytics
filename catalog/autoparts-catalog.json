@@ -1,0 +1,230 @@
+{
+  "generated_at": "2026-03-12T09:47:22.685Z",
+  "source_workbook": "kz_autoparts_market_snapshot_2026_03_12(1).xlsx",
+  "snapshot_title": "Казахстан: стартовая матрица по дешевизне автозапчастей (снимок рынка на 2026-03-12)",
+  "snapshot_note": "Логика: высокий Cheapness score = ниже наблюдаемая цена + выше наличие на витрине.",
+  "snapshot_items": [
+    {
+      "id": "chevrolet-cobalt",
+      "model_label": "Chevrolet Cobalt",
+      "brand": "Chevrolet",
+      "brand_key": "chevrolet",
+      "primary_model": "Cobalt",
+      "model_aliases": [
+        "Cobalt"
+      ],
+      "lookup_keys": [
+        "cobalt",
+        "chevrolet cobalt"
+      ],
+      "segment": "B-седан",
+      "years": "2013-2023",
+      "front_pads_price_kzt": 5980,
+      "front_pads_stock": 38,
+      "front_disc_price_kzt": 15000,
+      "front_disc_stock": 2,
+      "service_basket_kzt": 20980,
+      "avg_stock": 20,
+      "price_score": 100,
+      "cheapness_score": 96.7,
+      "priority": 1,
+      "maintenance_band": "cheap",
+      "maintenance_label": "Дешёвые запчасти",
+      "comment": "Самый сильный кандидат для старта: лидер продаж в 2025 и лидер по производству среди моделей; по колодкам оказался самым дешевым в текущем снимке.",
+      "market_source_url": "https://kao.kz/ru/novosti/78/",
+      "pads_source_url": "https://mag-avto.kz/chevrolet/cobalt/brake-pads/",
+      "disc_source_url": "https://mag-avto.kz/chevrolet/cobalt/brake-disk/"
+    },
+    {
+      "id": "hyundai-solaris-accent",
+      "model_label": "Hyundai Solaris / Accent",
+      "brand": "Hyundai",
+      "brand_key": "hyundai",
+      "primary_model": "Solaris",
+      "model_aliases": [
+        "Solaris",
+        "Accent"
+      ],
+      "lookup_keys": [
+        "solaris",
+        "accent",
+        "hyundai solaris",
+        "hyundai accent"
+      ],
+      "segment": "B-седан",
+      "years": "2011-2020",
+      "front_pads_price_kzt": 7500,
+      "front_pads_stock": 117,
+      "front_disc_price_kzt": 15000,
+      "front_disc_stock": 3,
+      "service_basket_kzt": 22500,
+      "avg_stock": 60,
+      "price_score": 93.2,
+      "cheapness_score": 93.5,
+      "priority": 2,
+      "maintenance_band": "cheap",
+      "maintenance_label": "Дешёвые запчасти",
+      "comment": "Хороший массовый ассортимент; по передним колодкам дороже Cobalt, но наличие заметно выше.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://mag-avto.kz/hyundai/solaris/brake-pads/",
+      "disc_source_url": "https://mag-avto.kz/hyundai/solaris/brake-disk/"
+    },
+    {
+      "id": "kia-rio",
+      "model_label": "Kia Rio",
+      "brand": "Kia",
+      "brand_key": "kia",
+      "primary_model": "Rio",
+      "model_aliases": [
+        "Rio"
+      ],
+      "lookup_keys": [
+        "rio",
+        "kia rio"
+      ],
+      "segment": "B-седан",
+      "years": "2011-2020",
+      "front_pads_price_kzt": 7500,
+      "front_pads_stock": 117,
+      "front_disc_price_kzt": 15000,
+      "front_disc_stock": 3,
+      "service_basket_kzt": 22500,
+      "avg_stock": 60,
+      "price_score": 93.2,
+      "cheapness_score": 93.5,
+      "priority": 2,
+      "maintenance_band": "cheap",
+      "maintenance_label": "Дешёвые запчасти",
+      "comment": "Почти одинаковая сервисная корзина с Solaris; стоит держать в одной группе закупки с Hyundai Accent/Solaris.",
+      "market_source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/",
+      "pads_source_url": "https://mag-avto.kz/kia/rio/brake-pads/",
+      "disc_source_url": "https://mag-avto.kz/kia/rio/brake-disk/"
+    },
+    {
+      "id": "hyundai-elantra",
+      "model_label": "Hyundai Elantra",
+      "brand": "Hyundai",
+      "brand_key": "hyundai",
+      "primary_model": "Elantra",
+      "model_aliases": [
+        "Elantra"
+      ],
+      "lookup_keys": [
+        "elantra",
+        "hyundai elantra"
+      ],
+      "segment": "C-седан",
+      "years": "2011-2020",
+      "front_pads_price_kzt": 9000,
+      "front_pads_stock": 47,
+      "front_disc_price_kzt": 18000,
+      "front_disc_stock": 30,
+      "service_basket_kzt": 27000,
+      "avg_stock": 38.5,
+      "price_score": 77.7,
+      "cheapness_score": 77,
+      "priority": 4,
+      "maintenance_band": "medium",
+      "maintenance_label": "Средние запчасти",
+      "comment": "Неплохой спрос и локальная сборка, но service basket уже выше; держать после B-седанов.",
+      "market_source_url": "https://kao.kz/en/novosti/67/",
+      "pads_source_url": "https://mag-avto.kz/hyundai/elantra/brake-pads/",
+      "disc_source_url": "https://mag-avto.kz/hyundai/elantra/brake-disk/"
+    }
+  ],
+  "snapshot_conclusions": [
+    "1) Для бюджетного входа лучше всего выглядят Cobalt и связка Solaris/Rio.",
+    "2) Elantra уже заметно дороже по дискам, поэтому ее лучше добавлять вторым этапом.",
+    "3) Для закупки и SEO лучше группировать товары по платформам: Cobalt отдельно, Solaris/Rio вместе."
+  ],
+  "market_context": [
+    {
+      "metric": "Автопарк на 01.01.2025",
+      "value": "5 744,1 тыс. ТС; 88,1% — легковые",
+      "source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/"
+    },
+    {
+      "metric": "Возраст автопарка",
+      "value": "2 518,5 тыс. авто старше 20 лет",
+      "source_url": "https://stat.gov.kz/ru/news/181-9-tys-edinits-avtotransportnykh-sredstv-postavleno-na-uchet-v-dekabre/"
+    },
+    {
+      "metric": "Продажи новых авто в 2025",
+      "value": "234 852 ед.; рынок +14,4% г/г",
+      "source_url": "https://kao.kz/ru/novosti/78/"
+    },
+    {
+      "metric": "Топ-3 моделей 2025",
+      "value": "Chevrolet Cobalt 31 802; Hyundai Tucson 20 697; Kia Sportage 10 988",
+      "source_url": "https://kao.kz/ru/novosti/78/"
+    },
+    {
+      "metric": "Топ моделей по производству, янв-июль 2025",
+      "value": "Cobalt 13 628; Tucson 11 849; Sportage 6 999; Elantra 4 905",
+      "source_url": "https://kao.kz/en/novosti/67/"
+    }
+  ],
+  "observations": [
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "MAG авто",
+      "source_url": "https://mag-avto.kz/chevrolet/cobalt/brake-pads/",
+      "model_label": "Chevrolet Cobalt",
+      "brand": "Chevrolet",
+      "brand_key": "chevrolet",
+      "primary_model": "Cobalt",
+      "model_aliases": [
+        "Cobalt"
+      ],
+      "lookup_keys": [
+        "cobalt",
+        "chevrolet cobalt"
+      ],
+      "generation": "II",
+      "years": "2013-2023",
+      "engine": "1.5",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "SANGSIN BRAKE",
+      "sku": "96534653",
+      "price_kzt": 5980,
+      "stock_qty": 38,
+      "delivery_days": "same day / stock",
+      "warranty_days": 14,
+      "notes": "Снимок рынка"
+    },
+    {
+      "check_date": "2026-03-12",
+      "city": "Almaty",
+      "source_name": "MAG авто",
+      "source_url": "https://mag-avto.kz/hyundai/solaris/brake-pads/",
+      "model_label": "Hyundai Solaris / Accent",
+      "brand": "Hyundai",
+      "brand_key": "hyundai",
+      "primary_model": "Solaris",
+      "model_aliases": [
+        "Solaris",
+        "Accent"
+      ],
+      "lookup_keys": [
+        "solaris",
+        "accent",
+        "hyundai solaris",
+        "hyundai accent"
+      ],
+      "generation": "RB",
+      "years": "2011-2020",
+      "engine": "1.4/1.6",
+      "part_group": "Brakes",
+      "part_name": "Front pads",
+      "part_brand": "Hi-Q",
+      "sku": "SP 1399",
+      "price_kzt": 7500,
+      "stock_qty": 117,
+      "delivery_days": "same day / stock",
+      "warranty_days": 14,
+      "notes": "Общий артикул также встречается у Rio"
+    }
+  ]
+}

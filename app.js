@@ -504,6 +504,39 @@ function normalizeRepairState(value) {
   return "unknown";
 }
 
+function normalizeAutopartsProfile(profile) {
+  if (!profile || typeof profile !== "object") {
+    return null;
+  }
+
+  return {
+    id: String(profile.id || "").trim(),
+    modelLabel: String(profile.model_label ?? profile.modelLabel ?? "").trim(),
+    brand: String(profile.brand || "").trim(),
+    primaryModel: String(profile.primary_model ?? profile.primaryModel ?? "").trim(),
+    modelAliases: Array.isArray(profile.model_aliases ?? profile.modelAliases)
+      ? (profile.model_aliases ?? profile.modelAliases).map(value => String(value || "").trim()).filter(Boolean)
+      : [],
+    segment: String(profile.segment || "").trim(),
+    years: String(profile.years || "").trim(),
+    frontPadsPriceKzt: optionalPositiveNumber(profile.front_pads_price_kzt ?? profile.frontPadsPriceKzt),
+    frontPadsStock: optionalPositiveNumber(profile.front_pads_stock ?? profile.frontPadsStock),
+    frontDiscPriceKzt: optionalPositiveNumber(profile.front_disc_price_kzt ?? profile.frontDiscPriceKzt),
+    frontDiscStock: optionalPositiveNumber(profile.front_disc_stock ?? profile.frontDiscStock),
+    serviceBasketKzt: optionalPositiveNumber(profile.service_basket_kzt ?? profile.serviceBasketKzt),
+    avgStock: number(profile.avg_stock ?? profile.avgStock),
+    priceScore: number(profile.price_score ?? profile.priceScore),
+    cheapnessScore: number(profile.cheapness_score ?? profile.cheapnessScore),
+    priority: optionalPositiveNumber(profile.priority),
+    maintenanceBand: String(profile.maintenance_band ?? profile.maintenanceBand ?? "unknown").trim(),
+    maintenanceLabel: String(profile.maintenance_label ?? profile.maintenanceLabel ?? "").trim(),
+    comment: String(profile.comment || "").trim(),
+    marketSourceUrl: String(profile.market_source_url ?? profile.marketSourceUrl ?? "").trim(),
+    padsSourceUrl: String(profile.pads_source_url ?? profile.padsSourceUrl ?? "").trim(),
+    discSourceUrl: String(profile.disc_source_url ?? profile.discSourceUrl ?? "").trim()
+  };
+}
+
 function normalizeRow(item) {
   const photoGallery = normalizePhotoGallery(item.photo_gallery ?? item.photoGallery ?? []);
   const image = String(item.image || photoGallery[0] || "").trim();
@@ -564,7 +597,8 @@ function normalizeRow(item) {
       : [],
     avgPrice: optionalPositiveNumber(item.avg_price ?? item.avgPrice),
     marketDifference: number(item.market_difference ?? item.marketDifference),
-    marketDifferencePercent: number(item.market_difference_percent ?? item.marketDifferencePercent)
+    marketDifferencePercent: number(item.market_difference_percent ?? item.marketDifferencePercent),
+    autopartsProfile: normalizeAutopartsProfile(item.autoparts_profile ?? item.autopartsProfile)
   };
 }
 
@@ -966,6 +1000,24 @@ function getSellerFilterType(item) {
     : "private";
 }
 
+function getAutopartsBadgeMeta(item) {
+  const profile = item?.autopartsProfile;
+  if (!profile) {
+    return null;
+  }
+
+  switch (profile.maintenanceBand) {
+    case "cheap":
+      return { label: "Деш. запчасти", className: "status-badge status-badge--parts-cheap" };
+    case "medium":
+      return { label: "Средний ремонт", className: "status-badge status-badge--parts-medium" };
+    case "expensive":
+      return { label: "Дорогой ремонт", className: "status-badge status-badge--parts-expensive" };
+    default:
+      return null;
+  }
+}
+
 function getBuyerDecisionMeta(item) {
   const score = Number(item?.buyerScore ?? item?.score ?? 0);
   const risk = Number.isFinite(item?.riskScore) ? item.riskScore / 100 : 0.35;
@@ -1083,6 +1135,11 @@ function renderListingBadges(item) {
 
   if (market) {
     badges.push(`<span class="status-badge status-badge--deal">${escapeHtml(market)}</span>`);
+  }
+
+  const autopartsBadge = getAutopartsBadgeMeta(item);
+  if (autopartsBadge) {
+    badges.push(`<span class="${autopartsBadge.className}">${escapeHtml(autopartsBadge.label)}</span>`);
   }
 
   const repairState = getRepairStateLabel(item);
@@ -1981,6 +2038,7 @@ function renderListingFacts(item) {
   const actualityMeta = getActualityMeta(item);
   const config = getAnalysisModeConfig();
   const currentDecision = getCurrentDecisionMeta(item);
+  const autoparts = item.autopartsProfile;
   elements.modalFacts.innerHTML = [
     renderFact("Статус", actualityMeta.label),
     renderFact("Проверено", formatDateTime(item.lastCheckedAt)),
@@ -2013,6 +2071,10 @@ function renderListingFacts(item) {
     renderFact("Риск", Number.isFinite(item.riskScore) ? `${Math.round(item.riskScore)}/100` : "-"),
     renderFact("Ликвидность", Number.isFinite(item.liquidityScore) ? `${(item.liquidityScore * 100).toFixed(0)}%` : "-"),
     renderFact("Признак перекупа", Number.isFinite(item.sellerSignalScore) ? `${(item.sellerSignalScore * 100).toFixed(0)}%` : "-"),
+    renderFact("Запчасти", autoparts ? `${autoparts.maintenanceLabel || "Есть данные"} (${formatScorePercent((autoparts.cheapnessScore || 0) / 100)})` : "-"),
+    renderFact("Сервисная корзина", autoparts?.serviceBasketKzt ? formatPrice(autoparts.serviceBasketKzt) : "-"),
+    renderFact("Колодки / перед", autoparts?.frontPadsPriceKzt ? formatPrice(autoparts.frontPadsPriceKzt) : "-"),
+    renderFact("Диск / перед", autoparts?.frontDiscPriceKzt ? formatPrice(autoparts.frontDiscPriceKzt) : "-"),
     renderFact("Цена", formatPrice(item.price)),
     renderFact("Город", item.city || "-")
   ].join("");
@@ -2140,6 +2202,7 @@ function renderSignals(item) {
   const currentDecision = getCurrentDecisionMeta(item);
   const buyerDecision = getBuyerDecisionMeta(item);
   const resellerDecision = getResellerDecisionMeta(item);
+  const autoparts = item.autopartsProfile;
   const finance = [];
   const signals = [
     `${config.scoreLabel}: ${currentDecision.label}. ${currentDecision.note}`,
@@ -2185,6 +2248,13 @@ function renderSignals(item) {
   }
   if (item.publicHistoryAvailable) {
     signals.push(`Есть публичная история авто на странице`);
+  }
+  if (autoparts?.maintenanceLabel) {
+    const serviceBasket = autoparts.serviceBasketKzt ? `, корзина ${formatPrice(autoparts.serviceBasketKzt)}` : "";
+    signals.push(`Запчасти: ${autoparts.maintenanceLabel}, cheapness ${autoparts.cheapnessScore || 0}/100${serviceBasket}`);
+  }
+  if (autoparts?.comment) {
+    signals.push(`По рынку запчастей: ${autoparts.comment}`);
   }
   if (item.historySummary) {
     signals.push(item.historySummary);

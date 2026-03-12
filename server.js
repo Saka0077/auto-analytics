@@ -8,8 +8,10 @@ const cheerio = require("cheerio");
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
+const CATALOG_DIR = path.join(ROOT, "catalog");
 const DATA_FILE = path.join(DATA_DIR, "listings.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth-store.json");
+const AUTOPARTS_FILE = path.join(CATALOG_DIR, "autoparts-catalog.json");
 const SAMPLE_FILE = path.join(ROOT, "sample_listings.json");
 const STALE_AFTER_HOURS = Number(process.env.LISTING_STALE_AFTER_HOURS) > 0
   ? Number(process.env.LISTING_STALE_AFTER_HOURS)
@@ -77,6 +79,48 @@ function writeListings(listings) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(normalizeListings(listings), null, 2), "utf-8");
 }
 
+function createEmptyAutopartsCatalog() {
+  return {
+    generated_at: "",
+    source_workbook: "",
+    snapshot_title: "",
+    snapshot_note: "",
+    snapshot_items: [],
+    snapshot_conclusions: [],
+    market_context: [],
+    observations: []
+  };
+}
+
+function readAutopartsCatalog() {
+  if (!fs.existsSync(AUTOPARTS_FILE)) {
+    return createEmptyAutopartsCatalog();
+  }
+
+  try {
+    const raw = fs.readFileSync(AUTOPARTS_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    const snapshotItems = Array.isArray(parsed?.snapshot_items) ? parsed.snapshot_items : [];
+    const marketContext = Array.isArray(parsed?.market_context) ? parsed.market_context : [];
+    const observations = Array.isArray(parsed?.observations) ? parsed.observations : [];
+
+    return {
+      generated_at: String(parsed?.generated_at || ""),
+      source_workbook: String(parsed?.source_workbook || ""),
+      snapshot_title: String(parsed?.snapshot_title || ""),
+      snapshot_note: String(parsed?.snapshot_note || ""),
+      snapshot_items: snapshotItems,
+      snapshot_conclusions: Array.isArray(parsed?.snapshot_conclusions)
+        ? parsed.snapshot_conclusions.map(item => String(item || "").trim()).filter(Boolean)
+        : [],
+      market_context: marketContext,
+      observations
+    };
+  } catch (error) {
+    return createEmptyAutopartsCatalog();
+  }
+}
+
 function normalizeActualityStatus(value) {
   const status = String(value || "").trim().toLowerCase();
   return ["active", "stale", "archived", "unavailable"].includes(status) ? status : "active";
@@ -101,6 +145,14 @@ function normalizeTextList(value) {
     : [];
 }
 
+function normalizeLookupText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 function normalizeRemoteUrl(value, base = "https://kolesa.kz") {
   const raw = String(value || "").trim();
   if (!raw) {
@@ -116,6 +168,82 @@ function normalizeRemoteUrl(value, base = "https://kolesa.kz") {
   } catch (error) {
     return "";
   }
+}
+
+function getAutopartsMatchText(item) {
+  return normalizeLookupText([item.brand, item.model, item.title].filter(Boolean).join(" "));
+}
+
+function findAutopartsProfile(item, catalog = readAutopartsCatalog()) {
+  const snapshotItems = Array.isArray(catalog?.snapshot_items) ? catalog.snapshot_items : [];
+  if (!snapshotItems.length) {
+    return null;
+  }
+
+  const listingText = getAutopartsMatchText(item);
+  const listingBrand = normalizeLookupText(item.brand);
+  const listingModel = normalizeLookupText(item.model);
+  let match = null;
+
+  snapshotItems.forEach(profile => {
+    const brandKey = normalizeLookupText(profile.brand_key || profile.brand);
+    const lookupKeys = Array.isArray(profile.lookup_keys)
+      ? profile.lookup_keys.map(normalizeLookupText).filter(Boolean)
+      : [];
+
+    if (!lookupKeys.length) {
+      return;
+    }
+
+    if (brandKey && listingBrand && brandKey !== listingBrand) {
+      return;
+    }
+
+    const modelMatches = lookupKeys.some(key => listingModel === key || listingText.includes(key));
+    if (!modelMatches) {
+      return;
+    }
+
+    if (!match || Number(profile.cheapness_score || 0) > Number(match.cheapness_score || 0)) {
+      match = profile;
+    }
+  });
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    id: String(match.id || ""),
+    model_label: String(match.model_label || ""),
+    brand: String(match.brand || ""),
+    primary_model: String(match.primary_model || ""),
+    model_aliases: Array.isArray(match.model_aliases) ? match.model_aliases.map(value => String(value || "").trim()).filter(Boolean) : [],
+    segment: String(match.segment || ""),
+    years: String(match.years || ""),
+    front_pads_price_kzt: Number(match.front_pads_price_kzt) || null,
+    front_pads_stock: Number(match.front_pads_stock) || null,
+    front_disc_price_kzt: Number(match.front_disc_price_kzt) || null,
+    front_disc_stock: Number(match.front_disc_stock) || null,
+    service_basket_kzt: Number(match.service_basket_kzt) || null,
+    avg_stock: Number(match.avg_stock) || null,
+    price_score: Number(match.price_score) || null,
+    cheapness_score: Number(match.cheapness_score) || null,
+    priority: Number(match.priority) || null,
+    maintenance_band: String(match.maintenance_band || "unknown"),
+    maintenance_label: String(match.maintenance_label || "Неизвестно"),
+    comment: String(match.comment || ""),
+    market_source_url: String(match.market_source_url || ""),
+    pads_source_url: String(match.pads_source_url || ""),
+    disc_source_url: String(match.disc_source_url || "")
+  };
+}
+
+function enrichListingsWithAutoparts(listings, catalog = readAutopartsCatalog()) {
+  return listings.map(item => {
+    const profile = findAutopartsProfile(item, catalog);
+    return profile ? { ...item, autoparts_profile: profile } : item;
+  });
 }
 
 function getPhotoIdentityKey(urlValue) {
@@ -1634,11 +1762,16 @@ const server = http.createServer(async (request, response) => {
 
   if (pathname === "/api/listings" && request.method === "GET") {
     try {
-      const listings = readListings();
+      const listings = enrichListingsWithAutoparts(readListings());
       sendJson(response, 200, { items: listings, count: listings.length });
     } catch (error) {
       sendJson(response, 500, { error: "Не удалось прочитать объявления." });
     }
+    return;
+  }
+
+  if (pathname === "/api/autoparts/catalog" && request.method === "GET") {
+    sendJson(response, 200, readAutopartsCatalog());
     return;
   }
 
@@ -1789,7 +1922,7 @@ const server = http.createServer(async (request, response) => {
         limit,
         pagesLoaded: result.pagesLoaded,
         count: listings.length,
-        items: listings
+        items: enrichListingsWithAutoparts(listings)
       });
     } catch (error) {
       const message =
@@ -1879,7 +2012,7 @@ const server = http.createServer(async (request, response) => {
       });
 
       writeListings(updatedListings);
-      const updated = readListings().find(item => item.url === targetUrl);
+      const updated = enrichListingsWithAutoparts(readListings()).find(item => item.url === targetUrl);
       sendJson(response, 200, { ok: true, item: updated });
     } catch (error) {
       const message =
@@ -1931,7 +2064,10 @@ const server = http.createServer(async (request, response) => {
       }
 
       writeListings(updatedListings);
-      sendJson(response, 200, { ok: true, item: readListings().find(item => item.url === updated.url) || updated });
+      sendJson(response, 200, {
+        ok: true,
+        item: enrichListingsWithAutoparts(readListings()).find(item => item.url === updated.url) || updated
+      });
     } catch (error) {
       sendJson(response, 400, { error: "Не удалось сохранить VIN." });
     }
