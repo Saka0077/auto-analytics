@@ -442,6 +442,7 @@ const elements = {
   toggleSmartScopeBtn: document.getElementById("toggle-smart-scope-btn"),
   smartScopeBadge: document.getElementById("smart-scope-badge"),
   toggleHiddenBtn: document.getElementById("toggle-hidden-btn"),
+  rebuildAnalyticsBtn: document.getElementById("rebuild-analytics-btn"),
   hiddenCountBadge: document.getElementById("hidden-count-badge"),
   fileInput: document.getElementById("file-input"),
   resetBtn: document.getElementById("reset-btn"),
@@ -4990,11 +4991,32 @@ async function collectHistoryForAllListings() {
   const targets = state.listings.filter(isKolesaListing).filter(item => item.url);
   await queueHistoryCollection(targets, {
     button: elements.collectAllHistoryBtn,
-    idleText: "Собрать всё",
-    queueText: "Вся база...",
-    progressPrefix: "Вся база",
-    sourceLabel: "всей локальной базы"
+    idleText: "Обновить всю базу",
+    queueText: "База -> Kolesa...",
+    progressPrefix: "База",
+    sourceLabel: "всей локальной базы через Kolesa"
   });
+}
+
+async function rebuildLocalAnalytics() {
+  if (elements.rebuildAnalyticsBtn) {
+    elements.rebuildAnalyticsBtn.disabled = true;
+    elements.rebuildAnalyticsBtn.textContent = "Пересчёт...";
+  }
+
+  try {
+    await loadListingsFromServer();
+    await loadArchivedListingsFromServer();
+    render();
+    window.alert("Локальная база пересчитана без новых запросов в Kolesa.");
+  } catch (error) {
+    window.alert("Не удалось пересчитать локальную базу.");
+  } finally {
+    if (elements.rebuildAnalyticsBtn) {
+      elements.rebuildAnalyticsBtn.disabled = false;
+      elements.rebuildAnalyticsBtn.textContent = "Пересчитать локально";
+    }
+  }
 }
 
 async function bulkCheckRenderedListings() {
@@ -6161,6 +6183,11 @@ elements.fileInput.addEventListener("change", handleFileUpload);
 elements.importKolesaBtn.addEventListener("click", importFromKolesa);
 elements.importPreviewBtn.addEventListener("click", requestImportPreview);
 elements.collectAllHistoryBtn.addEventListener("click", collectHistoryForAllListings);
+if (elements.rebuildAnalyticsBtn) {
+  elements.rebuildAnalyticsBtn.addEventListener("click", () => {
+    void rebuildLocalAnalytics();
+  });
+}
 elements.importAktauBtn.addEventListener("click", () => {
   elements.importCitySelect.value = "aktau";
   elements.importModelSelect.value = "";
