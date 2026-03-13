@@ -165,6 +165,17 @@ h1 {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+#toggle-hidden-btn {
+  white-space: nowrap;
+}
+
+#hidden-count-badge {
+  min-width: auto;
+  white-space: nowrap;
 }
 
 .controls-panel {

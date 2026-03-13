@@ -11,6 +11,7 @@ const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, "data");
 const CATALOG_DIR = path.join(ROOT, "catalog");
 const DATA_FILE = path.join(DATA_DIR, "listings.json");
+const ARCHIVE_FILE = path.join(DATA_DIR, "listings-archive.json");
 const SNAPSHOTS_FILE = path.join(DATA_DIR, "listing-snapshots.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth-store.json");
 const AUTOPARTS_FILE = path.join(CATALOG_DIR, "autoparts-catalog.json");
@@ -22,6 +23,10 @@ const STALE_AFTER_HOURS = Number(process.env.LISTING_STALE_AFTER_HOURS) > 0
   ? Number(process.env.LISTING_STALE_AFTER_HOURS)
   : 72;
 const STALE_AFTER_MS = STALE_AFTER_HOURS * 60 * 60 * 1000;
+const ARCHIVE_AFTER_DAYS = Number(process.env.LISTING_ARCHIVE_AFTER_DAYS) > 0
+  ? Number(process.env.LISTING_ARCHIVE_AFTER_DAYS)
+  : 3;
+const ARCHIVE_AFTER_MS = ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000;
 const LOW_LOAD_SETTINGS = {
   pageDelayMinMs: 1800,
   pageDelayMaxMs: 3600,
@@ -552,12 +557,35 @@ function readListings() {
   const filePath = fs.existsSync(DATA_FILE) ? DATA_FILE : SAMPLE_FILE;
   const raw = fs.readFileSync(filePath, "utf-8");
   const parsed = JSON.parse(raw);
-  return normalizeListings(Array.isArray(parsed) ? parsed : parsed.items || []);
+  const listings = normalizeListings(Array.isArray(parsed) ? parsed : parsed.items || []);
+  if (filePath !== DATA_FILE) {
+    return listings;
+  }
+  return syncListingArchiveStorage(listings).activeItems;
 }
 
 function writeListings(listings) {
   ensureDataDir();
   fs.writeFileSync(DATA_FILE, JSON.stringify(normalizeListings(listings), null, 2), "utf-8");
+}
+
+function readArchivedListings() {
+  if (!fs.existsSync(ARCHIVE_FILE)) {
+    return [];
+  }
+
+  try {
+    const raw = fs.readFileSync(ARCHIVE_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    return normalizeListings(Array.isArray(parsed) ? parsed : parsed.items || []);
+  } catch (error) {
+    return [];
+  }
+}
+
+function writeArchivedListings(listings) {
+  ensureDataDir();
+  fs.writeFileSync(ARCHIVE_FILE, JSON.stringify(normalizeListings(listings), null, 2), "utf-8");
 }
 
 function readListingSnapshots() {
@@ -1810,6 +1838,13 @@ function normalizeListings(rows) {
         last_checked_at: normalizeIsoDate(item.last_checked_at ?? item.lastCheckedAt),
         last_status_change_at: normalizeIsoDate(item.last_status_change_at ?? item.lastStatusChangeAt),
         actuality_status: normalizeActualityStatus(item.actuality_status ?? item.actualityStatus),
+        hidden_after_import: booleanField(item, "hidden_after_import", "hiddenAfterImport"),
+        hidden_reason: textField(item, "hidden_reason", "hiddenReason"),
+        hidden_at: normalizeIsoDate(item.hidden_at ?? item.hiddenAt),
+        import_batch_id: textField(item, "import_batch_id", "importBatchId"),
+        import_scope_label: textField(item, "import_scope_label", "importScopeLabel"),
+        archived_at: normalizeIsoDate(item.archived_at ?? item.archivedAt),
+        archive_reason: textField(item, "archive_reason", "archiveReason"),
         avg_price: numberField(item, "avg_price", "avgPrice") > 0 ? numberField(item, "avg_price", "avgPrice") : null,
         market_difference: marketDifference,
         market_difference_percent: marketDifferencePercent,
@@ -1845,6 +1880,68 @@ function normalizeListings(rows) {
       ...buildRiskSummary(item)
     }))
     .filter(item => item.title && item.price > 0);
+}
+
+function shouldArchiveListing(item, currentTime = Date.now()) {
+  const hiddenAt = normalizeIsoDate(item.hidden_at ?? item.hiddenAt);
+  if (hiddenAt) {
+    const hiddenMs = new Date(hiddenAt).getTime();
+    if (Number.isFinite(hiddenMs) && currentTime - hiddenMs >= ARCHIVE_AFTER_MS) {
+      return "hidden_timeout";
+    }
+  }
+
+  const lastSeenAt = normalizeIsoDate(item.last_seen_at ?? item.lastSeenAt ?? item.last_checked_at ?? item.lastCheckedAt);
+  if (lastSeenAt) {
+    const lastSeenMs = new Date(lastSeenAt).getTime();
+    if (
+      Number.isFinite(lastSeenMs) &&
+      currentTime - lastSeenMs >= ARCHIVE_AFTER_MS &&
+      ["stale", "archived", "unavailable"].includes(normalizeActualityStatus(item.actuality_status))
+    ) {
+      return "stale_timeout";
+    }
+  }
+
+  return "";
+}
+
+function syncListingArchiveStorage(listings, archivedRows = readArchivedListings()) {
+  const currentTime = Date.now();
+  const archiveByKey = new Map(
+    normalizeListings(archivedRows).map(item => [getListingStorageKey(item), item])
+  );
+  const activeItems = [];
+  let changed = false;
+
+  normalizeListings(listings).forEach(item => {
+    const archiveReason = shouldArchiveListing(item, currentTime);
+    if (!archiveReason) {
+      activeItems.push(item);
+      return;
+    }
+
+    const key = getListingStorageKey(item);
+    const previous = archiveByKey.get(key);
+    archiveByKey.set(key, {
+      ...previous,
+      ...item,
+      archived_at: previous?.archived_at || new Date(currentTime).toISOString(),
+      archive_reason: archiveReason
+    });
+    changed = true;
+  });
+
+  if (changed) {
+    writeListings(activeItems);
+    writeArchivedListings([...archiveByKey.values()]);
+  }
+
+  return {
+    activeItems,
+    archivedItems: [...archiveByKey.values()],
+    changed
+  };
 }
 
 function createDefaultProfile(id = "default", name = "Основной") {
@@ -2712,12 +2809,45 @@ function mergeImportedListings(existingRows, importedRows) {
   return mergeImportedListingsDetailed(existingRows, importedRows).items;
 }
 
+function applyImportVisibility(listings, importedRows, { sourceUrl = "" } = {}) {
+  const normalized = normalizeListings(listings);
+  const importedKeys = new Set(normalizeListings(importedRows).map(item => getListingStorageKey(item)));
+  const batchId = `batch:${Date.now()}`;
+  const hiddenAt = new Date().toISOString();
+  const scopeLabel = String(sourceUrl || "").trim();
+
+  return normalized.map(item => {
+    if (importedKeys.has(getListingStorageKey(item))) {
+      return {
+        ...item,
+        hidden_after_import: false,
+        hidden_reason: "",
+        hidden_at: "",
+        import_batch_id: batchId,
+        import_scope_label: scopeLabel
+      };
+    }
+
+    if (String(item.source || "").trim() !== "kolesa.kz") {
+      return item;
+    }
+
+    return {
+      ...item,
+      hidden_after_import: true,
+      hidden_reason: item.hidden_reason || "not_in_last_import",
+      hidden_at: item.hidden_at || hiddenAt
+    };
+  });
+}
+
 function saveListingsWithSnapshots(listings, { capturedAt } = {}) {
   const normalized = normalizeListings(listings);
   const snapshots = mergeListingSnapshots(readListingSnapshots(), normalized, { capturedAt });
-  writeListings(normalized);
+  const synced = syncListingArchiveStorage(normalized, readArchivedListings());
+  writeListings(synced.activeItems);
   writeListingSnapshots(snapshots);
-  return normalized;
+  return synced.activeItems;
 }
 
 function applyKolesaSnapshotToListing(item, snapshot, { checkedAt } = {}) {
@@ -3190,7 +3320,8 @@ async function runKolesaImportJob(job) {
 
   if (save) {
     const mergeResult = mergeImportedListingsDetailed(readListings(), listings);
-    saveListingsWithSnapshots(mergeResult.items);
+    const visibleItems = applyImportVisibility(mergeResult.items, listings, { sourceUrl });
+    saveListingsWithSnapshots(visibleItems);
     importSummary = {
       ...mergeResult.summary,
       error_count: Number(result.detailFailures || 0)
@@ -3520,9 +3651,23 @@ const server = http.createServer(async (request, response) => {
       const baseListings = readListings();
       const snapshots = ensureListingSnapshotsForListings(baseListings);
       const listings = enrichListingsForClient(baseListings, snapshots);
-      sendJson(response, 200, { items: listings, count: listings.length });
+      sendJson(response, 200, {
+        items: listings,
+        count: listings.length,
+        hiddenCount: listings.filter(item => item.hidden_after_import).length
+      });
     } catch (error) {
       sendJson(response, 500, { error: "Не удалось прочитать объявления." });
+    }
+    return;
+  }
+
+  if (pathname === "/api/archive/listings" && request.method === "GET") {
+    try {
+      const items = enrichListingsForClient(readArchivedListings(), readListingSnapshots());
+      sendJson(response, 200, { items, count: items.length });
+    } catch (error) {
+      sendJson(response, 500, { error: "Не удалось прочитать архив объявлений." });
     }
     return;
   }
@@ -3704,7 +3849,8 @@ const server = http.createServer(async (request, response) => {
       };
       if (save) {
         const mergeResult = mergeImportedListingsDetailed(readListings(), listings);
-        const savedListings = saveListingsWithSnapshots(mergeResult.items);
+        const visibleItems = applyImportVisibility(mergeResult.items, listings, { sourceUrl });
+        const savedListings = saveListingsWithSnapshots(visibleItems);
         const savedSnapshots = readListingSnapshots();
         responseItems = enrichListingsForClient(savedListings, savedSnapshots);
         importSummary = {

@@ -339,6 +339,7 @@ const IMPORT_TRANSMISSIONS = [
 
 const state = {
   listings: defaultListings.map(normalizeRow),
+  archivedListings: [],
   renderedListings: [],
   analysisMode: "buyer",
   tableSort: {
@@ -351,6 +352,7 @@ const state = {
   compareWinnerId: null,
   favoriteIds: [],
   comparisonHistory: [],
+  showHiddenArchived: false,
   activeProfileId: "default",
   profiles: [{ id: "default", name: "Основной" }],
   authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
@@ -428,6 +430,8 @@ const elements = {
   importPreviewBtn: document.getElementById("import-preview-btn"),
   importKolesaBtn: document.getElementById("import-kolesa-btn"),
   importAktauBtn: document.getElementById("import-aktau-btn"),
+  toggleHiddenBtn: document.getElementById("toggle-hidden-btn"),
+  hiddenCountBadge: document.getElementById("hidden-count-badge"),
   fileInput: document.getElementById("file-input"),
   resetBtn: document.getElementById("reset-btn"),
   totalCount: document.getElementById("total-count"),
@@ -746,6 +750,13 @@ function serializeRowForServer(item) {
     last_checked_at: item.lastCheckedAt,
     last_status_change_at: item.lastStatusChangeAt,
     actuality_status: item.actualityStatus,
+    hidden_after_import: item.hiddenAfterImport,
+    hidden_reason: item.hiddenReason,
+    hidden_at: item.hiddenAt,
+    import_batch_id: item.importBatchId,
+    import_scope_label: item.importScopeLabel,
+    archived_at: item.archivedAt,
+    archive_reason: item.archiveReason,
     photo_count: item.photoCount,
     phone_count: item.phoneCount,
     phone_prefix: item.phonePrefix,
@@ -920,6 +931,13 @@ function normalizeRow(item) {
     lastSeenAt: item.last_seen_at || item.lastSeenAt || "",
     lastCheckedAt: item.last_checked_at || item.lastCheckedAt || "",
     lastStatusChangeAt: item.last_status_change_at || item.lastStatusChangeAt || "",
+    hiddenAfterImport: Boolean(item.hidden_after_import ?? item.hiddenAfterImport),
+    hiddenReason: item.hidden_reason || item.hiddenReason || "",
+    hiddenAt: item.hidden_at || item.hiddenAt || "",
+    importBatchId: item.import_batch_id || item.importBatchId || "",
+    importScopeLabel: item.import_scope_label || item.importScopeLabel || "",
+    archivedAt: item.archived_at || item.archivedAt || "",
+    archiveReason: item.archive_reason || item.archiveReason || "",
     snapshotCount: nonNegativeNumber(item.snapshot_count ?? item.snapshotCount),
     firstPrice: optionalPositiveNumber(item.first_price ?? item.firstPrice),
     lastPrice: optionalPositiveNumber(item.last_price ?? item.lastPrice),
@@ -962,6 +980,16 @@ function normalizeRow(item) {
 
 function normalizeRows(rows) {
   return rows.map(normalizeRow).filter(item => item.price > 0);
+}
+
+function getArchiveAwareListings() {
+  return state.showHiddenArchived
+    ? [...state.listings, ...state.archivedListings]
+    : state.listings;
+}
+
+function getFilterPoolListings() {
+  return getArchiveAwareListings().filter(item => state.showHiddenArchived || !item.hiddenAfterImport);
 }
 
 function formatPrice(value) {
@@ -2785,7 +2813,8 @@ function scoreListings(listings) {
 
 function populateCities() {
   const current = elements.citySelect.value;
-  const cities = [...new Set(state.listings.map(item => item.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const sourceListings = getFilterPoolListings();
+  const cities = [...new Set(sourceListings.map(item => item.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
   elements.citySelect.innerHTML = '<option value="">Все города</option>';
 
   cities.forEach(city => {
@@ -2800,7 +2829,8 @@ function populateCities() {
 
 function populateMarks() {
   const current = elements.markFilterSelect.value;
-  const marks = [...new Set(state.listings.map(item => item.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const sourceListings = getFilterPoolListings();
+  const marks = [...new Set(sourceListings.map(item => item.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
   elements.markFilterSelect.innerHTML = '<option value="">Все марки</option>';
 
   marks.forEach(mark => {
@@ -2816,8 +2846,9 @@ function populateMarks() {
 function populateModels() {
   const current = elements.modelFilterSelect.value;
   const selectedMark = elements.markFilterSelect.value;
+  const sourceListings = getFilterPoolListings();
   const models = [...new Set(
-    state.listings
+    sourceListings
       .filter(item => !selectedMark || item.brand === selectedMark)
       .map(item => item.model)
       .filter(Boolean)
@@ -2847,12 +2878,13 @@ function populateAttributeSelect(element, values, placeholder) {
 }
 
 function populateAttributeFilters() {
-  const fuels = [...new Set(state.listings.map(item => item.fuelType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
-  const transmissions = [...new Set(state.listings.map(item => item.transmission).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
-  const bodyTypes = [...new Set(state.listings.map(item => item.bodyType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
-  const drives = [...new Set(state.listings.map(item => item.driveType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
-  const steerings = [...new Set(state.listings.map(item => item.steeringSide).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
-  const colors = [...new Set(state.listings.map(item => item.color).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const sourceListings = getFilterPoolListings();
+  const fuels = [...new Set(sourceListings.map(item => item.fuelType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const transmissions = [...new Set(sourceListings.map(item => item.transmission).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const bodyTypes = [...new Set(sourceListings.map(item => item.bodyType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const drives = [...new Set(sourceListings.map(item => item.driveType).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const steerings = [...new Set(sourceListings.map(item => item.steeringSide).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const colors = [...new Set(sourceListings.map(item => item.color).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
 
   populateAttributeSelect(elements.fuelFilterSelect, fuels, "Любое");
   populateAttributeSelect(elements.transmissionFilterSelect, transmissions, "Любая");
@@ -2864,6 +2896,7 @@ function populateAttributeFilters() {
 
 function getFilteredListings() {
   const { scoreKey } = getAnalysisModeConfig();
+  const sourceListings = getArchiveAwareListings();
   const search = elements.searchInput.value.trim().toLowerCase();
   const yearRange = getNormalizedRange(number(elements.yearFromInput.value), number(elements.yearToInput.value));
   const priceRange = getNormalizedRange(number(elements.priceFromInput.value), number(elements.priceToInput.value));
@@ -2886,7 +2919,8 @@ function getFilteredListings() {
   const sort = elements.sortSelect.value;
   const showInactive = elements.showInactiveToggle.checked;
 
-  const results = scoreListings(state.listings).filter(item => {
+  const results = scoreListings(sourceListings).filter(item => {
+    const hiddenMatch = state.showHiddenArchived || !item.hiddenAfterImport;
     const actualityMatch = showInactive || isListingActual(item);
     const titleMatch = !search || item.title.toLowerCase().includes(search);
     const yearMatch =
@@ -2917,7 +2951,7 @@ function getFilteredListings() {
         ? hasTrustedAutopartsProfile(item)
         : hasTrustedAutopartsProfile(item) && item.autopartsProfile?.maintenanceBand === maintenance);
     const optionMatch = !optionSearch || item.options.some(option => option.toLowerCase().includes(optionSearch));
-    return actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && transmissionMatch && bodyTypeMatch && driveMatch && steeringMatch && colorMatch && sellerMatch && maintenanceMatch && optionMatch;
+    return hiddenMatch && actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && transmissionMatch && bodyTypeMatch && driveMatch && steeringMatch && colorMatch && sellerMatch && maintenanceMatch && optionMatch;
   });
 
   switch (sort) {
@@ -4940,6 +4974,7 @@ function closeListingDetails() {
 }
 
 function render() {
+  updateHiddenArchiveUi();
   updateAnalysisModeUI();
   const listings = getFilteredListings();
   state.renderedListings = listings;
@@ -4995,6 +5030,7 @@ function resetFilters() {
   elements.optionSearchInput.value = "";
   elements.sortSelect.value = "score";
   elements.showInactiveToggle.checked = false;
+  state.showHiddenArchived = false;
   state.tableSort.key = "";
   state.tableSort.direction = "asc";
   render();
@@ -5021,7 +5057,7 @@ async function saveListingsToServer(listings) {
 }
 
 function pruneUserStateToCurrentListings() {
-  const validIds = new Set(state.listings.map(item => item.id));
+  const validIds = new Set([...state.listings, ...state.archivedListings].map(item => item.id));
   state.favoriteIds = state.favoriteIds.filter(id => validIds.has(id));
   state.comparisonHistory = state.comparisonHistory
     .map(entry => ({
@@ -5029,6 +5065,33 @@ function pruneUserStateToCurrentListings() {
       compareIds: Array.isArray(entry.compareIds) ? entry.compareIds.filter(id => validIds.has(id)).slice(0, 3) : []
     }))
     .filter(entry => entry.compareIds.length >= 2);
+}
+
+function updateHiddenArchiveUi() {
+  const hiddenCount = state.listings.filter(item => item.hiddenAfterImport).length;
+  const archiveCount = state.archivedListings.length;
+  if (elements.hiddenCountBadge) {
+    elements.hiddenCountBadge.textContent = `Скрыто ${formatInteger(hiddenCount)} · Архив ${formatInteger(archiveCount)}`;
+  }
+  if (elements.toggleHiddenBtn) {
+    elements.toggleHiddenBtn.textContent = state.showHiddenArchived
+      ? "Скрыть архив"
+      : "Показать скрытые";
+  }
+}
+
+async function loadArchivedListingsFromServer() {
+  try {
+    const response = await fetch("/api/archive/listings");
+    if (!response.ok) {
+      throw new Error("Archive load failed");
+    }
+    const payload = await response.json();
+    state.archivedListings = normalizeRows(Array.isArray(payload.items) ? payload.items : []);
+  } catch (error) {
+    state.archivedListings = [];
+  }
+  updateHiddenArchiveUi();
 }
 
 async function loadListingsFromServer() {
@@ -5042,6 +5105,7 @@ async function loadListingsFromServer() {
     const rows = Array.isArray(payload.items) ? payload.items : [];
     if (rows.length) {
       state.listings = normalizeRows(rows);
+      await loadArchivedListingsFromServer();
       state.compareIds = [];
       state.compareWinnerId = null;
       pruneUserStateToCurrentListings();
@@ -5051,7 +5115,7 @@ async function loadListingsFromServer() {
       if (isAuthenticated()) {
         void saveAppState();
       }
-      setStatus(`Источник: серверные данные, активных ${getActualListingsCount()} из ${state.listings.length}`);
+      setStatus(`Источник: серверные данные, активных ${getActualListingsCount()} из ${state.listings.length} · скрыто ${formatInteger(state.listings.filter(item => item.hiddenAfterImport).length)} · архив ${formatInteger(state.archivedListings.length)}`);
       return;
     }
   } catch (error) {
@@ -5237,6 +5301,12 @@ elements.importAktauBtn.addEventListener("click", () => {
   markImportPreviewDirty();
   void importFromKolesaUrl(buildImportUrlFromFilters(), getImportLimit());
 });
+if (elements.toggleHiddenBtn) {
+  elements.toggleHiddenBtn.addEventListener("click", () => {
+    state.showHiddenArchived = !state.showHiddenArchived;
+    render();
+  });
+}
 [
   elements.importCitySelect,
   elements.importMarkSelect,
