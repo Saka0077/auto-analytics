@@ -1229,6 +1229,10 @@ a:hover {
   font-size: 12px;
 }
 
+.modal-gallery-note.is-error {
+  color: #b42318;
+}
+
 .modal-gallery-open {
   color: var(--text);
   font-weight: 700;

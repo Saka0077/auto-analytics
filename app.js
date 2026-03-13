@@ -340,6 +340,7 @@ const IMPORT_TRANSMISSIONS = [
 const HISTORY_BATCH_LIMIT = 400;
 const SMART_SCOPE_THRESHOLD = 300;
 const TABLE_PAGE_SIZE = 50;
+const GALLERY_FETCH_TIMEOUT_MS = 4000;
 let lazyImageObserver = null;
 
 const state = {
@@ -1494,8 +1495,27 @@ function getListingGalleryState(item) {
 
   return {
     status: cached?.status || "",
+    message: String(cached?.message || "").trim(),
     images: cachedImages.length ? cachedImages : itemImages
   };
+}
+
+function getGalleryNote(item, galleryState) {
+  if (galleryState.status === "loading") {
+    return "Загружаем остальные фото...";
+  }
+
+  if (galleryState.status === "error") {
+    return galleryState.message || "Остальные фото сейчас недоступны.";
+  }
+
+  const imageCount = galleryState.images.length;
+  const photoCount = Number(item?.photoCount || 0);
+  if (galleryState.status === "loaded" && photoCount > imageCount) {
+    return `Показано ${imageCount} из ${photoCount} фото. Остальные сейчас недоступны.`;
+  }
+
+  return "";
 }
 
 function shouldAutoCheckActuality(item) {
@@ -4670,8 +4690,9 @@ function renderModalGallery(item) {
   const currentImage = images[currentIndex];
   const proxiedImage = toProxiedImageUrl(currentImage);
   const hasMultiple = images.length > 1;
-  const loadingNote = galleryState.status === "loading"
-    ? `<span class="modal-gallery-note">Загружаем все фото...</span>`
+  const galleryNote = getGalleryNote(item, galleryState);
+  const loadingNote = galleryNote
+    ? `<span class="modal-gallery-note ${galleryState.status === "error" ? "is-error" : ""}">${escapeHtml(galleryNote)}</span>`
     : "";
 
   state.modalGalleryIndex = currentIndex;
@@ -4744,8 +4765,13 @@ async function loadListingGallery(item) {
     renderModalGallery(getListingById(item.id) || item);
   }
 
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller
+    ? window.setTimeout(() => controller.abort(), GALLERY_FETCH_TIMEOUT_MS)
+    : null;
+
   try {
-    const response = await fetch(`/api/listings/gallery?url=${encodeURIComponent(item.url)}`);
+    const response = await fetch(`/api/listings/gallery?url=${encodeURIComponent(item.url)}`, controller ? { signal: controller.signal } : undefined);
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.error || "Gallery failed");
@@ -4764,10 +4790,17 @@ async function loadListingGallery(item) {
   } catch (error) {
     state.listingGalleries[item.url] = {
       status: "error",
+      message: error?.name === "AbortError"
+        ? "Слишком долго грузятся остальные фото."
+        : (error?.message || "Не удалось догрузить остальные фото."),
       images: fallbackImages
     };
     if (state.selectedListingId === item.id) {
       renderModalGallery(getListingById(item.id) || item);
+    }
+  } finally {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
     }
   }
 }
