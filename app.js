@@ -341,6 +341,7 @@ const HISTORY_BATCH_LIMIT = 400;
 const SMART_SCOPE_THRESHOLD = 300;
 const TABLE_PAGE_SIZE = 50;
 const GALLERY_FETCH_TIMEOUT_MS = 4000;
+const SAFE_DETAIL_MODE = true;
 let lazyImageObserver = null;
 
 const state = {
@@ -1536,6 +1537,30 @@ function getDetailGuardState() {
     waitMs,
     note: minutes ? `Kolesa временно поставила карточки на паузу. Подожди примерно ${minutes} мин.` : "Kolesa временно поставила карточки на паузу."
   };
+}
+
+function updateSafeModeUi() {
+  if (!SAFE_DETAIL_MODE) {
+    return;
+  }
+
+  if (elements.collectHistoryBtn) {
+    elements.collectHistoryBtn.disabled = true;
+    elements.collectHistoryBtn.textContent = "История: safe-mode";
+    elements.collectHistoryBtn.title = "Массовый detail-сбор отключён. Оставлен только ручной запрос по одной машине.";
+  }
+
+  if (elements.collectAllHistoryBtn) {
+    elements.collectAllHistoryBtn.disabled = true;
+    elements.collectAllHistoryBtn.textContent = "База: safe-mode";
+    elements.collectAllHistoryBtn.title = "Массовое обновление карточек отключено в safe-mode.";
+  }
+
+  if (elements.bulkCheckBtn) {
+    elements.bulkCheckBtn.disabled = true;
+    elements.bulkCheckBtn.textContent = "Проверка: safe-mode";
+    elements.bulkCheckBtn.title = "Пакетная проверка отключена. Оставлена только ручная проверка по одной машине.";
+  }
 }
 
 function shouldAutoCheckActuality(item) {
@@ -5054,6 +5079,10 @@ async function queueHistoryCollection(targets, {
 }
 
 async function collectHistoryForRenderedListings() {
+  if (SAFE_DETAIL_MODE) {
+    window.alert("Safe-mode включён: массовый сбор истории отключён. Открывай конкретную машину и проверяй её вручную.");
+    return;
+  }
   const targets = state.renderedListings.filter(isKolesaListing).filter(item => item.url);
   await queueHistoryCollection(targets, {
     button: elements.collectHistoryBtn,
@@ -5065,6 +5094,10 @@ async function collectHistoryForRenderedListings() {
 }
 
 async function collectHistoryForAllListings() {
+  if (SAFE_DETAIL_MODE) {
+    window.alert("Safe-mode включён: массовое обновление базы отключено. Оставлена только ручная работа по одной машине.");
+    return;
+  }
   const targets = state.listings.filter(isKolesaListing).filter(item => item.url);
   await queueHistoryCollection(targets, {
     button: elements.collectAllHistoryBtn,
@@ -5097,6 +5130,10 @@ async function rebuildLocalAnalytics() {
 }
 
 async function bulkCheckRenderedListings() {
+  if (SAFE_DETAIL_MODE) {
+    window.alert("Safe-mode включён: пакетная проверка отключена. Используй карточку одной машины.");
+    return;
+  }
   const targets = state.renderedListings.filter(isKolesaListing);
   if (!targets.length) {
     window.alert("В текущем списке нет объявлений Kolesa для проверки.");
@@ -5820,7 +5857,11 @@ function openListingDetails(listingId) {
       ? "Убрать из избранного"
       : "В избранное";
   elements.modalCheckBtn.disabled = !isKolesaListing(item) || detailGuard.paused;
-  elements.modalCheckBtn.textContent = detailGuard.paused ? "Kolesa на паузе" : "Проверить актуальность";
+  elements.modalCheckBtn.textContent = detailGuard.paused
+    ? "Kolesa на паузе"
+    : SAFE_DETAIL_MODE
+      ? "Проверить 1 авто"
+      : "Проверить актуальность";
 
   elements.detailModal.hidden = false;
   document.body.style.overflow = "hidden";
@@ -5834,9 +5875,11 @@ function openListingDetails(listingId) {
     };
     renderModalGallery(item);
   }
-  void loadKolesaPriceInsight(item);
+  if (!SAFE_DETAIL_MODE) {
+    void loadKolesaPriceInsight(item);
+  }
   void loadListingSnapshots(item);
-  if (!detailGuard.paused && shouldAutoCheckActuality(item)) {
+  if (!SAFE_DETAIL_MODE && !detailGuard.paused && shouldAutoCheckActuality(item)) {
     void checkListingActuality(item.id, { silent: true });
   }
 }
@@ -6552,5 +6595,6 @@ syncImportUrlPreview();
 markImportPreviewDirty();
 updateComparePanel();
 Promise.all([loadAppState(), loadListingsFromServer()]).finally(() => {
+  updateSafeModeUi();
   render();
 });
