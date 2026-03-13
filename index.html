@@ -9,7 +9,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
 </head>
-<body>
+<body class="loading" aria-busy="true">
+  <div id="app-loader" class="app-loader" role="status" aria-live="polite">
+    <div class="app-loader-card">
+      <div class="app-loader-spinner" aria-hidden="true"></div>
+      <strong id="app-loader-text">Загружаем локальную базу...</strong>
+      <p>Поднимаем фильтры, архив и локальную аналитику.</p>
+    </div>
+  </div>
   <div class="page-shell">
     <header class="hero">
       <div class="hero-copy">
@@ -19,8 +26,8 @@
           Загрузи данные, отфильтруй список и быстро найди варианты с лучшим соотношением цены и состояния.
         </p>
         <div class="mode-switch" role="tablist" aria-label="Режим анализа">
-          <button id="mode-buyer-btn" class="mode-switch-btn is-active" type="button" data-mode="buyer">Покупка</button>
-          <button id="mode-reseller-btn" class="mode-switch-btn" type="button" data-mode="reseller">Перекуп</button>
+          <button id="mode-buyer-btn" class="mode-switch-btn is-active" type="button" data-mode="buyer" role="tab" aria-selected="true" aria-controls="analysis-panel" tabindex="0">Покупка</button>
+          <button id="mode-reseller-btn" class="mode-switch-btn" type="button" data-mode="reseller" role="tab" aria-selected="false" aria-controls="analysis-panel" tabindex="-1">Перекуп</button>
         </div>
         <p id="mode-caption" class="mode-caption">Режим покупки: ищем лучший вариант для себя по рынку, риску и качеству объявления.</p>
       </div>
@@ -71,7 +78,7 @@
       </div>
     </header>
 
-    <main class="layout">
+    <main id="analysis-panel" class="layout" role="tabpanel" aria-label="Панель анализа автомобилей">
       <section class="panel controls-panel">
         <div class="controls-section controls-section--import">
           <div class="panel-head">
@@ -222,7 +229,7 @@
               </div>
             </div>
 
-            <div class="control-group control-group--quick">
+            <form id="vehicle-search" class="control-group control-group--quick" role="search" aria-label="Фильтр по авто">
               <div class="control-group-head">
                 <h3>Быстрый отбор</h3>
                 <p>Сузь рынок по цене, году, городу и основным параметрам.</p>
@@ -230,8 +237,9 @@
 
               <label class="field">
                 <span>Поиск по названию</span>
-                <input id="search-input" type="text" placeholder="Camry, Elantra, Kia...">
+                <input id="search-input" type="text" placeholder="Camry, Elantra, Kia..." aria-describedby="search-hint">
               </label>
+              <small id="search-hint" class="sr-only">Нажми Enter, чтобы обновить результаты по текущим фильтрам.</small>
 
               <div class="field-row">
                 <label class="field">
@@ -308,7 +316,7 @@
                   <option value="mileage-asc">Меньше пробег</option>
                 </select>
               </label>
-            </div>
+            </form>
 
             <div class="control-group control-group--details">
               <div class="control-group-head">

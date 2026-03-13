@@ -1,4 +1,5 @@
 const AUTH_TOKEN_KEY = "autoAnalyticsAuthToken";
+const UI_STATE_KEY = "autoAnalyticsUiState";
 
 const defaultListings = [
   {
@@ -406,6 +407,7 @@ const elements = {
   profileSelect: document.getElementById("profile-select"),
   profileNameInput: document.getElementById("profile-name-input"),
   createProfileBtn: document.getElementById("create-profile-btn"),
+  vehicleSearchForm: document.getElementById("vehicle-search"),
   searchInput: document.getElementById("search-input"),
   yearFromInput: document.getElementById("year-from-input"),
   yearToInput: document.getElementById("year-to-input"),
@@ -518,6 +520,8 @@ const elements = {
   collectorLastRun: document.getElementById("collector-last-run"),
   collectorLastResult: document.getElementById("collector-last-result"),
   collectorLastMode: document.getElementById("collector-last-mode"),
+  appLoader: document.getElementById("app-loader"),
+  appLoaderText: document.getElementById("app-loader-text"),
   syncStatus: document.getElementById("sync-status"),
   sortScoreOption: document.getElementById("sort-score-option"),
   topScoreTitle: document.getElementById("top-score-title"),
@@ -1268,6 +1272,14 @@ function updateAnalysisModeUI() {
   const config = getAnalysisModeConfig();
   elements.modeBuyerBtn?.classList.toggle("is-active", state.analysisMode === "buyer");
   elements.modeResellerBtn?.classList.toggle("is-active", state.analysisMode === "reseller");
+  if (elements.modeBuyerBtn) {
+    elements.modeBuyerBtn.setAttribute("aria-selected", state.analysisMode === "buyer" ? "true" : "false");
+    elements.modeBuyerBtn.tabIndex = state.analysisMode === "buyer" ? 0 : -1;
+  }
+  if (elements.modeResellerBtn) {
+    elements.modeResellerBtn.setAttribute("aria-selected", state.analysisMode === "reseller" ? "true" : "false");
+    elements.modeResellerBtn.tabIndex = state.analysisMode === "reseller" ? 0 : -1;
+  }
   if (elements.modeCaption) {
     elements.modeCaption.textContent = config.caption;
   }
@@ -2257,8 +2269,27 @@ function getSellerProfileSummary(item) {
   };
 }
 
-function setStatus(text) {
+function setStatus(text, tone = "neutral") {
   elements.syncStatus.textContent = text;
+  elements.syncStatus.classList.remove("is-loading", "is-error", "is-success");
+  if (tone === "loading") {
+    elements.syncStatus.classList.add("is-loading");
+  } else if (tone === "error") {
+    elements.syncStatus.classList.add("is-error");
+  } else if (tone === "success") {
+    elements.syncStatus.classList.add("is-success");
+  }
+}
+
+function setGlobalLoading(isLoading, text = "Загрузка данных...") {
+  document.body.classList.toggle("loading", Boolean(isLoading));
+  document.body.setAttribute("aria-busy", isLoading ? "true" : "false");
+  if (elements.appLoaderText) {
+    elements.appLoaderText.textContent = text;
+  }
+  if (elements.appLoader) {
+    elements.appLoader.hidden = !isLoading;
+  }
 }
 
 function wait(ms) {
@@ -2646,6 +2677,119 @@ function setAuthToken(token) {
     localStorage.setItem(AUTH_TOKEN_KEY, state.authToken);
   } else {
     localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+function persistUiState() {
+  try {
+    const snapshot = {
+      analysisMode: state.analysisMode,
+      smartScopeEnabled: state.smartScopeEnabled,
+      search: elements.searchInput.value,
+      yearFrom: elements.yearFromInput.value,
+      yearTo: elements.yearToInput.value,
+      priceFrom: elements.priceFromInput.value,
+      priceTo: elements.priceToInput.value,
+      mileageFrom: elements.mileageFromInput.value,
+      mileageTo: elements.mileageToInput.value,
+      city: elements.citySelect.value,
+      mark: elements.markFilterSelect.value,
+      model: elements.modelFilterSelect.value,
+      credit: elements.creditFilterSelect.value,
+      maxMonthlyPayment: elements.maxMonthlyPaymentInput.value,
+      repair: elements.repairFilterSelect.value,
+      fuel: elements.fuelFilterSelect.value,
+      drive: elements.driveFilterSelect.value,
+      steering: elements.steeringFilterSelect.value,
+      color: elements.colorFilterSelect.value,
+      transmission: elements.transmissionFilterSelect.value,
+      bodyType: elements.bodyFilterSelect.value,
+      seller: elements.sellerFilterSelect.value,
+      maintenance: elements.maintenanceFilterSelect.value,
+      optionSearch: elements.optionSearchInput.value,
+      sort: elements.sortSelect.value,
+      showInactive: elements.showInactiveToggle.checked,
+      archiveCity: elements.archiveCityFilter?.value || "",
+      archiveBrand: elements.archiveBrandFilter?.value || "",
+      archiveSeller: elements.archiveSellerFilter?.value || "",
+      importCity: elements.importCitySelect.value,
+      importMark: elements.importMarkSelect.value,
+      importModel: elements.importModelSelect.value,
+      importBody: elements.importBodySelect.value,
+      importTransmission: elements.importTransmissionSelect.value,
+      importCustom: elements.importCustomSelect.value,
+      importNeedRepair: elements.importNeedRepairSelect.value,
+      importPriceFrom: elements.importPriceFromInput.value,
+      importPriceTo: elements.importPriceToInput.value,
+      importLimit: elements.importLimitSelect.value
+    };
+    localStorage.setItem(UI_STATE_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    // Ignore localStorage errors.
+  }
+}
+
+async function restoreUiState() {
+  try {
+    const raw = localStorage.getItem(UI_STATE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    const saved = JSON.parse(raw);
+    state.analysisMode = saved.analysisMode === "reseller" ? "reseller" : "buyer";
+    state.smartScopeEnabled = saved.smartScopeEnabled !== false;
+
+    elements.searchInput.value = saved.search || "";
+    elements.yearFromInput.value = saved.yearFrom || "";
+    elements.yearToInput.value = saved.yearTo || "";
+    elements.priceFromInput.value = saved.priceFrom || "";
+    elements.priceToInput.value = saved.priceTo || "";
+    elements.mileageFromInput.value = saved.mileageFrom || "";
+    elements.mileageToInput.value = saved.mileageTo || "";
+    elements.citySelect.value = saved.city || "";
+    elements.markFilterSelect.value = saved.mark || "";
+    elements.modelFilterSelect.value = saved.model || "";
+    elements.creditFilterSelect.value = saved.credit || "";
+    elements.maxMonthlyPaymentInput.value = saved.maxMonthlyPayment || "";
+    elements.repairFilterSelect.value = saved.repair || "";
+    elements.fuelFilterSelect.value = saved.fuel || "";
+    elements.driveFilterSelect.value = saved.drive || "";
+    elements.steeringFilterSelect.value = saved.steering || "";
+    elements.colorFilterSelect.value = saved.color || "";
+    elements.transmissionFilterSelect.value = saved.transmission || "";
+    elements.bodyFilterSelect.value = saved.bodyType || "";
+    elements.sellerFilterSelect.value = saved.seller || "";
+    elements.maintenanceFilterSelect.value = saved.maintenance || "";
+    elements.optionSearchInput.value = saved.optionSearch || "";
+    elements.sortSelect.value = saved.sort || "score";
+    elements.showInactiveToggle.checked = Boolean(saved.showInactive);
+    if (elements.archiveCityFilter) elements.archiveCityFilter.value = saved.archiveCity || "";
+    if (elements.archiveBrandFilter) elements.archiveBrandFilter.value = saved.archiveBrand || "";
+    if (elements.archiveSellerFilter) elements.archiveSellerFilter.value = saved.archiveSeller || "";
+
+    elements.importCitySelect.value = saved.importCity || "";
+    elements.importMarkSelect.value = saved.importMark || "";
+    elements.importBodySelect.value = saved.importBody || "";
+    elements.importTransmissionSelect.value = saved.importTransmission || "";
+    elements.importCustomSelect.value = saved.importCustom || "";
+    elements.importNeedRepairSelect.value = saved.importNeedRepair || "";
+    elements.importPriceFromInput.value = formatMoneyInputValue(saved.importPriceFrom || "");
+    elements.importPriceToInput.value = formatMoneyInputValue(saved.importPriceTo || "");
+    elements.importLimitSelect.value = saved.importLimit || elements.importLimitSelect.value;
+    elements.kolesaUrlInput.dataset.manual = "false";
+
+    if (elements.importMarkSelect.value || elements.importCitySelect.value) {
+      await loadImportModelOptions(saved.importModel || "");
+    } else {
+      elements.importModelSelect.value = saved.importModel || "";
+    }
+
+    syncImportUrlPreview();
+    markImportPreviewDirty();
+    updateAnalysisModeUI();
+  } catch (error) {
+    // Ignore broken saved UI state.
   }
 }
 
@@ -6087,6 +6231,7 @@ function render() {
       renderAiPanel(selected);
     }
   }
+  persistUiState();
 }
 
 function resetFilters() {
@@ -6258,6 +6403,7 @@ async function loadArchivedListingsFromServer() {
 }
 
 async function loadListingsFromServer() {
+  setStatus("Источник: загружаем локальную базу...", "loading");
   try {
     const response = await fetch("/api/listings");
     if (!response.ok) {
@@ -6284,11 +6430,11 @@ async function loadListingsFromServer() {
       if (isAuthenticated()) {
         void saveAppState();
       }
-      setStatus(`Источник: серверные данные, активных ${getActualListingsCount()} из ${state.listings.length} · скрыто ${formatInteger(state.listings.filter(item => item.hiddenAfterImport).length)} · архив ${formatInteger(state.archivedListings.length)}`);
+      setStatus(`Источник: серверные данные, активных ${getActualListingsCount()} из ${state.listings.length} · скрыто ${formatInteger(state.listings.filter(item => item.hiddenAfterImport).length)} · архив ${formatInteger(state.archivedListings.length)}`, "success");
       return;
     }
   } catch (error) {
-    setStatus("Источник: демо-данные");
+    setStatus("Источник: демо-данные", "error");
     state.collectorStatus = null;
     renderCollectorStatus();
   }
@@ -6508,6 +6654,13 @@ elements.loginBtn.addEventListener("click", loginUser);
 elements.registerBtn.addEventListener("click", registerUser);
 elements.logoutBtn.addEventListener("click", logoutUser);
 elements.resetBtn.addEventListener("click", resetFilters);
+if (elements.vehicleSearchForm) {
+  elements.vehicleSearchForm.addEventListener("submit", event => {
+    event.preventDefault();
+    state.currentPage = 1;
+    render();
+  });
+}
 elements.createProfileBtn.addEventListener("click", createProfile);
 elements.profileSelect.addEventListener("change", event => {
   void switchProfile(event.target.value);
@@ -6759,7 +6912,19 @@ elements.kolesaUrlInput.dataset.manual = "false";
 syncImportUrlPreview();
 markImportPreviewDirty();
 updateComparePanel();
-Promise.all([loadAppState(), loadListingsFromServer()]).finally(() => {
-  updateSafeModeUi();
+
+async function bootstrapApp() {
+  setGlobalLoading(true, "Загружаем локальную базу...");
+  await restoreUiState();
   render();
-});
+
+  try {
+    await Promise.all([loadAppState(), loadListingsFromServer()]);
+  } finally {
+    updateSafeModeUi();
+    render();
+    setGlobalLoading(false);
+  }
+}
+
+void bootstrapApp();
