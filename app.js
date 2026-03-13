@@ -397,6 +397,9 @@ const elements = {
   registerBtn: document.getElementById("register-btn"),
   logoutBtn: document.getElementById("logout-btn"),
   authUserText: document.getElementById("auth-user-text"),
+  kolesaSearchStatus: document.getElementById("kolesa-search-status"),
+  kolesaDetailStatus: document.getElementById("kolesa-detail-status"),
+  kolesaGuardNote: document.getElementById("kolesa-guard-note"),
   profileBox: document.getElementById("profile-box"),
   profileSelect: document.getElementById("profile-select"),
   profileNameInput: document.getElementById("profile-name-input"),
@@ -1561,6 +1564,46 @@ function updateSafeModeUi() {
     elements.bulkCheckBtn.textContent = "Проверка: safe-mode";
     elements.bulkCheckBtn.title = "Пакетная проверка отключена. Оставлена только ручная проверка по одной машине.";
   }
+}
+
+function formatGuardStatus(scope) {
+  if (!scope) {
+    return { label: "-", note: "" };
+  }
+
+  if (scope.paused) {
+    const waitMs = Number(scope.waitMs || 0);
+    const minutes = waitMs > 0 ? Math.max(1, Math.ceil(waitMs / 60000)) : 0;
+    return {
+      label: "На паузе",
+      note: minutes ? `ждать ~${minutes} мин.` : "ожидание"
+    };
+  }
+
+  return {
+    label: "Ок",
+    note: ""
+  };
+}
+
+function renderRemoteGuardStatus() {
+  if (!elements.kolesaSearchStatus || !elements.kolesaDetailStatus || !elements.kolesaGuardNote) {
+    return;
+  }
+
+  const searchScope = state.remoteGuard?.scopes?.search || null;
+  const detailScope = state.remoteGuard?.scopes?.detail || null;
+  const searchStatus = formatGuardStatus(searchScope);
+  const detailStatus = formatGuardStatus(detailScope);
+  const detailReason = String(detailScope?.lastReason || "").trim();
+
+  elements.kolesaSearchStatus.textContent = searchStatus.label;
+  elements.kolesaDetailStatus.textContent = detailStatus.label;
+  elements.kolesaGuardNote.textContent = detailScope?.paused
+    ? `${detailReason || "detail pause"}${detailStatus.note ? ` · ${detailStatus.note}` : ""}`
+    : searchScope?.paused
+      ? `${String(searchScope?.lastReason || "search pause").trim()}${searchStatus.note ? ` · ${searchStatus.note}` : ""}`
+      : "поиск и карточки доступны";
 }
 
 function shouldAutoCheckActuality(item) {
@@ -6068,6 +6111,7 @@ async function loadHealthStatusFromServer() {
   } catch (error) {
     state.remoteGuard = null;
   }
+  renderRemoteGuardStatus();
 }
 
 async function loadCollectorStatusFromServer() {
