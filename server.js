@@ -13,6 +13,7 @@ const CATALOG_DIR = path.join(ROOT, "catalog");
 const DATA_FILE = path.join(DATA_DIR, "listings.json");
 const ARCHIVE_FILE = path.join(DATA_DIR, "listings-archive.json");
 const SNAPSHOTS_FILE = path.join(DATA_DIR, "listing-snapshots.json");
+const COLLECTOR_STATE_FILE = path.join(DATA_DIR, "collector-state.json");
 const AUTH_FILE = path.join(DATA_DIR, "auth-store.json");
 const AUTOPARTS_FILE = path.join(CATALOG_DIR, "autoparts-catalog.json");
 const AUTOPARTS_ALIASES_FILE = path.join(CATALOG_DIR, "autoparts-aliases.json");
@@ -537,6 +538,19 @@ async function ensureJobWorker() {
       job.finished_at = new Date().toISOString();
       job.progress = job.total || job.progress;
       job.message = "Готово";
+      if (job.type === "collect-snapshots") {
+        writeCollectorState({
+          last_run_at: job.finished_at,
+          last_mode: String(job.payload?.mode || "manual"),
+          last_status: job.status,
+          last_checked: Number(job.result?.checked || 0),
+          last_failed: Number(job.result?.failed || 0),
+          last_total: Number(job.total || 0),
+          last_started_at: job.started_at,
+          last_finished_at: job.finished_at,
+          last_message: String(job.message || "")
+        });
+      }
     } catch (error) {
       const detail = String(error.message || error);
       const pausedByRemote = error && error.code === "kolesa-paused";
@@ -544,6 +558,19 @@ async function ensureJobWorker() {
       job.finished_at = new Date().toISOString();
       job.error = detail;
       job.message = detail;
+      if (job.type === "collect-snapshots") {
+        writeCollectorState({
+          last_run_at: job.finished_at,
+          last_mode: String(job.payload?.mode || "manual"),
+          last_status: job.status,
+          last_checked: Number(job.result?.checked || 0),
+          last_failed: Number(job.result?.failed || 0),
+          last_total: Number(job.total || 0),
+          last_started_at: job.started_at,
+          last_finished_at: job.finished_at,
+          last_message: detail
+        });
+      }
       pushRemoteGuardEvent(pausedByRemote ? "job-paused" : "job-failed", `${job.type}: ${detail}`);
     } finally {
       activeJobId = "";
@@ -586,6 +613,58 @@ function readArchivedListings() {
 function writeArchivedListings(listings) {
   ensureDataDir();
   fs.writeFileSync(ARCHIVE_FILE, JSON.stringify(normalizeListings(listings), null, 2), "utf-8");
+}
+
+function readCollectorState() {
+  if (!fs.existsSync(COLLECTOR_STATE_FILE)) {
+    return {
+      last_run_at: "",
+      last_mode: "",
+      last_status: "",
+      last_checked: 0,
+      last_failed: 0,
+      last_total: 0,
+      last_started_at: "",
+      last_finished_at: "",
+      last_message: ""
+    };
+  }
+
+  try {
+    const raw = fs.readFileSync(COLLECTOR_STATE_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    return {
+      last_run_at: normalizeIsoDate(parsed.last_run_at ?? parsed.lastRunAt),
+      last_mode: String(parsed.last_mode ?? parsed.lastMode ?? "").trim(),
+      last_status: String(parsed.last_status ?? parsed.lastStatus ?? "").trim(),
+      last_checked: Number(parsed.last_checked ?? parsed.lastChecked ?? 0) || 0,
+      last_failed: Number(parsed.last_failed ?? parsed.lastFailed ?? 0) || 0,
+      last_total: Number(parsed.last_total ?? parsed.lastTotal ?? 0) || 0,
+      last_started_at: normalizeIsoDate(parsed.last_started_at ?? parsed.lastStartedAt),
+      last_finished_at: normalizeIsoDate(parsed.last_finished_at ?? parsed.lastFinishedAt),
+      last_message: String(parsed.last_message ?? parsed.lastMessage ?? "").trim()
+    };
+  } catch (error) {
+    return {
+      last_run_at: "",
+      last_mode: "",
+      last_status: "",
+      last_checked: 0,
+      last_failed: 0,
+      last_total: 0,
+      last_started_at: "",
+      last_finished_at: "",
+      last_message: ""
+    };
+  }
+}
+
+function writeCollectorState(state) {
+  ensureDataDir();
+  fs.writeFileSync(COLLECTOR_STATE_FILE, JSON.stringify(readCollectorState() ? {
+    ...readCollectorState(),
+    ...state
+  } : state, null, 2), "utf-8");
 }
 
 function readListingSnapshots() {
@@ -3529,6 +3608,7 @@ const server = http.createServer(async (request, response) => {
       const job = createJob("collect-snapshots", {
         urls,
         limit: clampImportLimit(payload.limit || urls.length || 50),
+        mode: String(payload.mode || "manual"),
         concurrency: Math.min(
           Math.max(Number(payload.concurrency) || LOW_LOAD_SETTINGS.collectConcurrency, 1),
           LOW_LOAD_SETTINGS.collectMaxConcurrency
@@ -3538,6 +3618,14 @@ const server = http.createServer(async (request, response) => {
     } catch (error) {
       sendJson(response, 400, { error: "Не удалось поставить сбор истории в очередь.", detail: String(error.message || error) });
     }
+    return;
+  }
+
+  if (pathname === "/api/collector/status" && request.method === "GET") {
+    sendJson(response, 200, {
+      ok: true,
+      collector: readCollectorState()
+    });
     return;
   }
 

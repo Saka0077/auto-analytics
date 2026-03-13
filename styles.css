@@ -130,6 +130,21 @@ h1 {
   font-size: 13px;
 }
 
+.collector-status-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.collector-status-card strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
 .sync-status {
   margin: 18px 0 0;
   padding-top: 14px;
@@ -1656,6 +1671,7 @@ a:hover {
   .compare-panel,
   .modal-facts,
   .modal-sections,
+  .collector-status-card,
   .analytics-grid,
   .saved-grid,
   .top-grid,
@@ -1688,7 +1704,8 @@ a:hover {
   .saved-grid,
   .top-grid,
   .stats-grid,
-  .metric-grid {
+  .metric-grid,
+  .collector-status-card {
     grid-template-columns: 1fr;
   }
 

@@ -359,6 +359,7 @@ const state = {
   profiles: [{ id: "default", name: "Основной" }],
   authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
   currentUser: null,
+  collectorStatus: null,
   listingInsights: {},
   listingGalleries: {},
   listingSnapshots: {},
@@ -483,6 +484,9 @@ const elements = {
   bestPrice: document.getElementById("best-price"),
   bestScoreLabel: document.getElementById("best-score-label"),
   bestScore: document.getElementById("best-score"),
+  collectorLastRun: document.getElementById("collector-last-run"),
+  collectorLastResult: document.getElementById("collector-last-result"),
+  collectorLastMode: document.getElementById("collector-last-mode"),
   syncStatus: document.getElementById("sync-status"),
   sortScoreOption: document.getElementById("sort-score-option"),
   topScoreTitle: document.getElementById("top-score-title"),
@@ -4478,12 +4482,13 @@ async function queueHistoryCollection(targets, {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          urls: batch.map(item => item.url),
-          limit: batch.length,
-          concurrency: 1
-        })
-      });
+      body: JSON.stringify({
+        urls: batch.map(item => item.url),
+        limit: batch.length,
+        mode: sourceLabel === "всей локальной базы" ? "full" : "manual",
+        concurrency: 1
+      })
+    });
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error || "Collect history failed");
@@ -5298,6 +5303,7 @@ function closeListingDetails() {
 
 function render() {
   updateHiddenArchiveUi();
+  renderCollectorStatus();
   updateAnalysisModeUI();
   const listings = getFilteredListings();
   state.renderedListings = listings;
@@ -5408,6 +5414,51 @@ function updateHiddenArchiveUi() {
   }
 }
 
+function formatCollectorMode(value) {
+  switch (String(value || "").trim()) {
+    case "daily":
+      return "Ежедневный";
+    case "full":
+      return "Вся база";
+    case "manual":
+      return "Вручную";
+    default:
+      return "-";
+  }
+}
+
+function renderCollectorStatus() {
+  const collector = state.collectorStatus;
+  if (!collector) {
+    elements.collectorLastRun.textContent = "-";
+    elements.collectorLastResult.textContent = "-";
+    elements.collectorLastMode.textContent = "-";
+    return;
+  }
+
+  elements.collectorLastRun.textContent = collector.last_run_at ? formatDateTime(collector.last_run_at) : "-";
+  elements.collectorLastResult.textContent = collector.last_total
+    ? `${formatInteger(collector.last_checked)} / ${formatInteger(collector.last_failed)}`
+    : "-";
+  elements.collectorLastMode.textContent = collector.last_status
+    ? `${formatCollectorMode(collector.last_mode)} · ${collector.last_status}`
+    : formatCollectorMode(collector.last_mode);
+}
+
+async function loadCollectorStatusFromServer() {
+  try {
+    const response = await fetch("/api/collector/status");
+    if (!response.ok) {
+      throw new Error("Collector status failed");
+    }
+    const payload = await response.json();
+    state.collectorStatus = payload.collector || null;
+  } catch (error) {
+    state.collectorStatus = null;
+  }
+  renderCollectorStatus();
+}
+
 async function loadArchivedListingsFromServer() {
   try {
     const response = await fetch("/api/archive/listings");
@@ -5430,6 +5481,7 @@ async function loadListingsFromServer() {
     }
 
     const payload = await response.json();
+    await loadCollectorStatusFromServer();
     const rows = Array.isArray(payload.items) ? payload.items : [];
     if (rows.length) {
       state.listings = normalizeRows(rows);
@@ -5448,6 +5500,8 @@ async function loadListingsFromServer() {
     }
   } catch (error) {
     setStatus("Источник: демо-данные");
+    state.collectorStatus = null;
+    renderCollectorStatus();
   }
 }
 
