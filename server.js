@@ -1832,6 +1832,26 @@ function enrichListingsForClient(listings, snapshotRows = readListingSnapshots()
   return enrichListingsWithSellerAnalysis(withAutoparts);
 }
 
+function trimListingGalleryForFeed(item) {
+  const images = normalizePhotoGallery(item.photo_gallery || item.photoGallery || []);
+  const coverImage = normalizeRemoteUrl(item.image) || images[0] || "";
+  const photoCount = pickDefined(
+    numberField(item, "photo_count", "photoCount") > 0 ? numberField(item, "photo_count", "photoCount") : null,
+    images.length || null
+  );
+
+  return {
+    ...item,
+    image: coverImage,
+    photo_gallery: coverImage ? [coverImage] : [],
+    photo_count: photoCount
+  };
+}
+
+function prepareListingsFeed(items) {
+  return items.map(trimListingGalleryForFeed);
+}
+
 function buildRiskSummary(item) {
   let score = 0;
   const flags = [];
@@ -3780,7 +3800,7 @@ const server = http.createServer(async (request, response) => {
     try {
       const baseListings = readListings();
       const snapshots = ensureListingSnapshotsForListings(baseListings);
-      const listings = enrichListingsForClient(baseListings, snapshots);
+      const listings = prepareListingsFeed(enrichListingsForClient(baseListings, snapshots));
       sendJson(response, 200, {
         items: listings,
         count: listings.length,
@@ -3794,7 +3814,7 @@ const server = http.createServer(async (request, response) => {
 
   if (pathname === "/api/archive/listings" && request.method === "GET") {
     try {
-      const items = enrichListingsForClient(readArchivedListings(), readListingSnapshots());
+      const items = prepareListingsFeed(enrichListingsForClient(readArchivedListings(), readListingSnapshots()));
       sendJson(response, 200, { items, count: items.length });
     } catch (error) {
       sendJson(response, 500, { error: "Не удалось прочитать архив объявлений." });
