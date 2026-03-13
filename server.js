@@ -4346,6 +4346,20 @@ const server = http.createServer(async (request, response) => {
         photoCount: pickDefined(snapshot.photo_count, current?.photo_count, images.length || null)
       });
     } catch (error) {
+      const fallbackImages = currentImages.length ? currentImages : (current?.image ? [current.image] : []);
+      if (fallbackImages.length) {
+        sendJson(response, 200, {
+          ok: true,
+          partial: true,
+          url: advertUrl,
+          image: current?.image || fallbackImages[0] || "",
+          images: fallbackImages,
+          photoCount: currentPhotoCount,
+          message: String(error.message || error || "").trim() || "Остальные фото сейчас недоступны."
+        });
+        return;
+      }
+
       const message =
         error.message === "unsupported-host"
           ? "Поддерживаются только ссылки вида https://kolesa.kz/..."

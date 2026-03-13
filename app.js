@@ -1509,6 +1509,10 @@ function getGalleryNote(item, galleryState) {
     return galleryState.message || "Остальные фото сейчас недоступны.";
   }
 
+  if (galleryState.status === "partial") {
+    return galleryState.message || "Показана только обложка. Остальные фото сейчас недоступны.";
+  }
+
   const imageCount = galleryState.images.length;
   const photoCount = Number(item?.photoCount || 0);
   if (galleryState.status === "loaded" && photoCount > imageCount) {
@@ -4522,7 +4526,8 @@ function applyListingGallery(listingId, payload) {
   state.renderedListings = state.renderedListings.map(merge);
   if (current.url) {
     state.listingGalleries[current.url] = {
-      status: "loaded",
+      status: payload.partial ? "partial" : "loaded",
+      message: String(payload.message || "").trim(),
       images: photoGallery
     };
   }
