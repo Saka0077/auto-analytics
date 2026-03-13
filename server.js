@@ -1391,6 +1391,12 @@ function extractTitleBrandModel(title, brand = "", model = "") {
   };
 }
 
+function normalizeGeneration(value) {
+  return normalizeWhitespace(value)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeVin(value) {
   const vin = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   return vin;
@@ -1929,6 +1935,7 @@ function normalizeListings(rows) {
         source: textField(item, "source"),
         brand: textField(item, "brand") || titleMeta.brand,
         model: textField(item, "model") || titleMeta.model,
+        generation: normalizeGeneration(textField(item, "generation")),
         fuel_type: textField(item, "fuel_type", "fuelType") || descriptionMeta.fuelType,
         transmission: textField(item, "transmission") || descriptionMeta.transmission,
         body_type: textField(item, "body_type", "bodyType") || descriptionMeta.bodyType,
@@ -2817,6 +2824,10 @@ async function fetchKolesaListingSnapshot(advertUrl, { force = false, jobId = ""
     market_difference_percent: avgPrice && currentPrice ? marketDifferencePercent : null,
     brand: titleMeta.brand,
     model: titleMeta.model,
+    generation: normalizeGeneration(
+      offerParams.generation
+      || String(product?.attributes?.generation || advertData?.generation || "")
+    ),
     fuel_type: offerParams.fuelType || descriptionMeta.fuelType,
     drive_type: offerParams.driveType || descriptionMeta.driveType,
     steering_side: offerParams.steeringSide || descriptionMeta.steeringSide,
@@ -2989,6 +3000,7 @@ function applyKolesaSnapshotToListing(item, snapshot, { checkedAt } = {}) {
     photo_count: pickDefined(snapshot.photo_count, item.photo_count),
     phone_count: pickDefined(snapshot.phone_count, item.phone_count),
     phone_prefix: snapshot.phone_prefix || item.phone_prefix,
+    generation: pickDefined(snapshot.generation, item.generation) || item.generation,
     fuel_type: pickDefined(snapshot.fuel_type, item.fuel_type) || item.fuel_type,
     transmission: pickDefined(snapshot.transmission, item.transmission) || item.transmission,
     body_type: pickDefined(snapshot.body_type, item.body_type) || item.body_type,
@@ -3219,6 +3231,7 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
         photo_gallery: normalizePhotoGallery([...(item.photo_gallery || []), ...(snapshot.photo_gallery || [])]),
         brand: pickDefined(snapshot.brand, item.brand) || item.brand,
         model: pickDefined(snapshot.model, item.model) || item.model,
+        generation: pickDefined(snapshot.generation, item.generation) || item.generation,
         fuel_type: pickDefined(snapshot.fuel_type, item.fuel_type) || item.fuel_type,
         drive_type: pickDefined(snapshot.drive_type, item.drive_type) || item.drive_type,
         steering_side: pickDefined(snapshot.steering_side, item.steering_side) || item.steering_side,

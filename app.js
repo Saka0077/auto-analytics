@@ -957,6 +957,7 @@ function normalizeRow(item) {
     source: item.source || "",
     brand: item.brand || "",
     model: item.model || "",
+    generation: item.generation || "",
     fuelType: item.fuel_type || item.fuelType || "",
     transmission: item.transmission || "",
     bodyType: item.body_type || item.bodyType || "",
@@ -2580,6 +2581,10 @@ function normalize(value, min, max, invert = false) {
 }
 
 function buildDerivedMarketMap(listings) {
+  const byGeneration = new Map();
+  const byGenerationCity = new Map();
+  const byBody = new Map();
+  const byBodyCity = new Map();
   const byCity = new Map();
   const byModel = new Map();
 
@@ -2588,8 +2593,36 @@ function buildDerivedMarketMap(listings) {
       return;
     }
 
+    const generationKey = buildMarketKey([item.brand, item.model, item.generation]);
+    const generationCityKey = buildMarketKey([item.brand, item.model, item.generation, item.city]);
+    const bodyKey = buildMarketKey([item.brand, item.model, item.bodyType]);
+    const bodyCityKey = buildMarketKey([item.brand, item.model, item.bodyType, item.city]);
     const modelKey = buildMarketKey([item.brand, item.model]);
     const cityKey = buildMarketKey([item.brand, item.model, item.city]);
+
+    if (generationKey) {
+      const bucket = byGeneration.get(generationKey) || [];
+      bucket.push(item);
+      byGeneration.set(generationKey, bucket);
+    }
+
+    if (generationCityKey) {
+      const bucket = byGenerationCity.get(generationCityKey) || [];
+      bucket.push(item);
+      byGenerationCity.set(generationCityKey, bucket);
+    }
+
+    if (bodyKey) {
+      const bucket = byBody.get(bodyKey) || [];
+      bucket.push(item);
+      byBody.set(bodyKey, bucket);
+    }
+
+    if (bodyCityKey) {
+      const bucket = byBodyCity.get(bodyCityKey) || [];
+      bucket.push(item);
+      byBodyCity.set(bodyCityKey, bucket);
+    }
 
     if (modelKey) {
       const bucket = byModel.get(modelKey) || [];
@@ -2622,11 +2655,39 @@ function buildDerivedMarketMap(listings) {
 
     const candidates = [
       {
+        key: buildMarketKey([item.brand, item.model, item.generation, item.city]),
+        store: byGenerationCity,
+        minSize: 2,
+        scope: "brand_model_generation_city",
+        sourceLabel: "Локальный рынок поколения"
+      },
+      {
+        key: buildMarketKey([item.brand, item.model, item.generation]),
+        store: byGeneration,
+        minSize: 3,
+        scope: "brand_model_generation",
+        sourceLabel: "Рынок поколения"
+      },
+      {
+        key: buildMarketKey([item.brand, item.model, item.bodyType, item.city]),
+        store: byBodyCity,
+        minSize: 3,
+        scope: "brand_model_body_city",
+        sourceLabel: "Локальный рынок кузова"
+      },
+      {
         key: buildMarketKey([item.brand, item.model, item.city]),
         store: byCity,
         minSize: 3,
         scope: "brand_model_city",
         sourceLabel: "Локальный рынок"
+      },
+      {
+        key: buildMarketKey([item.brand, item.model, item.bodyType]),
+        store: byBody,
+        minSize: 4,
+        scope: "brand_model_body",
+        sourceLabel: "Рынок кузова"
       },
       {
         key: buildMarketKey([item.brand, item.model]),
@@ -3884,11 +3945,9 @@ function renderMarketFacts(item) {
     const value = difference === 0
       ? "почти без отклонения"
       : `${formatPrice(Math.abs(difference))} · ${formatPercent(percent)}`;
-    const marketTitle = item.marketSourceLabel === "Локальный рынок"
-      ? `Средняя цена по городу (${formatInteger(item.marketSampleSize || 0)})`
-      : item.marketSourceLabel === "Рынок модели"
-        ? `Средняя цена по модели (${formatInteger(item.marketSampleSize || 0)})`
-        : "Средняя цена Kolesa";
+    const marketTitle = item.marketConfidence === "local"
+      ? `${item.marketSourceLabel || "Локальный рынок"} (${formatInteger(item.marketSampleSize || 0)})`
+      : "Средняя цена Kolesa";
 
     return [
       renderFact(marketTitle, formatPrice(item.avgPrice)),
@@ -4275,6 +4334,7 @@ function renderListingFacts(item) {
     renderFact("VIN", item.vin || "-"),
     renderFact("Марка", item.brand || "-"),
     renderFact("Модель", item.model || "-"),
+    renderFact("Поколение", item.generation || "-"),
     renderFact("Топливо", item.fuelType || "-"),
     renderFact("КПП", item.transmission || "-"),
     renderFact("Кузов", item.bodyType || "-"),
