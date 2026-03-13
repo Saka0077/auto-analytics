@@ -20,6 +20,8 @@ const AUTOPARTS_ALIASES_FILE = path.join(CATALOG_DIR, "autoparts-aliases.json");
 const SAMPLE_FILE = path.join(ROOT, "sample_listings.json");
 const TRANSLATOR_PYTHON = path.join(ROOT, ".venv-translate", "Scripts", "python.exe");
 const TRANSLATOR_SCRIPT = path.join(ROOT, "scripts", "offline_translate_worker.py");
+const OLLAMA_BASE_URL = String(process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/+$/, "");
+const OLLAMA_MODEL = String(process.env.OLLAMA_MODEL || "").trim();
 const STALE_AFTER_HOURS = Number(process.env.LISTING_STALE_AFTER_HOURS) > 0
   ? Number(process.env.LISTING_STALE_AFTER_HOURS)
   : 72;
@@ -110,6 +112,167 @@ function sendJson(response, statusCode, payload) {
 function sendText(response, statusCode, text) {
   response.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
   response.end(text);
+}
+
+async function fetchOllamaTags() {
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, {
+    headers: {
+      "Content-Type": "application/json"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`ollama-status-${response.status}`);
+  }
+
+  return response.json();
+}
+
+function pickOllamaModel(models) {
+  const names = Array.isArray(models)
+    ? models.map(item => String(item?.name || "").trim()).filter(Boolean)
+    : [];
+  const localNames = names.filter(name => !/:(?:cloud|latest-cloud)$/i.test(name) && !/-cloud$/i.test(name));
+  const preferred = [
+    OLLAMA_MODEL,
+    "gemma3:1b",
+    "qwen3:4b",
+    "qwen35-4b-hauhaucs-chat:latest",
+    "qwen35-4b-hauhaucs-fast:latest",
+    "qwen35-4b-hauhaucs-q4:latest",
+    "meditron:latest"
+  ].filter(Boolean);
+
+  for (const candidate of preferred) {
+    if (localNames.includes(candidate)) {
+      return candidate;
+    }
+  }
+
+  return localNames[0] || "";
+}
+
+async function getOllamaStatus() {
+  try {
+    const payload = await fetchOllamaTags();
+    const models = Array.isArray(payload?.models) ? payload.models : [];
+    const selectedModel = pickOllamaModel(models);
+
+    if (!selectedModel) {
+      return {
+        ok: true,
+        available: false,
+        provider: "ollama",
+        model: OLLAMA_MODEL,
+        message: OLLAMA_MODEL
+          ? `Ollama запущена, но модель ${OLLAMA_MODEL} не скачана. Выполни: ollama pull ${OLLAMA_MODEL}`
+          : "Ollama запущена, но локальных моделей не найдено. Сначала скачай модель через ollama pull."
+      };
+    }
+
+    return {
+      ok: true,
+      available: true,
+      provider: "ollama",
+      model: selectedModel,
+      message: `Локальная модель ${selectedModel} готова.`
+    };
+  } catch (error) {
+    return {
+      ok: true,
+      available: false,
+      provider: "ollama",
+      model: OLLAMA_MODEL,
+      message: "Ollama недоступна. Запусти Ollama локально и проверь http://127.0.0.1:11434."
+    };
+  }
+}
+
+function buildListingAiPrompt(item) {
+  const autoparts = item?.autoparts_profile || item?.autopartsProfile || null;
+  const lines = [
+    "Ты авто-аналитик по вторичному рынку Казахстана.",
+    "Дай очень практичный вывод по машине на русском языке.",
+    "Не придумывай факты, опирайся только на данные ниже.",
+    "Пиши коротко, максимум 8 строк, без вступления и без лишних объяснений.",
+    "Формат ответа строго такой:",
+    "Вердикт: ...",
+    "Сильные стороны: ...",
+    "Риски: ...",
+    "Кому подходит: ...",
+    "Стоит ли звонить сейчас: да/нет + короткая причина",
+    "",
+    "Данные объявления:",
+    `Название: ${item?.title || "-"}`,
+    `Цена: ${item?.price || "-"}`,
+    `Город: ${item?.city || "-"}`,
+    `Год: ${item?.year || "-"}`,
+    `Пробег: ${item?.mileage || "-"}`,
+    `Марка: ${item?.brand || "-"}`,
+    `Модель: ${item?.model || "-"}`,
+    `Поколение: ${item?.generation || "-"}`,
+    `Кузов: ${item?.body_type || item?.bodyType || "-"}`,
+    `Топливо: ${item?.fuel_type || item?.fuelType || "-"}`,
+    `КПП: ${item?.transmission || "-"}`,
+    `Привод: ${item?.drive_type || item?.driveType || "-"}`,
+    `Двигатель: ${item?.engine_volume || item?.engineVolume || "-"}`,
+    `Кредит: ${item?.credit_available || item?.creditAvailable ? "да" : "нет"}`,
+    `Средняя цена рынка: ${item?.avg_price || item?.avgPrice || "-"}`,
+    `Отклонение от рынка: ${item?.market_difference_percent || item?.marketDifferencePercent || "-"}`,
+    `Покупка score: ${item?.buyer_score || item?.buyerScore || "-"}`,
+    `Перекуп score: ${item?.reseller_opportunity_score || item?.resellerOpportunityScore || "-"}`,
+    `Содержание score: ${item?.maintenance_score || item?.maintenanceScore || "-"}`,
+    `Риск score: ${item?.risk_score || item?.riskScore || "-"}`,
+    `Ликвидность score: ${item?.liquidity_score || item?.liquidityScore || "-"}`,
+    `Дней в продаже: ${item?.days_on_market || item?.daysOnMarket || "-"}`,
+    `Изменений цены: ${item?.price_change_count || item?.priceChangeCount || "-"}`,
+    `Снижение цены: ${item?.price_drop_total || item?.priceDropTotal || "-"}`,
+    `Переопубликовано: ${item?.was_relisted || item?.wasRelisted ? "да" : "нет"}`,
+    `Продавец: ${item?.seller_type || item?.sellerType || "-"}`,
+    `Анализ продавца: ${item?.seller_analysis?.type_label || item?.sellerAnalysis?.typeLabel || "-"}`,
+    `Фото: ${item?.photo_count || item?.photoCount || "-"}`,
+    `Описание: ${normalizeWhitespace(item?.description || "-")}`,
+    `Запчасти: ${autoparts?.label || autoparts?.maintenanceBand || "-"}`,
+    `Сервисная корзина: ${autoparts?.serviceBasket || "-"}`,
+    `Передние колодки: ${autoparts?.frontPads || "-"}`,
+    `Передний диск: ${autoparts?.frontDisc || "-"}`
+  ];
+  return lines.join("\n");
+}
+
+async function requestOllamaListingAnalysis(item) {
+  const status = await getOllamaStatus();
+  if (!status.available || !status.model) {
+    throw new Error(status.message || "Ollama недоступна.");
+  }
+
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: status.model,
+      prompt: buildListingAiPrompt(item),
+      stream: false,
+      options: {
+        temperature: 0.2,
+        num_predict: 180
+      }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`ollama-generate-${response.status}`);
+  }
+
+  const payload = await response.json();
+  return {
+    ok: true,
+    provider: "ollama",
+    model: status.model,
+    text: String(payload?.response || "").trim()
+  };
 }
 
 function runOfflineTranslator(command, payload) {
@@ -3691,6 +3854,51 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (pathname === "/api/ai/status" && request.method === "GET") {
+    sendJson(response, 200, await getOllamaStatus());
+    return;
+  }
+
+  if (pathname === "/api/ai/analyze-listing" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const targetUrl = String(payload.url || "").trim();
+      const advertId = String(payload.advertId || extractAdvertIdFromUrl(targetUrl) || "").trim();
+      const listingUid = String(payload.listingUid || "").trim();
+      const status = await getOllamaStatus();
+
+      if (!status.available) {
+        sendJson(response, 503, { error: status.message, provider: "ollama", model: status.model || OLLAMA_MODEL });
+        return;
+      }
+
+      const listings = enrichListingsForClient(
+        [...readListings(), ...readArchivedListings()],
+        readListingSnapshots()
+      );
+      const target = listings.find(item => {
+        if (listingUid && String(item.listing_uid || item.listingUid || "") === listingUid) {
+          return true;
+        }
+        return listingMatchesTarget(item, { targetUrl, advertId });
+      });
+
+      if (!target) {
+        sendJson(response, 404, { error: "Объявление не найдено в локальной базе." });
+        return;
+      }
+
+      const result = await requestOllamaListingAnalysis(target);
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 500, {
+        error: "Не удалось получить AI-анализ.",
+        detail: String(error?.message || error)
+      });
+    }
+    return;
+  }
+
   if (pathname.startsWith("/api/jobs/") && request.method === "GET") {
     const jobId = pathname.split("/").pop();
     const job = getJobSnapshot(jobId);
@@ -4315,13 +4523,14 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    const current = [
+      ...readListings(),
+      ...readArchivedListings()
+    ].find(item => item.url === advertUrl);
+    const currentImages = current ? normalizePhotoGallery(current.photo_gallery || [current.image]) : [];
+    const currentPhotoCount = current?.photo_count || currentImages.length || null;
+
     try {
-      const current = [
-        ...readListings(),
-        ...readArchivedListings()
-      ].find(item => item.url === advertUrl);
-      const currentImages = current ? normalizePhotoGallery(current.photo_gallery || [current.image]) : [];
-      const currentPhotoCount = current?.photo_count || currentImages.length || null;
       const hasStoredGallery = currentImages.length > 1 || (currentImages.length === 1 && (!currentPhotoCount || currentPhotoCount <= 1));
 
       if (current && (current.source !== "kolesa.kz" || hasStoredGallery)) {

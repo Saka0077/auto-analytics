@@ -369,6 +369,8 @@ const state = {
   currentUser: null,
   collectorStatus: null,
   remoteGuard: null,
+  aiStatus: null,
+  aiAnalyses: {},
   listingInsights: {},
   listingGalleries: {},
   listingSnapshots: {},
@@ -536,6 +538,8 @@ const elements = {
   modalBreakdown: document.getElementById("modal-breakdown"),
   modalSignals: document.getElementById("modal-signals"),
   modalMaintenance: document.getElementById("modal-maintenance"),
+  modalAiBox: document.getElementById("modal-ai-box"),
+  modalAiBtn: document.getElementById("modal-ai-btn"),
   modalPriceHistory: document.getElementById("modal-price-history"),
   modalVinInput: document.getElementById("modal-vin-input"),
   modalVinNoteInput: document.getElementById("modal-vin-note-input"),
@@ -1604,6 +1608,115 @@ function renderRemoteGuardStatus() {
     : searchScope?.paused
       ? `${String(searchScope?.lastReason || "search pause").trim()}${searchStatus.note ? ` · ${searchStatus.note}` : ""}`
       : "поиск и карточки доступны";
+}
+
+function renderAiPanel(item) {
+  if (!elements.modalAiBox || !elements.modalAiBtn) {
+    return;
+  }
+
+  const key = item?.listingUid || item?.advertId || item?.url || item?.id || "";
+  const entry = key ? state.aiAnalyses[key] : null;
+  const providerAvailable = Boolean(state.aiStatus?.available);
+
+  elements.modalAiBtn.disabled = !providerAvailable || !key;
+  elements.modalAiBtn.textContent = entry?.status === "loading" ? "AI думает..." : "AI-анализ";
+
+  if (!providerAvailable) {
+    const reason = state.aiStatus?.message || "Ollama не подключена.";
+    elements.modalAiBox.innerHTML = `<div class="muted">${escapeHtml(reason)}</div>`;
+    return;
+  }
+
+  if (!entry) {
+    const modelLabel = state.aiStatus?.model ? `Модель: ${state.aiStatus.model}. ` : "";
+    elements.modalAiBox.innerHTML = `<div class="muted">${escapeHtml(modelLabel)}Нажми «AI-анализ», чтобы получить краткий вывод по этой машине.</div>`;
+    return;
+  }
+
+  if (entry.status === "loading") {
+    elements.modalAiBox.innerHTML = `<div class="muted">AI анализирует локальные данные машины...</div>`;
+    return;
+  }
+
+  if (entry.status === "error") {
+    elements.modalAiBox.innerHTML = `<div class="muted">${escapeHtml(entry.message || "Не удалось получить AI-анализ.")}</div>`;
+    return;
+  }
+
+  const text = String(entry.text || "").trim();
+  elements.modalAiBox.innerHTML = text
+    ? `<div class="ai-output">${escapeHtml(text).replace(/\n/g, "<br>")}</div>`
+    : `<div class="muted">AI не вернула текст анализа.</div>`;
+}
+
+async function loadAiStatusFromServer() {
+  try {
+    const response = await fetch("/api/ai/status");
+    if (!response.ok) {
+      throw new Error("AI status failed");
+    }
+    const payload = await response.json();
+    state.aiStatus = payload || null;
+  } catch (error) {
+    state.aiStatus = {
+      available: false,
+      provider: "ollama",
+      model: "",
+      message: "Ollama сейчас недоступна."
+    };
+  }
+}
+
+async function requestAiAnalysisForSelectedListing() {
+  const item = getListingById(state.selectedListingId);
+  if (!item) {
+    return;
+  }
+
+  const key = item.listingUid || item.advertId || item.url || item.id;
+  if (!key) {
+    return;
+  }
+
+  state.aiAnalyses[key] = {
+    status: "loading",
+    text: "",
+    message: ""
+  };
+  renderAiPanel(item);
+
+  try {
+    const response = await fetch("/api/ai/analyze-listing", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        listingUid: item.listingUid || "",
+        advertId: item.advertId || "",
+        url: item.url || ""
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "AI analyze failed");
+    }
+
+    state.aiAnalyses[key] = {
+      status: "loaded",
+      text: String(payload.text || "").trim(),
+      message: ""
+    };
+  } catch (error) {
+    state.aiAnalyses[key] = {
+      status: "error",
+      text: "",
+      message: String(error.message || error || "Не удалось получить AI-анализ.").trim()
+    };
+  }
+
+  renderAiPanel(getListingById(state.selectedListingId) || item);
 }
 
 function shouldAutoCheckActuality(item) {
@@ -5881,6 +5994,7 @@ function openListingDetails(listingId) {
   elements.modalDescription.textContent = item.description || "Описание не указано.";
   elements.modalSignals.innerHTML = renderSignals(item);
   renderPriceHistoryPanel(item);
+  renderAiPanel(item);
   updateVinUi(item);
 
   if (item.url) {
@@ -5970,6 +6084,7 @@ function render() {
       renderListingBreakdown(selected);
       elements.modalSignals.innerHTML = renderSignals(selected);
       renderPriceHistoryPanel(selected);
+      renderAiPanel(selected);
     }
   }
 }
@@ -6152,6 +6267,7 @@ async function loadListingsFromServer() {
     const payload = await response.json();
     await loadHealthStatusFromServer();
     await loadCollectorStatusFromServer();
+    await loadAiStatusFromServer();
     const rows = Array.isArray(payload.items) ? payload.items : [];
     if (rows.length) {
       state.listings = normalizeRows(rows);
@@ -6520,6 +6636,11 @@ elements.modalCheckBtn.addEventListener("click", () => {
     void checkListingActuality(state.selectedListingId);
   }
 });
+if (elements.modalAiBtn) {
+  elements.modalAiBtn.addEventListener("click", () => {
+    void requestAiAnalysisForSelectedListing();
+  });
+}
 elements.modalVinSaveBtn.addEventListener("click", () => {
   if (state.selectedListingId) {
     void saveVinForSelectedListing();
