@@ -1910,14 +1910,14 @@ function normalizeListings(rows) {
       const descriptionMeta = extractDescriptionMeta(description, { title, alt: "" });
       const photoGallery = normalizePhotoGallery(item.photo_gallery || item.photoGallery || []);
       const image = normalizeRemoteUrl(item.image) || photoGallery[0] || "";
-      const resolvedPhotoGallery = photoGallery.length ? photoGallery : (image ? [image] : []);
+      const resolvedPhotoGallery = image ? [image] : [];
       const mileage = numberField(item, "mileage") > 0 ? numberField(item, "mileage") : (descriptionMeta.mileage || null);
       const engineVolume = numberField(item, "engine_volume", "engineVolume") > 0
         ? numberField(item, "engine_volume", "engineVolume")
         : (descriptionMeta.engineVolume || null);
       const photoCount = numberField(item, "photo_count", "photoCount") > 0
         ? numberField(item, "photo_count", "photoCount")
-        : (resolvedPhotoGallery.length || null);
+        : (photoGallery.length || resolvedPhotoGallery.length || null);
       const marketDifference = numberField(item, "market_difference", "marketDifference");
       const marketDifferencePercent = numberField(item, "market_difference_percent", "marketDifferencePercent");
 
