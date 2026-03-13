@@ -438,6 +438,7 @@ const elements = {
   importPreviewNote: document.getElementById("import-preview-note"),
   importPreviewBtn: document.getElementById("import-preview-btn"),
   importKolesaBtn: document.getElementById("import-kolesa-btn"),
+  importAllFoundBtn: document.getElementById("import-all-found-btn"),
   importAktauBtn: document.getElementById("import-aktau-btn"),
   toggleSmartScopeBtn: document.getElementById("toggle-smart-scope-btn"),
   smartScopeBadge: document.getElementById("smart-scope-badge"),
@@ -1478,7 +1479,7 @@ function isKolesaListing(item) {
 }
 
 function toProxiedImageUrl(imageUrl) {
-  return imageUrl ? `/api/image?url=${encodeURIComponent(imageUrl)}` : "";
+  return String(imageUrl || "").trim();
 }
 
 function getListingGalleryState(item) {
@@ -2074,6 +2075,9 @@ async function waitForServerJob(jobId, { onProgress } = {}) {
 
 function setImportBusy(isBusy) {
   elements.importKolesaBtn.disabled = isBusy;
+  if (elements.importAllFoundBtn) {
+    elements.importAllFoundBtn.disabled = isBusy;
+  }
   elements.importAktauBtn.disabled = isBusy;
   elements.importPreviewBtn.disabled = isBusy;
   elements.importLimitSelect.disabled = isBusy;
@@ -2088,13 +2092,16 @@ function setImportBusy(isBusy) {
   elements.importPriceFromInput.disabled = isBusy;
   elements.importPriceToInput.disabled = isBusy;
   elements.importKolesaBtn.textContent = isBusy ? "Загрузка..." : "Импортировать";
+  if (elements.importAllFoundBtn) {
+    elements.importAllFoundBtn.textContent = isBusy ? "Подготовка..." : "Импортировать всё найденное";
+  }
 }
 
 function getImportLimit() {
   const value = Number(elements.importLimitSelect.value);
   const previewCap = state.importPreview.availableCount && !state.importPreview.hasMore
     ? state.importPreview.availableCount
-    : 1000;
+    : 10000;
   if (!Number.isFinite(value) || value <= 0) {
     return 100;
   }
@@ -2141,9 +2148,7 @@ function renderImportPreview() {
         : `${formatInteger(preview.availableCount)} авто`;
     elements.importPreviewStatus.textContent = totalText;
     const baseNote = preview.exactTotalKnown
-      ? preview.totalCount > 1000
-        ? `По текущему поиску найдено ${formatInteger(preview.totalCount)} объявлений. За один раз импортируем до 1000, чтобы не грузить Kolesa.`
-        : `По текущему поиску найдено ${formatInteger(preview.totalCount)} объявлений. Теперь выбери, сколько импортировать.`
+      ? `По текущему поиску найдено ${formatInteger(preview.totalCount)} объявлений. Можно выбрать число вручную или нажать «Импортировать всё найденное».`
       : preview.hasMore
         ? `По текущему поиску найдено больше ${formatInteger(preview.availableCount)} объявлений. Выбери, сколько импортировать сейчас.`
         : `По текущему поиску найдено ${formatInteger(preview.availableCount)} объявлений. Теперь выбери, сколько импортировать.`;
@@ -5992,10 +5997,28 @@ async function loadListingsFromServer() {
 
 async function importFromKolesa() {
   const url = elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters();
-  await importFromKolesaUrl(url, getImportLimit());
+  await importFromKolesaUrl(url, getImportLimit(), { button: elements.importKolesaBtn });
 }
 
-async function importFromKolesaUrl(url, limit = getImportLimit()) {
+async function importAllFoundFromKolesa() {
+  const url = elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters();
+  const exactTotal = Number(state.importPreview.totalCount);
+  const availableCount = Number(state.importPreview.availableCount);
+  const limit = Number.isFinite(exactTotal) && exactTotal > 0
+    ? exactTotal
+    : Number.isFinite(availableCount) && availableCount > 0
+      ? availableCount
+      : 0;
+
+  if (!limit) {
+    window.alert("Сначала нажми «Показать сколько авто», чтобы узнать точное количество.");
+    return;
+  }
+
+  await importFromKolesaUrl(url, limit, { button: elements.importAllFoundBtn, importAll: true });
+}
+
+async function importFromKolesaUrl(url, limit = getImportLimit(), { button = elements.importKolesaBtn, importAll = false } = {}) {
   const trimmedUrl = String(url || "").trim();
   if (!trimmedUrl) {
     window.alert("Вставь ссылку Kolesa.");
@@ -6003,7 +6026,7 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
   }
 
   setImportBusy(true);
-  setStatus(`Источник: ставим импорт в очередь, цель ${limit} объявлений...`);
+  setStatus(`Источник: ставим импорт в очередь, цель ${formatInteger(limit)} объявлений...`);
 
   try {
     const response = await fetch("/api/jobs/import/kolesa", {
@@ -6022,9 +6045,11 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
     const completedJob = await waitForServerJob(payload.job?.id, {
       onProgress: job => {
         const progressText = job.total > 0 ? `${job.progress || 0}/${job.total}` : "в очереди";
-        elements.importKolesaBtn.textContent = job.status === "queued"
-          ? "В очереди..."
-          : `Импорт ${progressText}`;
+        if (button) {
+          button.textContent = job.status === "queued"
+            ? "В очереди..."
+            : `${importAll ? "Импорт всего" : "Импорт"} ${progressText}`;
+        }
         setStatus(`Источник: ${job.message || "идет мягкий импорт"}${job.status === "queued" ? "" : ` (${progressText})`}`);
       }
     });
@@ -6047,9 +6072,13 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
         || state.importPreview.availableCount
         || 0
       ),
-      totalCount: state.importPreview.totalCount,
+      totalCount: Number.isFinite(Number(state.importPreview.totalCount))
+        ? Number(state.importPreview.totalCount)
+        : Number(completedJob.result?.count || 0) || null,
       exactTotalKnown: state.importPreview.exactTotalKnown,
-      hasMore: state.importPreview.hasMore && Number(completedJob.result?.count || 0) >= 1000,
+      hasMore: Number.isFinite(Number(state.importPreview.totalCount))
+        ? Number(completedJob.result?.count || 0) < Number(state.importPreview.totalCount)
+        : state.importPreview.hasMore && Number(completedJob.result?.count || 0) >= 1000,
       note: (() => {
         const summary = completedJob.result?.summary || {};
         const importedCount = Number(summary.imported_count ?? completedJob.result?.count ?? 0);
@@ -6071,7 +6100,12 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
     setStatus("Источник: ошибка импорта");
   } finally {
     setImportBusy(false);
-    elements.importKolesaBtn.textContent = "Импортировать";
+    if (elements.importKolesaBtn) {
+      elements.importKolesaBtn.textContent = "Импортировать";
+    }
+    if (elements.importAllFoundBtn) {
+      elements.importAllFoundBtn.textContent = "Импортировать всё найденное";
+    }
   }
 }
 
@@ -6181,6 +6215,9 @@ elements.profileSelect.addEventListener("change", event => {
 });
 elements.fileInput.addEventListener("change", handleFileUpload);
 elements.importKolesaBtn.addEventListener("click", importFromKolesa);
+if (elements.importAllFoundBtn) {
+  elements.importAllFoundBtn.addEventListener("click", importAllFoundFromKolesa);
+}
 elements.importPreviewBtn.addEventListener("click", requestImportPreview);
 elements.collectAllHistoryBtn.addEventListener("click", collectHistoryForAllListings);
 if (elements.rebuildAnalyticsBtn) {

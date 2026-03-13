@@ -3037,7 +3037,7 @@ function clampImportLimit(value) {
   if (!Number.isFinite(parsed)) {
     return 100;
   }
-  return Math.min(Math.max(Math.round(parsed), 1), 1000);
+  return Math.min(Math.max(Math.round(parsed), 1), 10000);
 }
 
 function buildKolesaPageUrl(sourceUrl, page) {
