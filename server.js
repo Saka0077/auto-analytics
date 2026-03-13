@@ -28,6 +28,10 @@ const ARCHIVE_AFTER_DAYS = Number(process.env.LISTING_ARCHIVE_AFTER_DAYS) > 0
   ? Number(process.env.LISTING_ARCHIVE_AFTER_DAYS)
   : 3;
 const ARCHIVE_AFTER_MS = ARCHIVE_AFTER_DAYS * 24 * 60 * 60 * 1000;
+const SNAPSHOT_RECHECK_HOURS = Number(process.env.LISTING_SNAPSHOT_RECHECK_HOURS) > 0
+  ? Number(process.env.LISTING_SNAPSHOT_RECHECK_HOURS)
+  : 20;
+const SNAPSHOT_RECHECK_MS = SNAPSHOT_RECHECK_HOURS * 60 * 60 * 1000;
 const LOW_LOAD_SETTINGS = {
   pageDelayMinMs: 1800,
   pageDelayMaxMs: 3600,
@@ -3434,18 +3438,47 @@ async function runCollectSnapshotsJob(job) {
     ? job.payload.urls.map(value => String(value || "").trim()).filter(Boolean)
     : [];
   const maxItems = clampImportLimit(job.payload?.limit || urls.length || 50);
+  const force = normalizeBoolean(job.payload?.force);
   const concurrency = Math.min(
     Math.max(Number(job.payload?.concurrency) || LOW_LOAD_SETTINGS.collectConcurrency, 1),
     LOW_LOAD_SETTINGS.collectMaxConcurrency
   );
   const listings = readListings();
   const urlSet = urls.length ? new Set(urls) : null;
-  const targets = listings
-    .filter(item => item.source === "kolesa.kz" && (!urlSet || urlSet.has(item.url)))
+  const now = Date.now();
+  const eligibleListings = listings
+    .filter(item => item.source === "kolesa.kz" && (!urlSet || urlSet.has(item.url)));
+  const skippedRecent = [];
+  const targets = eligibleListings
+    .filter(item => {
+      if (force) {
+        return true;
+      }
+      const checkedAt = normalizeIsoDate(item.last_checked_at ?? item.lastCheckedAt);
+      if (!checkedAt) {
+        return true;
+      }
+      const checkedMs = new Date(checkedAt).getTime();
+      const tooFresh = Number.isFinite(checkedMs) && now - checkedMs < SNAPSHOT_RECHECK_MS;
+      if (tooFresh) {
+        skippedRecent.push(item.url);
+      }
+      return !tooFresh;
+    })
     .slice(0, maxItems);
 
   if (!targets.length) {
-    throw new Error("Нет объявлений Kolesa для сбора истории.");
+    job.result = {
+      ok: true,
+      checked: 0,
+      failed: 0,
+      skipped_recent: skippedRecent.length,
+      requested: eligibleListings.length
+    };
+    job.message = skippedRecent.length
+      ? `Пропущено ${skippedRecent.length}, всё уже проверялось недавно`
+      : "Нет объявлений Kolesa для сбора истории.";
+    return;
   }
 
   const updatedByUrl = new Map();
@@ -3498,7 +3531,8 @@ async function runCollectSnapshotsJob(job) {
     ok: true,
     checked,
     failed,
-    requested: targets.length
+    skipped_recent: skippedRecent.length,
+    requested: targets.length + skippedRecent.length
   };
 }
 

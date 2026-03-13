@@ -338,6 +338,7 @@ const IMPORT_TRANSMISSIONS = [
 ];
 
 const HISTORY_BATCH_LIMIT = 400;
+const SMART_SCOPE_THRESHOLD = 300;
 
 const state = {
   listings: defaultListings.map(normalizeRow),
@@ -355,6 +356,8 @@ const state = {
   favoriteIds: [],
   comparisonHistory: [],
   showHiddenArchived: false,
+  smartScopeBrand: "",
+  smartScopeEnabled: true,
   activeProfileId: "default",
   profiles: [{ id: "default", name: "Основной" }],
   authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
@@ -433,6 +436,8 @@ const elements = {
   importPreviewBtn: document.getElementById("import-preview-btn"),
   importKolesaBtn: document.getElementById("import-kolesa-btn"),
   importAktauBtn: document.getElementById("import-aktau-btn"),
+  toggleSmartScopeBtn: document.getElementById("toggle-smart-scope-btn"),
+  smartScopeBadge: document.getElementById("smart-scope-badge"),
   toggleHiddenBtn: document.getElementById("toggle-hidden-btn"),
   hiddenCountBadge: document.getElementById("hidden-count-badge"),
   fileInput: document.getElementById("file-input"),
@@ -484,6 +489,8 @@ const elements = {
   market30StuckList: document.getElementById("market-30-stuck-list"),
   market30DropMeta: document.getElementById("market-30-drop-meta"),
   market30DropList: document.getElementById("market-30-drop-list"),
+  market30CityMeta: document.getElementById("market-30-city-meta"),
+  market30CityList: document.getElementById("market-30-city-list"),
   archiveCityFilter: document.getElementById("archive-city-filter"),
   archiveBrandFilter: document.getElementById("archive-brand-filter"),
   archiveSellerFilter: document.getElementById("archive-seller-filter"),
@@ -1022,6 +1029,38 @@ function getArchiveAwareListings() {
 
 function getFilterPoolListings() {
   return getArchiveAwareListings().filter(item => state.showHiddenArchived || !item.hiddenAfterImport);
+}
+
+function chooseSmartScopeBrand() {
+  const brands = [...new Set(
+    state.listings
+      .filter(item => isKolesaListing(item) && !item.hiddenAfterImport && item.brand)
+      .map(item => item.brand)
+  )];
+
+  if (brands.length === 0) {
+    state.smartScopeBrand = "";
+    return;
+  }
+
+  const randomIndex = Math.floor(Math.random() * brands.length);
+  state.smartScopeBrand = brands[randomIndex];
+}
+
+function hasExplicitPrimaryFilters() {
+  return Boolean(
+    elements.searchInput.value.trim() ||
+    elements.citySelect.value ||
+    elements.markFilterSelect.value ||
+    elements.modelFilterSelect.value
+  );
+}
+
+function shouldApplySmartScope() {
+  return state.smartScopeEnabled &&
+    Boolean(state.smartScopeBrand) &&
+    state.listings.length > SMART_SCOPE_THRESHOLD &&
+    !hasExplicitPrimaryFilters();
 }
 
 function formatPrice(value) {
@@ -2950,9 +2989,11 @@ function getFilteredListings() {
   const optionSearch = elements.optionSearchInput.value.trim().toLowerCase();
   const sort = elements.sortSelect.value;
   const showInactive = elements.showInactiveToggle.checked;
+  const smartScopeBrand = shouldApplySmartScope() ? state.smartScopeBrand : "";
 
   const results = scoreListings(sourceListings).filter(item => {
     const hiddenMatch = state.showHiddenArchived || !item.hiddenAfterImport;
+    const smartScopeMatch = !smartScopeBrand || normalizeAnalyticsText(item.brand) === normalizeAnalyticsText(smartScopeBrand);
     const actualityMatch = showInactive || isListingActual(item);
     const titleMatch = !search || item.title.toLowerCase().includes(search);
     const yearMatch =
@@ -2983,7 +3024,7 @@ function getFilteredListings() {
         ? hasTrustedAutopartsProfile(item)
         : hasTrustedAutopartsProfile(item) && item.autopartsProfile?.maintenanceBand === maintenance);
     const optionMatch = !optionSearch || item.options.some(option => option.toLowerCase().includes(optionSearch));
-    return hiddenMatch && actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && transmissionMatch && bodyTypeMatch && driveMatch && steeringMatch && colorMatch && sellerMatch && maintenanceMatch && optionMatch;
+    return smartScopeMatch && hiddenMatch && actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && transmissionMatch && bodyTypeMatch && driveMatch && steeringMatch && colorMatch && sellerMatch && maintenanceMatch && optionMatch;
   });
 
   switch (sort) {
@@ -3435,6 +3476,35 @@ function renderMarket30Analytics() {
     }))
     .filter(item => item.count > 0);
 
+  const cityModelGroups = new Map();
+  uniqueItems.forEach(item => {
+    const city = String(item.city || "").trim();
+    const model = getModelAnalyticsLabel(item);
+    if (!city || !model) {
+      return;
+    }
+    const key = `${normalizeAnalyticsText(city)}|${normalizeAnalyticsText(model)}`;
+    if (!cityModelGroups.has(key)) {
+      cityModelGroups.set(key, {
+        label: `${city} · ${model}`,
+        count: 0,
+        totalDays: 0,
+        daysCount: 0,
+        fastCount: 0
+      });
+    }
+    const entry = cityModelGroups.get(key);
+    const days = Number(item.daysOnMarket || 0);
+    entry.count += 1;
+    if (days > 0) {
+      entry.totalDays += days;
+      entry.daysCount += 1;
+      if (days <= 7) {
+        entry.fastCount += 1;
+      }
+    }
+  });
+
   const popularItems = [...modelStats]
     .sort((left, right) => right.count - left.count || left.averageDays - right.averageDays || left.label.localeCompare(right.label, "ru"))
     .slice(0, 8)
@@ -3474,6 +3544,20 @@ function renderMarket30Analytics() {
       value: `${formatInteger(item.dropCount)} падений`
     }));
 
+  const cityItems = [...cityModelGroups.values()]
+    .filter(item => item.fastCount > 0)
+    .map(item => ({
+      ...item,
+      averageDays: item.daysCount ? Math.round(item.totalDays / item.daysCount) : 0
+    }))
+    .sort((left, right) => right.fastCount - left.fastCount || left.averageDays - right.averageDays || right.count - left.count)
+    .slice(0, 8)
+    .map(item => ({
+      label: item.label,
+      meta: `ср. ${formatInteger(item.averageDays)} дн. · в базе ${formatInteger(item.count)}`,
+      value: `${formatInteger(item.fastCount)} быстрых`
+    }));
+
   elements.market30Meta.textContent = uniqueItems.length
     ? `${formatInteger(uniqueItems.length)} уникальных авто за последние 30 дней в локальной базе.`
     : "Локальная база пока не накопила данные за 30 дней.";
@@ -3486,11 +3570,15 @@ function renderMarket30Analytics() {
   elements.market30DropMeta.textContent = dropItems.length
     ? "Модели, где чаще встречается снижение цены."
     : "Пока нет данных по падению цены.";
+  elements.market30CityMeta.textContent = cityItems.length
+    ? "Комбинации город + модель, которые чаще уходят быстро."
+    : "Пока нет городов с быстрыми повторяющимися продажами.";
 
   renderArchiveSellerList(elements.market30PopularList, popularItems, "Нужно накопить локальную базу хотя бы за несколько дней.");
   renderArchiveSellerList(elements.market30FastList, fastItems, "Пока нет быстрых моделей в окне 30 дней.");
   renderArchiveSellerList(elements.market30StuckList, stuckItems, "Пока нет зависших моделей в окне 30 дней.");
   renderArchiveSellerList(elements.market30DropList, dropItems, "Пока нет моделей с заметным падением цены.");
+  renderArchiveSellerList(elements.market30CityList, cityItems, "Пока нет повторяющихся быстрых сочетаний город + модель.");
 }
 
 function renderBars(listings) {
@@ -4358,9 +4446,7 @@ function renderModalGallery(item) {
   const hasMultiple = images.length > 1;
   const loadingNote = galleryState.status === "loading"
     ? `<span class="modal-gallery-note">Загружаем все фото...</span>`
-    : galleryState.status === "error"
-      ? `<span class="modal-gallery-note">Не удалось загрузить остальные фото</span>`
-      : "";
+    : "";
 
   state.modalGalleryIndex = currentIndex;
   elements.modalMedia.innerHTML = `
@@ -4608,6 +4694,7 @@ async function queueHistoryCollection(targets, {
   try {
     let totalChecked = 0;
     let totalFailed = 0;
+    let totalSkippedRecent = 0;
     let processedBeforeBatch = 0;
 
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
@@ -4645,6 +4732,7 @@ async function queueHistoryCollection(targets, {
       processedBeforeBatch += batch.length;
       totalChecked += Number(completedJob.result?.checked || 0);
       totalFailed += Number(completedJob.result?.failed || 0);
+      totalSkippedRecent += Number(completedJob.result?.skipped_recent || 0);
     }
 
     await loadListingsFromServer();
@@ -4659,7 +4747,7 @@ async function queueHistoryCollection(targets, {
       }
     }
 
-    setStatus(`Источник: история собрана, обновлено ${totalChecked}, ошибок ${totalFailed}.`);
+    setStatus(`Источник: история собрана, обновлено ${totalChecked}, ошибок ${totalFailed}, пропущено недавно проверенных ${totalSkippedRecent}.`);
   } catch (error) {
     window.alert(error.message || "Не удалось собрать историю.");
     setStatus("Источник: ошибка сбора истории");
@@ -5439,6 +5527,7 @@ function closeListingDetails() {
 function render() {
   updateHiddenArchiveUi();
   renderCollectorStatus();
+  updateSmartScopeUi();
   updateAnalysisModeUI();
   const listings = getFilteredListings();
   state.renderedListings = listings;
@@ -5500,6 +5589,8 @@ function resetFilters() {
   if (elements.archiveCityFilter) elements.archiveCityFilter.value = "";
   if (elements.archiveBrandFilter) elements.archiveBrandFilter.value = "";
   if (elements.archiveSellerFilter) elements.archiveSellerFilter.value = "";
+  state.smartScopeEnabled = true;
+  chooseSmartScopeBrand();
   state.showHiddenArchived = false;
   state.tableSort.key = "";
   state.tableSort.direction = "asc";
@@ -5547,6 +5638,20 @@ function updateHiddenArchiveUi() {
     elements.toggleHiddenBtn.textContent = state.showHiddenArchived
       ? "Скрыть архив"
       : "Показать скрытые";
+  }
+}
+
+function updateSmartScopeUi() {
+  const active = shouldApplySmartScope();
+  if (elements.smartScopeBadge) {
+    elements.smartScopeBadge.textContent = active
+      ? `Быстрый режим: ${state.smartScopeBrand}`
+      : "Показаны все марки";
+  }
+  if (elements.toggleSmartScopeBtn) {
+    elements.toggleSmartScopeBtn.textContent = active
+      ? "Показать все марки"
+      : "Быстрый режим";
   }
 }
 
@@ -5621,6 +5726,8 @@ async function loadListingsFromServer() {
     const rows = Array.isArray(payload.items) ? payload.items : [];
     if (rows.length) {
       state.listings = normalizeRows(rows);
+      state.smartScopeEnabled = true;
+      chooseSmartScopeBrand();
       await loadArchivedListingsFromServer();
       state.compareIds = [];
       state.compareWinnerId = null;
@@ -5787,12 +5894,26 @@ async function handleFileUpload(event) {
 });
 
 elements.markFilterSelect.addEventListener("change", () => {
+  state.smartScopeEnabled = false;
   populateModels();
   if (![...elements.modelFilterSelect.options].some(option => option.value === elements.modelFilterSelect.value)) {
     elements.modelFilterSelect.value = "";
   }
   render();
 });
+if (elements.toggleSmartScopeBtn) {
+  elements.toggleSmartScopeBtn.addEventListener("click", () => {
+    if (shouldApplySmartScope()) {
+      state.smartScopeEnabled = false;
+    } else {
+      state.smartScopeEnabled = true;
+      if (!state.smartScopeBrand) {
+        chooseSmartScopeBrand();
+      }
+    }
+    render();
+  });
+}
 elements.modeBuyerBtn.addEventListener("click", () => {
   setAnalysisMode("buyer");
 });

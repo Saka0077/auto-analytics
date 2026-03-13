@@ -34,6 +34,7 @@ async function main() {
 
   let totalChecked = 0;
   let totalFailed = 0;
+  let totalSkipped = 0;
 
   for (let index = 0; index < targets.length; index += HISTORY_BATCH_LIMIT) {
     const batch = targets.slice(index, index + HISTORY_BATCH_LIMIT);
@@ -45,6 +46,7 @@ async function main() {
       body: JSON.stringify({
         urls: batch,
         limit: batch.length,
+        mode: "daily",
         concurrency: 1
       })
     });
@@ -71,6 +73,7 @@ async function main() {
 
         totalChecked += Number(job.result?.checked || 0);
         totalFailed += Number(job.result?.failed || 0);
+        totalSkipped += Number(job.result?.skipped_recent || 0);
         break;
       }
     }
@@ -80,7 +83,7 @@ async function main() {
     }
   }
 
-  console.log(`Готово. Обновлено ${totalChecked}, ошибок ${totalFailed}.`);
+  console.log(`Готово. Обновлено ${totalChecked}, ошибок ${totalFailed}, пропущено недавно проверенных ${totalSkipped}.`);
 }
 
 main().catch(error => {
