@@ -603,6 +603,14 @@ select:focus {
   background: linear-gradient(180deg, #fbfcfe 0%, #f7f9fc 100%);
 }
 
+.market-analytics-grid {
+  margin-top: 4px;
+}
+
+.market-analytics-card {
+  background: linear-gradient(180deg, #fffdfa 0%, #fff8ef 100%);
+}
+
 .archive-filter-row {
   margin-bottom: 10px;
 }

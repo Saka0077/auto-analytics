@@ -476,6 +476,14 @@ const elements = {
   archiveSummaryList: document.getElementById("archive-summary-list"),
   archiveSellerMeta: document.getElementById("archive-seller-meta"),
   archiveSellerList: document.getElementById("archive-seller-list"),
+  market30Meta: document.getElementById("market-30-meta"),
+  market30PopularList: document.getElementById("market-30-popular-list"),
+  market30FastMeta: document.getElementById("market-30-fast-meta"),
+  market30FastList: document.getElementById("market-30-fast-list"),
+  market30StuckMeta: document.getElementById("market-30-stuck-meta"),
+  market30StuckList: document.getElementById("market-30-stuck-list"),
+  market30DropMeta: document.getElementById("market-30-drop-meta"),
+  market30DropList: document.getElementById("market-30-drop-list"),
   archiveCityFilter: document.getElementById("archive-city-filter"),
   archiveBrandFilter: document.getElementById("archive-brand-filter"),
   archiveSellerFilter: document.getElementById("archive-seller-filter"),
@@ -3358,6 +3366,133 @@ function renderArchiveAnalytics() {
   renderArchiveSellerList(elements.archiveSellerList, sellerItems, "Пока нет архивных продавцов для анализа.");
 }
 
+function renderMarket30Analytics() {
+  const now = Date.now();
+  const windowMs = 30 * 24 * 60 * 60 * 1000;
+  const combined = [...state.listings, ...state.archivedListings]
+    .filter(isKolesaListing)
+    .filter(item => {
+      const relevantAt = item.archivedAt || item.historyLastSeenAt || item.lastSeenAt || item.lastCheckedAt || item.historyFirstSeenAt;
+      if (!relevantAt) {
+        return false;
+      }
+      const time = Date.parse(relevantAt);
+      return Number.isFinite(time) && now - time <= windowMs;
+    });
+
+  const uniqueItems = [...new Map(
+    combined.map(item => [item.listingUid || item.advertId || item.url || item.id, item])
+  ).values()];
+
+  const modelGroups = new Map();
+  uniqueItems.forEach(item => {
+    const label = getModelAnalyticsLabel(item);
+    const key = normalizeAnalyticsText(label);
+    if (!key) {
+      return;
+    }
+
+    if (!modelGroups.has(key)) {
+      modelGroups.set(key, {
+        label,
+        count: 0,
+        totalDays: 0,
+        daysCount: 0,
+        fastCount: 0,
+        stuckCount: 0,
+        dropCount: 0,
+        totalDrop: 0
+      });
+    }
+
+    const entry = modelGroups.get(key);
+    const days = Number(item.daysOnMarket || 0);
+    const dropTotal = Number(item.priceDropTotal || 0);
+    const priceChangeCount = Number(item.priceChangeCount || 0);
+
+    entry.count += 1;
+    if (days > 0) {
+      entry.totalDays += days;
+      entry.daysCount += 1;
+      if (days <= 7) {
+        entry.fastCount += 1;
+      }
+      if (days >= 21 && priceChangeCount === 0) {
+        entry.stuckCount += 1;
+      }
+    }
+    if (priceChangeCount > 0 || dropTotal > 0) {
+      entry.dropCount += 1;
+      entry.totalDrop += Math.max(0, dropTotal);
+    }
+  });
+
+  const modelStats = [...modelGroups.values()]
+    .map(item => ({
+      ...item,
+      averageDays: item.daysCount ? Math.round(item.totalDays / item.daysCount) : 0,
+      averageDrop: item.dropCount ? Math.round(item.totalDrop / item.dropCount) : 0
+    }))
+    .filter(item => item.count > 0);
+
+  const popularItems = [...modelStats]
+    .sort((left, right) => right.count - left.count || left.averageDays - right.averageDays || left.label.localeCompare(right.label, "ru"))
+    .slice(0, 8)
+    .map(item => ({
+      label: item.label,
+      meta: `ср. ${formatInteger(item.averageDays)} дн. · падений ${formatInteger(item.dropCount)}`,
+      value: `${formatInteger(item.count)} шт.`
+    }));
+
+  const fastItems = [...modelStats]
+    .filter(item => item.fastCount > 0)
+    .sort((left, right) => right.fastCount - left.fastCount || left.averageDays - right.averageDays || right.count - left.count)
+    .slice(0, 8)
+    .map(item => ({
+      label: item.label,
+      meta: `ср. ${formatInteger(item.averageDays)} дн. · в базе ${formatInteger(item.count)}`,
+      value: `${formatInteger(item.fastCount)} быстрых`
+    }));
+
+  const stuckItems = [...modelStats]
+    .filter(item => item.stuckCount > 0)
+    .sort((left, right) => right.stuckCount - left.stuckCount || right.averageDays - left.averageDays || right.count - left.count)
+    .slice(0, 8)
+    .map(item => ({
+      label: item.label,
+      meta: `ср. ${formatInteger(item.averageDays)} дн. · в базе ${formatInteger(item.count)}`,
+      value: `${formatInteger(item.stuckCount)} зависших`
+    }));
+
+  const dropItems = [...modelStats]
+    .filter(item => item.dropCount > 0)
+    .sort((left, right) => right.dropCount - left.dropCount || right.averageDrop - left.averageDrop || right.count - left.count)
+    .slice(0, 8)
+    .map(item => ({
+      label: item.label,
+      meta: item.averageDrop > 0 ? `ср. снижение ${formatPrice(item.averageDrop)}` : `в базе ${formatInteger(item.count)}`,
+      value: `${formatInteger(item.dropCount)} падений`
+    }));
+
+  elements.market30Meta.textContent = uniqueItems.length
+    ? `${formatInteger(uniqueItems.length)} уникальных авто за последние 30 дней в локальной базе.`
+    : "Локальная база пока не накопила данные за 30 дней.";
+  elements.market30FastMeta.textContent = fastItems.length
+    ? "Модели, которые чаще уходят быстро."
+    : "Пока нет данных по быстрым продажам.";
+  elements.market30StuckMeta.textContent = stuckItems.length
+    ? "Модели, которые чаще зависают без движения цены."
+    : "Пока нет данных по зависшим моделям.";
+  elements.market30DropMeta.textContent = dropItems.length
+    ? "Модели, где чаще встречается снижение цены."
+    : "Пока нет данных по падению цены.";
+
+  renderArchiveSellerList(elements.market30PopularList, popularItems, "Нужно накопить локальную базу хотя бы за несколько дней.");
+  renderArchiveSellerList(elements.market30FastList, fastItems, "Пока нет быстрых моделей в окне 30 дней.");
+  renderArchiveSellerList(elements.market30StuckList, stuckItems, "Пока нет зависших моделей в окне 30 дней.");
+  renderArchiveSellerList(elements.market30DropList, dropItems, "Пока нет моделей с заметным падением цены.");
+}
+
 function renderBars(listings) {
   const config = getAnalysisModeConfig();
   elements.bars.innerHTML = "";
@@ -5318,6 +5453,7 @@ function render() {
   renderHistory();
   renderKolesaAnalytics(listings);
   renderArchiveAnalytics();
+  renderMarket30Analytics();
   renderTopLists(listings);
   renderBars(listings);
   renderTable(listings);
