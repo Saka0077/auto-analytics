@@ -63,7 +63,8 @@
             </label>
             <label class="field import-field">
               <span>Модель</span>
-              <select id="import-model-select"></select>
+              <input id="import-model-input" list="import-model-list" type="text" placeholder="Выбери из подсказок или впиши модель">
+              <datalist id="import-model-list"></datalist>
             </label>
           </div>
           <div class="field-row">
@@ -270,6 +271,7 @@
                   <option value="maintenance-desc">Дешевле в обслуживании</option>
                   <option value="fresh-desc">Сначала свежие</option>
                   <option value="risk-asc">Меньше риск</option>
+                  <option value="price-mileage-desc">Цена + пробег</option>
                   <option value="price-asc">Цена по возрастанию</option>
                   <option value="price-desc">Цена по убыванию</option>
                   <option value="year-desc">Сначала новее</option>
