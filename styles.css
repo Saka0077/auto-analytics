@@ -929,6 +929,16 @@ tbody tr.is-clickable {
   color: #b91c1c;
 }
 
+.status-badge--history {
+  background: rgba(14, 116, 144, 0.12);
+  color: #0f766e;
+}
+
+.status-badge--seller {
+  background: rgba(71, 85, 105, 0.14);
+  color: #334155;
+}
+
 a {
   color: var(--accent);
   text-decoration: none;
@@ -1257,6 +1267,38 @@ a:hover {
 .modal-signal-box {
   color: var(--muted);
   line-height: 1.6;
+}
+
+.signal-summary {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  margin-bottom: 12px;
+}
+
+.signal-summary strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.signal-summary p {
+  margin: 0 0 6px;
+}
+
+.signal-meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.signal-subhead {
+  margin: 12px 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .maintenance-box {

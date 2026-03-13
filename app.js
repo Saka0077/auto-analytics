@@ -816,7 +816,12 @@ function normalizeAutopartsProfile(profile) {
     comment: String(profile.comment || "").trim(),
     marketSourceUrl: String(profile.market_source_url ?? profile.marketSourceUrl ?? "").trim(),
     padsSourceUrl: String(profile.pads_source_url ?? profile.padsSourceUrl ?? "").trim(),
-    discSourceUrl: String(profile.disc_source_url ?? profile.discSourceUrl ?? "").trim()
+    discSourceUrl: String(profile.disc_source_url ?? profile.discSourceUrl ?? "").trim(),
+    matchScore: number(profile.match_score ?? profile.matchScore),
+    matchReason: String(profile.match_reason ?? profile.matchReason ?? "").trim(),
+    matchConfidence: String(profile.match_confidence ?? profile.matchConfidence ?? "none").trim(),
+    matchConfidenceLabel: String(profile.match_confidence_label ?? profile.matchConfidenceLabel ?? "").trim(),
+    modelTokenMatch: booleanValue(profile.model_token_match ?? profile.modelTokenMatch)
   };
 
   const coverageSignals = [
@@ -981,6 +986,18 @@ function formatScorePercent(value) {
 
 function formatPercent(value) {
   return `${Math.abs(Number(value || 0)).toFixed(1)}%`;
+}
+
+function normalizeMarketLookupPart(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-zа-я0-9]+/gi, " ")
+    .trim();
+}
+
+function buildMarketKey(parts) {
+  const normalized = parts.map(normalizeMarketLookupPart).filter(Boolean);
+  return normalized.length ? normalized.join("::") : "";
 }
 
 function formatDaysOnMarket(value) {
@@ -1445,9 +1462,46 @@ function getFreshnessMeta(item) {
   return { label: `~${Math.round(age)} дн.`, className: "status-badge" };
 }
 
+function getHistorySignalMeta(item) {
+  const signals = [];
+  const snapshotCount = Number(item?.snapshotCount || 0);
+  const daysOnMarket = Number(item?.daysOnMarket || 0);
+  const priceChangeCount = Number(item?.priceChangeCount || 0);
+  const priceDropTotal = Number(item?.priceDropTotal || 0);
+
+  if (priceChangeCount > 0 && priceDropTotal > 0) {
+    signals.push({ label: "Цена падала", className: "status-badge status-badge--history" });
+  }
+
+  if (daysOnMarket >= 21) {
+    signals.push({ label: "Висит долго", className: "status-badge status-badge--stale" });
+  }
+
+  if (snapshotCount >= 3 && daysOnMarket >= 14 && priceChangeCount === 0) {
+    signals.push({ label: "Цена не двигается", className: "status-badge status-badge--thin" });
+  }
+
+  if (item?.wasRelisted) {
+    signals.push({ label: "Переопубликовано", className: "status-badge status-badge--history" });
+  }
+
+  return signals;
+}
+
+function getHistorySummaryLabel(item) {
+  const signals = getHistorySignalMeta(item);
+  if (signals.length) {
+    return signals.map(signal => signal.label).join(", ");
+  }
+  if (Number(item?.daysOnMarket || 0) <= 3) {
+    return "Свежее объявление";
+  }
+  return "Без сильных сигналов";
+}
+
 function getMarketBadge(item) {
   if (!Number.isFinite(item.marketDifferencePercent)) {
-    return "";
+    return item.marketConfidence === "insufficient" ? "Мало рынка" : "";
   }
 
   if (item.marketDifferencePercent >= 12) {
@@ -1478,8 +1532,13 @@ function getSellerFilterType(item) {
     : "private";
 }
 
+function hasTrustedAutopartsProfile(item) {
+  const confidence = String(item?.autopartsProfile?.matchConfidence || "").trim();
+  return ["exact", "generation_match", "model_only"].includes(confidence);
+}
+
 function getAutopartsBadgeMeta(item) {
-  const profile = item?.autopartsProfile;
+  const profile = hasTrustedAutopartsProfile(item) ? item?.autopartsProfile : null;
   if (!profile) {
     return null;
   }
@@ -1503,7 +1562,11 @@ function getBuyerDecisionMeta(item) {
   const marketDifference = Number.isFinite(item?.marketDifferencePercent) ? item.marketDifferencePercent : 0;
   const age = daysSince(item?.publicationDate || item?.lastUpdate || item?.lastCheckedAt);
   const isStale = age !== null && age >= 30;
-  const hasAutoparts = Boolean(item?.autopartsProfile);
+  const longOnMarket = Number(item?.daysOnMarket || 0) >= 21;
+  const priceDropped = Number(item?.priceChangeCount || 0) > 0 && Number(item?.priceDropTotal || 0) > 0;
+  const staticPrice = Number(item?.snapshotCount || 0) >= 3 && Number(item?.daysOnMarket || 0) >= 14 && Number(item?.priceChangeCount || 0) === 0;
+  const marketWeak = item?.marketConfidence === "insufficient";
+  const hasAutoparts = hasTrustedAutopartsProfile(item);
   const maintenanceScore = Number(item?.maintenanceScore ?? 0.5);
   const maintenanceCoverage = item?.autopartsProfile?.coverageLevel || "missing";
   const maintenanceWeak = hasAutoparts && maintenanceScore <= 0.42;
@@ -1533,7 +1596,17 @@ function getBuyerDecisionMeta(item) {
       className: "status-badge status-badge--buy",
       note: marketDifference >= 0
         ? "цена выглядит в рынке или ниже рынка, риск низкий"
-        : "риск низкий, а карточка выглядит уверенно"
+        : marketWeak
+          ? "данных рынка мало, но по продавцу, риску и свежести вариант всё равно сильный"
+          : "риск низкий, а карточка выглядит уверенно"
+    };
+  }
+
+  if (longOnMarket && !priceDropped && (score < 0.66 || staticPrice)) {
+    return {
+      label: "Осторожно",
+      className: "status-badge status-badge--careful",
+      note: "объявление висит долго и цена почти не двигается, поэтому вариант лучше перепроверить"
     };
   }
 
@@ -1545,6 +1618,10 @@ function getBuyerDecisionMeta(item) {
         ? "вариант рабочий, но обслуживание выглядит дорогим и может съесть выгоду"
         : maintenancePartial
           ? "по запчастям данные пока неполные, поэтому покупку лучше перепроверить"
+          : longOnMarket && priceDropped
+            ? "цена уже падала, но объявление всё ещё висит долго"
+            : marketWeak
+              ? "данных рынка мало, поэтому покупку лучше проверить руками"
           : isStale
             ? "объявление висит давно, проверь историю цены и состояние"
             : "вариант рабочий, но цену и детали лучше перепроверить"
@@ -1571,7 +1648,11 @@ function getResellerDecisionMeta(item) {
   const marketDifference = Number.isFinite(item?.marketDifferencePercent) ? item.marketDifferencePercent : 0;
   const age = daysSince(item?.publicationDate || item?.lastUpdate || item?.lastCheckedAt);
   const isStale = age !== null && age >= 21;
-  const hasAutoparts = Boolean(item?.autopartsProfile);
+  const longOnMarket = Number(item?.daysOnMarket || 0) >= 21;
+  const priceDropped = Number(item?.priceChangeCount || 0) > 0 && Number(item?.priceDropTotal || 0) > 0;
+  const staticPrice = Number(item?.snapshotCount || 0) >= 3 && Number(item?.daysOnMarket || 0) >= 14 && Number(item?.priceChangeCount || 0) === 0;
+  const marketWeak = item?.marketConfidence === "insufficient";
+  const hasAutoparts = hasTrustedAutopartsProfile(item);
   const maintenanceScore = Number(item?.maintenanceScore ?? 0.5);
   const maintenanceCoverage = item?.autopartsProfile?.coverageLevel || "missing";
   const maintenanceWeak = hasAutoparts && maintenanceScore <= 0.4;
@@ -1598,7 +1679,17 @@ function getResellerDecisionMeta(item) {
     return {
       label: "Есть маржа",
       className: "status-badge status-badge--profit",
-      note: "есть дисконт к рынку, нормальная ликвидность и умеренный риск вложений"
+      note: marketWeak
+        ? "рынок посчитан грубо, но по ликвидности и риску вариант выглядит живым"
+        : "есть дисконт к рынку, нормальная ликвидность и умеренный риск вложений"
+    };
+  }
+
+  if (longOnMarket && !priceDropped && (deal < 0.64 || staticPrice)) {
+    return {
+      label: "Слабая маржа",
+      className: "status-badge status-badge--thin",
+      note: "объявление висит долго без движения цены, значит вход есть, а выход уже выглядит слабее"
     };
   }
 
@@ -1616,6 +1707,10 @@ function getResellerDecisionMeta(item) {
         ? "запчасти выглядят дорогими, поэтому прибыль легко потерять на ремонте"
         : maintenancePartial
           ? "по запчастям база неполная, поэтому маржу лучше считать с запасом"
+          : longOnMarket && priceDropped
+            ? "цена уже падала, но объявление всё ещё не ушло, поэтому маржа выглядит тоньше"
+            : marketWeak
+              ? "данных рынка мало, поэтому маржу лучше считать с запасом"
           : isStale
             ? "можно смотреть только после сильного торга или проверки истории"
             : "сделка возможна, но запас по прибыли пока слабый"
@@ -1669,6 +1764,15 @@ function renderListingBadges(item) {
   if (autopartsBadge) {
     badges.push(`<span class="${autopartsBadge.className}">${escapeHtml(autopartsBadge.label)}</span>`);
   }
+
+  const sellerLabel = getSellerLabel(item);
+  if (sellerLabel && sellerLabel !== "Продавец") {
+    badges.push(`<span class="status-badge status-badge--seller">${escapeHtml(sellerLabel)}</span>`);
+  }
+
+  getHistorySignalMeta(item).slice(0, 2).forEach(signal => {
+    badges.push(`<span class="${signal.className}">${escapeHtml(signal.label)}</span>`);
+  });
 
   const repairState = getRepairStateLabel(item);
   if (repairState) {
@@ -1845,13 +1949,16 @@ function renderImportPreview() {
         ? `${formatInteger(preview.availableCount)}+ авто`
         : `${formatInteger(preview.availableCount)} авто`;
     elements.importPreviewStatus.textContent = totalText;
-    elements.importPreviewNote.textContent = preview.exactTotalKnown
+    const baseNote = preview.exactTotalKnown
       ? preview.totalCount > 1000
         ? `По текущему поиску найдено ${formatInteger(preview.totalCount)} объявлений. За один раз импортируем до 1000, чтобы не грузить Kolesa.`
         : `По текущему поиску найдено ${formatInteger(preview.totalCount)} объявлений. Теперь выбери, сколько импортировать.`
       : preview.hasMore
         ? `По текущему поиску найдено больше ${formatInteger(preview.availableCount)} объявлений. Выбери, сколько импортировать сейчас.`
         : `По текущему поиску найдено ${formatInteger(preview.availableCount)} объявлений. Теперь выбери, сколько импортировать.`;
+    elements.importPreviewNote.textContent = preview.note
+      ? `${baseNote} ${preview.note}`
+      : baseNote;
     return;
   }
 
@@ -2283,7 +2390,126 @@ function normalize(value, min, max, invert = false) {
   return invert ? 1 - result : result;
 }
 
+function buildDerivedMarketMap(listings) {
+  const byCity = new Map();
+  const byModel = new Map();
+
+  listings.forEach(item => {
+    if (!item || !Number.isFinite(item.price) || item.price <= 0 || !item.brand || !item.model) {
+      return;
+    }
+
+    const modelKey = buildMarketKey([item.brand, item.model]);
+    const cityKey = buildMarketKey([item.brand, item.model, item.city]);
+
+    if (modelKey) {
+      const bucket = byModel.get(modelKey) || [];
+      bucket.push(item);
+      byModel.set(modelKey, bucket);
+    }
+
+    if (cityKey) {
+      const bucket = byCity.get(cityKey) || [];
+      bucket.push(item);
+      byCity.set(cityKey, bucket);
+    }
+  });
+
+  const derived = new Map();
+
+  listings.forEach(item => {
+    if (!item || !Number.isFinite(item.price) || item.price <= 0 || !item.brand || !item.model) {
+      derived.set(item.id, {
+        avgPrice: item.avgPrice ?? null,
+        marketDifference: item.marketDifference ?? null,
+        marketDifferencePercent: item.marketDifferencePercent ?? null,
+        marketScope: item.avgPrice ? "kolesa" : "insufficient",
+        marketSampleSize: null,
+        marketSourceLabel: item.avgPrice ? "Kolesa" : "",
+        marketConfidence: item.avgPrice ? "provider" : "insufficient"
+      });
+      return;
+    }
+
+    const candidates = [
+      {
+        key: buildMarketKey([item.brand, item.model, item.city]),
+        store: byCity,
+        minSize: 3,
+        scope: "brand_model_city",
+        sourceLabel: "Локальный рынок"
+      },
+      {
+        key: buildMarketKey([item.brand, item.model]),
+        store: byModel,
+        minSize: 5,
+        scope: "brand_model",
+        sourceLabel: "Рынок модели"
+      }
+    ];
+
+    let resolved = null;
+    candidates.some(candidate => {
+      if (!candidate.key) {
+        return false;
+      }
+      const bucket = (candidate.store.get(candidate.key) || []).filter(other => Number.isFinite(other.price) && other.price > 0);
+      if (bucket.length < candidate.minSize) {
+        return false;
+      }
+      const pool = bucket.filter(other => other.id !== item.id);
+      if (!pool.length) {
+        return false;
+      }
+
+      const avgPrice = pool.reduce((sum, other) => sum + other.price, 0) / pool.length;
+      const marketDifference = avgPrice - item.price;
+      resolved = {
+        avgPrice: Math.round(avgPrice),
+        marketDifference: Math.round(marketDifference),
+        marketDifferencePercent: avgPrice ? Number(((marketDifference / avgPrice) * 100).toFixed(2)) : null,
+        marketScope: candidate.scope,
+        marketSampleSize: bucket.length,
+        marketSourceLabel: candidate.sourceLabel,
+        marketConfidence: "local"
+      };
+      return true;
+    });
+
+    if (!resolved) {
+      resolved = item.avgPrice
+        ? {
+            avgPrice: item.avgPrice,
+            marketDifference: item.marketDifference ?? (item.avgPrice - item.price),
+            marketDifferencePercent: Number.isFinite(item.marketDifferencePercent)
+              ? item.marketDifferencePercent
+              : item.avgPrice
+                ? Number((((item.marketDifference ?? (item.avgPrice - item.price)) / item.avgPrice) * 100).toFixed(2))
+                : null,
+            marketScope: "kolesa",
+            marketSampleSize: null,
+            marketSourceLabel: "Kolesa",
+            marketConfidence: "provider"
+          }
+        : {
+            avgPrice: null,
+            marketDifference: null,
+            marketDifferencePercent: null,
+            marketScope: "insufficient",
+            marketSampleSize: null,
+            marketSourceLabel: "",
+            marketConfidence: "insufficient"
+          };
+    }
+
+    derived.set(item.id, resolved);
+  });
+
+  return derived;
+}
+
 function scoreListings(listings) {
+  const derivedMarketMap = buildDerivedMarketMap(listings);
   const prices = listings.map(item => item.price).filter(Boolean);
   const years = listings.map(item => item.year).filter(item => item !== null && item !== undefined);
   const mileages = listings.map(item => item.mileage).filter(item => item !== null && item !== undefined);
@@ -2292,19 +2518,19 @@ function scoreListings(listings) {
   const risks = listings.map(item => item.riskScore).filter(item => item !== null && item !== undefined);
   const monthlyPayments = listings.map(item => item.creditMonthlyPayment).filter(item => item !== null && item !== undefined);
   const maintenanceCheapnessValues = listings
-    .map(item => item.autopartsProfile?.cheapnessScore)
+    .map(item => hasTrustedAutopartsProfile(item) ? item.autopartsProfile?.cheapnessScore : null)
     .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
   const maintenanceBasketValues = listings
-    .map(item => item.autopartsProfile?.serviceBasketKzt)
+    .map(item => hasTrustedAutopartsProfile(item) ? item.autopartsProfile?.serviceBasketKzt : null)
     .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
   const maintenanceStockValues = listings
-    .map(item => item.autopartsProfile?.avgStock ?? item.autopartsProfile?.frontPadsStock)
+    .map(item => hasTrustedAutopartsProfile(item) ? (item.autopartsProfile?.avgStock ?? item.autopartsProfile?.frontPadsStock) : null)
     .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
   const maintenancePadsValues = listings
-    .map(item => item.autopartsProfile?.frontPadsPriceKzt)
+    .map(item => hasTrustedAutopartsProfile(item) ? item.autopartsProfile?.frontPadsPriceKzt : null)
     .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
   const maintenanceDiscValues = listings
-    .map(item => item.autopartsProfile?.frontDiscPriceKzt)
+    .map(item => hasTrustedAutopartsProfile(item) ? item.autopartsProfile?.frontDiscPriceKzt : null)
     .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
   const freshnessValues = listings
     .map(item => {
@@ -2343,6 +2569,16 @@ function scoreListings(listings) {
   };
 
   return listings.map(item => {
+    const marketReference = derivedMarketMap.get(item.id) || {
+      avgPrice: item.avgPrice ?? null,
+      marketDifference: item.marketDifference ?? null,
+      marketDifferencePercent: item.marketDifferencePercent ?? null,
+      marketScope: item.avgPrice ? "kolesa" : "insufficient",
+      marketSampleSize: null,
+      marketSourceLabel: item.avgPrice ? "Kolesa" : "",
+      marketConfidence: item.avgPrice ? "provider" : "insufficient"
+    };
+    const trustedAutopartsProfile = hasTrustedAutopartsProfile(item) ? item.autopartsProfile : null;
     const priceScore = normalize(item.price, bounds.priceMin, bounds.priceMax, true);
     const yearScore = normalize(item.year, bounds.yearMin, bounds.yearMax);
     const mileageScore = normalize(item.mileage, bounds.mileageMin, bounds.mileageMax, true);
@@ -2351,24 +2587,24 @@ function scoreListings(listings) {
     const freshnessScore = normalize(freshAge === null ? null : Math.min(freshAge, 60), bounds.freshMin, bounds.freshMax, true);
     const photoScore = normalize(item.photoCount, bounds.photoMin, bounds.photoMax);
     const riskSafetyScore = normalize(item.riskScore, bounds.riskMin, bounds.riskMax, true);
-    const marketScore = Number.isFinite(item.marketDifferencePercent)
-      ? Math.max(0, Math.min(1, (item.marketDifferencePercent + 15) / 30))
+    const marketScore = Number.isFinite(marketReference.marketDifferencePercent)
+      ? Math.max(0, Math.min(1, (marketReference.marketDifferencePercent + 15) / 30))
       : 0.5;
-    const maintenanceCheapnessScore = item.autopartsProfile && Number.isFinite(item.autopartsProfile.cheapnessScore)
-      ? normalize(item.autopartsProfile.cheapnessScore, bounds.maintenanceCheapnessMin, bounds.maintenanceCheapnessMax)
+    const maintenanceCheapnessScore = trustedAutopartsProfile && Number.isFinite(trustedAutopartsProfile.cheapnessScore)
+      ? normalize(trustedAutopartsProfile.cheapnessScore, bounds.maintenanceCheapnessMin, bounds.maintenanceCheapnessMax)
       : null;
-    const maintenanceBasketScore = item.autopartsProfile && Number.isFinite(item.autopartsProfile.serviceBasketKzt)
-      ? normalize(item.autopartsProfile.serviceBasketKzt, bounds.maintenanceBasketMin, bounds.maintenanceBasketMax, true)
+    const maintenanceBasketScore = trustedAutopartsProfile && Number.isFinite(trustedAutopartsProfile.serviceBasketKzt)
+      ? normalize(trustedAutopartsProfile.serviceBasketKzt, bounds.maintenanceBasketMin, bounds.maintenanceBasketMax, true)
       : null;
-    const maintenanceStockValue = item.autopartsProfile?.avgStock ?? item.autopartsProfile?.frontPadsStock;
-    const maintenanceStockScore = item.autopartsProfile && Number.isFinite(maintenanceStockValue)
+    const maintenanceStockValue = trustedAutopartsProfile?.avgStock ?? trustedAutopartsProfile?.frontPadsStock;
+    const maintenanceStockScore = trustedAutopartsProfile && Number.isFinite(maintenanceStockValue)
       ? normalize(maintenanceStockValue, bounds.maintenanceStockMin, bounds.maintenanceStockMax)
       : null;
-    const maintenancePadScore = item.autopartsProfile && Number.isFinite(item.autopartsProfile.frontPadsPriceKzt)
-      ? normalize(item.autopartsProfile.frontPadsPriceKzt, bounds.maintenancePadsMin, bounds.maintenancePadsMax, true)
+    const maintenancePadScore = trustedAutopartsProfile && Number.isFinite(trustedAutopartsProfile.frontPadsPriceKzt)
+      ? normalize(trustedAutopartsProfile.frontPadsPriceKzt, bounds.maintenancePadsMin, bounds.maintenancePadsMax, true)
       : null;
-    const maintenanceDiscScore = item.autopartsProfile && Number.isFinite(item.autopartsProfile.frontDiscPriceKzt)
-      ? normalize(item.autopartsProfile.frontDiscPriceKzt, bounds.maintenanceDiscMin, bounds.maintenanceDiscMax, true)
+    const maintenanceDiscScore = trustedAutopartsProfile && Number.isFinite(trustedAutopartsProfile.frontDiscPriceKzt)
+      ? normalize(trustedAutopartsProfile.frontDiscPriceKzt, bounds.maintenanceDiscMin, bounds.maintenanceDiscMax, true)
       : null;
     const maintenancePartsScores = [maintenancePadScore, maintenanceDiscScore].filter(score => score !== null);
     const maintenancePartsScore = maintenancePartsScores.length
@@ -2391,8 +2627,8 @@ function scoreListings(listings) {
       ? maintenanceComponents.reduce((sum, component) => sum + component.score * component.weight, 0) /
         maintenanceComponents.reduce((sum, component) => sum + component.weight, 0)
       : 0.5;
-    const maintenanceCoverageFactor = item.autopartsProfile
-      ? 0.7 + (item.autopartsProfile.coverageRatio ?? 0) * 0.3
+    const maintenanceCoverageFactor = trustedAutopartsProfile
+      ? 0.7 + (trustedAutopartsProfile.coverageRatio ?? 0) * 0.3
       : 1;
     const maintenanceScore = Math.max(0, Math.min(1, maintenanceBaseScore * maintenanceCoverageFactor));
     const sellerPenalty = item.isUsedCarDealer ? 0.2 : 0;
@@ -2499,12 +2735,20 @@ function scoreListings(listings) {
       (item.riskScore !== null ? item.riskScore / 100 : 0.35) * 0.45 +
       sellerSignalScore * 0.2 +
       (photoScore ? 1 - photoScore : 0.4) * 0.15 +
-      (Number.isFinite(item.marketDifferencePercent) && item.marketDifferencePercent < 0
-        ? Math.min(Math.abs(item.marketDifferencePercent) / 20, 1)
+      (Number.isFinite(marketReference.marketDifferencePercent) && marketReference.marketDifferencePercent < 0
+        ? Math.min(Math.abs(marketReference.marketDifferencePercent) / 20, 1)
         : 0) * 0.2;
 
     return {
       ...item,
+      avgPrice: marketReference.avgPrice,
+      marketDifference: marketReference.marketDifference,
+      marketDifferencePercent: marketReference.marketDifferencePercent,
+      marketScope: marketReference.marketScope,
+      marketSampleSize: marketReference.marketSampleSize,
+      marketSourceLabel: marketReference.marketSourceLabel,
+      marketConfidence: marketReference.marketConfidence,
+      autopartsProfile: trustedAutopartsProfile,
       score: Number(buyerScore.toFixed(4)),
       buyerScore: Number(buyerScore.toFixed(4)),
       resellerOpportunityScore: Number(resellerOpportunityScore.toFixed(4)),
@@ -2666,8 +2910,8 @@ function getFilteredListings() {
     const maintenanceMatch =
       !maintenance ||
       (maintenance === "known"
-        ? Boolean(item.autopartsProfile)
-        : item.autopartsProfile?.maintenanceBand === maintenance);
+        ? hasTrustedAutopartsProfile(item)
+        : hasTrustedAutopartsProfile(item) && item.autopartsProfile?.maintenanceBand === maintenance);
     const optionMatch = !optionSearch || item.options.some(option => option.toLowerCase().includes(optionSearch));
     return actualityMatch && titleMatch && yearMatch && priceMatch && mileageMatch && cityMatch && markMatch && modelMatch && creditMatch && monthlyPaymentMatch && repairMatch && fuelMatch && transmissionMatch && bodyTypeMatch && driveMatch && steeringMatch && colorMatch && sellerMatch && maintenanceMatch && optionMatch;
   });
@@ -2860,7 +3104,7 @@ function renderTopLists(listings) {
     .sort((a, b) => b.creditScore - a.creditScore || getPrimaryScore(b) - getPrimaryScore(a) || a.creditMonthlyPayment - b.creditMonthlyPayment)
     .slice(0, 5);
   const topMaintenance = [...listings]
-    .filter(item => item.autopartsProfile)
+    .filter(item => hasTrustedAutopartsProfile(item))
     .sort((a, b) => (b.maintenanceScore ?? 0) - (a.maintenanceScore ?? 0) || getPrimaryScore(b) - getPrimaryScore(a) || a.price - b.price)
     .slice(0, 5);
 
@@ -2952,11 +3196,20 @@ function renderMarketFacts(item) {
     const value = difference === 0
       ? "почти без отклонения"
       : `${formatPrice(Math.abs(difference))} · ${formatPercent(percent)}`;
+    const marketTitle = item.marketSourceLabel === "Локальный рынок"
+      ? `Средняя цена по городу (${formatInteger(item.marketSampleSize || 0)})`
+      : item.marketSourceLabel === "Рынок модели"
+        ? `Средняя цена по модели (${formatInteger(item.marketSampleSize || 0)})`
+        : "Средняя цена Kolesa";
 
     return [
-      renderFact("Средняя цена Kolesa", formatPrice(item.avgPrice)),
+      renderFact(marketTitle, formatPrice(item.avgPrice)),
       renderFact(label, value)
     ];
+  }
+
+  if (item.marketConfidence === "insufficient") {
+    return [renderFact("Рынок", "данных рынка мало")];
   }
 
   const insightState = item.url ? state.listingInsights[item.url] : null;
@@ -2976,7 +3229,7 @@ function renderMarketFacts(item) {
 }
 
 function getMaintenanceNarrative(item) {
-  const autoparts = item?.autopartsProfile;
+  const autoparts = hasTrustedAutopartsProfile(item) ? item?.autopartsProfile : null;
   const score = Number(item?.maintenanceScore ?? 0.5);
 
   if (!autoparts) {
@@ -3021,7 +3274,7 @@ function renderMaintenancePanel(item) {
     return;
   }
 
-  const autoparts = item.autopartsProfile;
+  const autoparts = hasTrustedAutopartsProfile(item) ? item.autopartsProfile : null;
   const buyerDecision = getBuyerDecisionMeta(item);
   const resellerDecision = getResellerDecisionMeta(item);
   const maintenance = getMaintenanceNarrative(item);
@@ -3131,7 +3384,8 @@ function renderPriceHistoryPanel(item) {
     { label: "Наблюдений", value: formatInteger(item.snapshotCount ?? snapshots.length) },
     { label: "Дней в продаже", value: formatDaysOnMarket(item.daysOnMarket) },
     { label: "Изм. цены", value: formatInteger(item.priceChangeCount ?? 0) },
-    { label: "Снижение", value: Number.isFinite(item.priceDropTotal) ? formatPrice(item.priceDropTotal) : "-" }
+    { label: "Снижение", value: Number.isFinite(item.priceDropTotal) ? formatPrice(item.priceDropTotal) : "-" },
+    { label: "Сигнал", value: getHistorySummaryLabel(item) }
   ];
 
   const timeline = snapshots
@@ -3229,6 +3483,10 @@ function getBreakdownComment(label, value, item) {
     return "около средней цены по рынку";
   }
 
+  if (label === "Рынок" && item.marketConfidence === "insufficient") {
+    return "данных рынка пока мало, поэтому влияние на решение нейтральное";
+  }
+
   if (label === "Цена") {
     return `текущая цена ${formatPrice(item.price)}`;
   }
@@ -3246,7 +3504,7 @@ function getBreakdownComment(label, value, item) {
   }
 
   if (label === "Содержание") {
-    if (!item.autopartsProfile) {
+    if (!hasTrustedAutopartsProfile(item)) {
       return "по запчастям пока нет базы, оценка нейтральная";
     }
 
@@ -3301,7 +3559,7 @@ function renderListingFacts(item) {
   const actualityMeta = getActualityMeta(item);
   const config = getAnalysisModeConfig();
   const currentDecision = getCurrentDecisionMeta(item);
-  const autoparts = item.autopartsProfile;
+  const autoparts = hasTrustedAutopartsProfile(item) ? item.autopartsProfile : null;
   const sellerSummary = getSellerProfileSummary(item);
   elements.modalFacts.innerHTML = [
     renderFact("Статус", actualityMeta.label),
@@ -3359,6 +3617,7 @@ function renderListingFacts(item) {
         ? `${autoparts.maintenanceLabel || "Есть данные"}${Number.isFinite(autoparts.cheapnessScore) ? ` (${formatScorePercent(autoparts.cheapnessScore / 100)})` : ""}`
         : "-"
     ),
+    renderFact("Матч запчастей", autoparts?.matchConfidenceLabel || "-"),
     renderFact("Данные запчастей", autoparts?.coverageLabel || "-"),
     renderFact("Сервисная корзина", autoparts?.serviceBasketKzt ? formatPrice(autoparts.serviceBasketKzt) : "-"),
     renderFact("Колодки / перед", autoparts?.frontPadsPriceKzt ? formatPrice(autoparts.frontPadsPriceKzt) : "-"),
@@ -3490,19 +3749,57 @@ function applyListingGallery(listingId, payload) {
   }
 }
 
+function getPrimaryDecisionReasons(item) {
+  const reasons = [];
+  const sellerSummary = getSellerProfileSummary(item);
+
+  if (Number.isFinite(item.marketDifferencePercent)) {
+    if (item.marketDifferencePercent >= 10) {
+      reasons.push(`ниже рынка на ${formatPercent(item.marketDifferencePercent)}`);
+    } else if (item.marketDifferencePercent <= -10) {
+      reasons.push(`выше рынка на ${formatPercent(Math.abs(item.marketDifferencePercent))}`);
+    } else {
+      reasons.push("цена около рынка");
+    }
+  } else if (item.marketConfidence === "insufficient") {
+    reasons.push("данных рынка мало");
+  }
+
+  if (hasTrustedAutopartsProfile(item)) {
+    const maintenanceTone = Number(item.maintenanceScore || 0) >= 0.72
+      ? "обслуживание дешёвое"
+      : Number(item.maintenanceScore || 0) >= 0.45
+        ? "обслуживание среднее"
+        : "обслуживание дорогое";
+    reasons.push(maintenanceTone);
+  } else {
+    reasons.push("по запчастям базы мало");
+  }
+
+  if (sellerSummary.label && sellerSummary.label !== "Продавец") {
+    reasons.push(sellerSummary.label.toLowerCase());
+  }
+
+  const historySignals = getHistorySignalMeta(item);
+  if (historySignals.length) {
+    historySignals.forEach(signal => reasons.push(signal.label.toLowerCase()));
+  } else if (Number(item.daysOnMarket || 0) > 0) {
+    reasons.push(`в продаже ${formatDaysOnMarket(item.daysOnMarket).toLowerCase()}`);
+  }
+
+  return [...new Set(reasons)].slice(0, 3);
+}
+
 function renderSignals(item) {
   const config = getAnalysisModeConfig();
   const currentDecision = getCurrentDecisionMeta(item);
   const buyerDecision = getBuyerDecisionMeta(item);
   const resellerDecision = getResellerDecisionMeta(item);
-  const autoparts = item.autopartsProfile;
+  const autoparts = hasTrustedAutopartsProfile(item) ? item.autopartsProfile : null;
   const sellerSummary = getSellerProfileSummary(item);
+  const primaryReasons = getPrimaryDecisionReasons(item);
   const finance = [];
-  const signals = [
-    `${config.scoreLabel}: ${currentDecision.label}. ${currentDecision.note}`,
-    `Покупка: ${buyerDecision.label}. ${buyerDecision.note}`,
-    `Перекуп: ${resellerDecision.label}. ${resellerDecision.note}`
-  ];
+  const details = [];
 
   if (item.creditAvailable) {
     finance.push(`Кредит доступен`);
@@ -3514,74 +3811,76 @@ function renderSignals(item) {
     finance.push(`Первоначальный взнос: ${formatPrice(item.creditDownPayment)}`);
   }
   if (item.phoneCount) {
-    signals.push(`Контактов в объявлении: ${item.phoneCount}`);
+    details.push(`Контактов в объявлении: ${item.phoneCount}`);
   }
   if (item.phonePrefix) {
-    signals.push(`Префикс номера: ${item.phonePrefix}`);
+    details.push(`Префикс номера: ${item.phonePrefix}`);
   }
   if (item.photoCount) {
-    signals.push(`Фотографий: ${item.photoCount}`);
+    details.push(`Фотографий: ${item.photoCount}`);
   }
   if (item.fuelType) {
-    signals.push(`Топливо: ${item.fuelType}`);
+    details.push(`Топливо: ${item.fuelType}`);
   }
   if (item.driveType) {
-    signals.push(`Привод: ${item.driveType}`);
+    details.push(`Привод: ${item.driveType}`);
   }
   if (item.steeringSide) {
-    signals.push(`Руль: ${item.steeringSide}`);
+    details.push(`Руль: ${item.steeringSide}`);
   }
   if (item.color) {
-    signals.push(`Цвет: ${item.color}`);
+    details.push(`Цвет: ${item.color}`);
   }
   if (item.options.length) {
-    signals.push(`Опции: ${item.options.join(", ")}`);
+    details.push(`Опции: ${item.options.join(", ")}`);
   }
   if (item.paidServices.length) {
-    signals.push(`Продвижение: ${item.paidServices.join(", ")}`);
+    details.push(`Продвижение: ${item.paidServices.join(", ")}`);
   }
   if (sellerSummary.label && sellerSummary.label !== "-") {
     const baseLine = sellerSummary.total !== null
       ? `Профиль продавца по базе: ${sellerSummary.label}, ${sellerSummary.active ?? sellerSummary.total} акт. из ${sellerSummary.total}`
       : `Профиль продавца по базе: ${sellerSummary.label}`;
-    signals.push(baseLine);
+    details.push(baseLine);
   }
   if (sellerSummary.traderScore !== null) {
-    signals.push(`Поток продавца по базе: ${Math.round(sellerSummary.traderScore)}%`);
+    details.push(`Поток продавца по базе: ${Math.round(sellerSummary.traderScore)}%`);
   }
   if (sellerSummary.note) {
-    signals.push(`Анализ продавца: ${sellerSummary.note}`);
+    details.push(`Анализ продавца: ${sellerSummary.note}`);
   }
   if (item.publicHistoryAvailable) {
-    signals.push(`Есть публичная история авто на странице`);
+    details.push(`Есть публичная история авто на странице`);
   }
   if (autoparts?.maintenanceLabel) {
     const serviceBasket = autoparts.serviceBasketKzt ? `, корзина ${formatPrice(autoparts.serviceBasketKzt)}` : "";
     const coverage = autoparts.coverageLabel ? `, ${autoparts.coverageLabel.toLowerCase()}` : "";
-    signals.push(`Запчасти: ${autoparts.maintenanceLabel}${coverage}, maintenance ${formatScorePercent(item.maintenanceScore)}${serviceBasket}`);
-    if (buyerDecision.label !== "Брать") {
-      signals.push(`Покупка и обслуживание: ${buyerDecision.note}`);
-    }
-    if (resellerDecision.label !== "Есть маржа") {
-      signals.push(`Перепродажа и обслуживание: ${resellerDecision.note}`);
-    }
+    details.push(`Запчасти: ${autoparts.maintenanceLabel}${coverage}, maintenance ${formatScorePercent(item.maintenanceScore)}${serviceBasket}`);
   }
   if (autoparts?.comment) {
-    signals.push(`По рынку запчастей: ${autoparts.comment}`);
+    details.push(`По рынку запчастей: ${autoparts.comment}`);
   }
   if (item.historySummary) {
-    signals.push(item.historySummary);
+    details.push(item.historySummary);
   }
   if (item.riskFlags.length) {
-    signals.push(...item.riskFlags);
+    details.push(...item.riskFlags);
   }
 
-  const lines = [...finance, ...signals];
-  if (!lines.length) {
+  const detailLines = [...finance, ...details];
+  if (!primaryReasons.length && !detailLines.length) {
     return `<div class="muted">После проверки карточки здесь появятся кредитные условия и открытые сигналы по объявлению.</div>`;
   }
 
-  return `<ul class="signal-list">${lines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`;
+  return `
+    <div class="signal-summary">
+      <strong>${escapeHtml(config.scoreLabel)}: ${escapeHtml(currentDecision.label)}</strong>
+      <p>${escapeHtml(currentDecision.note)}</p>
+      <div class="signal-meta">Покупка: ${escapeHtml(buyerDecision.label)} · Перекуп: ${escapeHtml(resellerDecision.label)}</div>
+    </div>
+    ${primaryReasons.length ? `<ul class="signal-list">${primaryReasons.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : ""}
+    ${detailLines.length ? `<div class="signal-subhead">Детали</div><ul class="signal-list">${detailLines.map(line => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : ""}
+  `;
 }
 
 function renderVinStatusText(item) {
@@ -4816,11 +5115,22 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
       totalCount: state.importPreview.totalCount,
       exactTotalKnown: state.importPreview.exactTotalKnown,
       hasMore: state.importPreview.hasMore && Number(completedJob.result?.count || 0) >= 1000,
-      note: ""
+      note: (() => {
+        const summary = completedJob.result?.summary || {};
+        const importedCount = Number(summary.imported_count ?? completedJob.result?.count ?? 0);
+        const newCount = Number(summary.new_count ?? 0);
+        const updatedCount = Number(summary.updated_count ?? 0);
+        const duplicateCount = Number(summary.duplicate_count ?? 0);
+        const errorCount = Number(summary.error_count ?? completedJob.result?.detailFailures ?? 0);
+        return `Импортировано ${formatInteger(importedCount)} · новых ${formatInteger(newCount)} · обновлено ${formatInteger(updatedCount)} · дубликаты ${formatInteger(duplicateCount)} · ошибок ${formatInteger(errorCount)}.`;
+      })()
     };
     renderImportPreview();
     const pagesLoaded = Number(completedJob.result?.pagesLoaded) || 1;
-    setStatus(`Источник: Kolesa low-load, активных ${getActualListingsCount()} из ${state.listings.length}, ${pagesLoaded} стр.`);
+    const summary = completedJob.result?.summary || {};
+    setStatus(
+      `Источник: импортировано ${formatInteger(summary.imported_count ?? completedJob.result?.count ?? 0)}, новых ${formatInteger(summary.new_count ?? 0)}, обновлено ${formatInteger(summary.updated_count ?? 0)}, дубликаты ${formatInteger(summary.duplicate_count ?? 0)}, ошибок ${formatInteger(summary.error_count ?? completedJob.result?.detailFailures ?? 0)} · активных ${getActualListingsCount()} из ${state.listings.length}, ${pagesLoaded} стр.`
+    );
   } catch (error) {
     window.alert(error.message || "Не удалось импортировать данные.");
     setStatus("Источник: ошибка импорта");

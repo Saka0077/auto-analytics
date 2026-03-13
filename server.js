@@ -711,6 +711,21 @@ function getAutopartsMatchText(item) {
   return normalizeLookupText([item.brand, item.model, item.title].filter(Boolean).join(" "));
 }
 
+function getAutopartsMatchConfidenceLabel(confidence) {
+  switch (String(confidence || "").trim()) {
+    case "exact":
+      return "Точный матч";
+    case "generation_match":
+      return "Матч по поколению";
+    case "model_only":
+      return "Матч по модели";
+    case "weak":
+      return "Слабый матч";
+    default:
+      return "Нет матча";
+  }
+}
+
 function buildAutopartsLookupMap(catalog = readAutopartsCatalog(), aliasesStore = readAutopartsAliases()) {
   const snapshotItems = Array.isArray(catalog?.snapshot_items) ? catalog.snapshot_items : [];
   const aliases = Array.isArray(aliasesStore?.items) ? aliasesStore.items : [];
@@ -733,10 +748,12 @@ function buildAutopartsLookupMap(catalog = readAutopartsCatalog(), aliasesStore 
     const aliasKeys = Array.isArray(aliasEntry?.aliases)
       ? aliasEntry.aliases.map(normalizeLookupText).filter(Boolean)
       : [];
+    const primaryModelKey = normalizeLookupText(profile.primary_model);
     const yearRange = parseYearRange(profile.years);
     return {
       profile,
       brandKey,
+      primaryModelKey,
       yearRange,
       lookupKeys: [...new Set([...directKeys, ...aliasKeys])]
     };
@@ -761,6 +778,7 @@ function findAutopartsProfile(item, catalog = readAutopartsCatalog(), aliasesSto
 
     let score = 0;
     const reasons = [];
+    let bestModelSignal = null;
 
     if (entry.brandKey && listingBrand) {
       if (entry.brandKey !== listingBrand) {
@@ -771,36 +789,83 @@ function findAutopartsProfile(item, catalog = readAutopartsCatalog(), aliasesSto
     }
 
     entry.lookupKeys.forEach(key => {
-      if (listingCandidates.some(candidate => candidate === key)) {
-        score = Math.max(score, score + 50);
-        reasons.push(`model:${key}`);
+      const normalizedKey = normalizeLookupText(key);
+      if (!normalizedKey) {
         return;
       }
 
-      if (listingCandidates.some(candidate => candidate.startsWith(`${key} `) || key.startsWith(`${candidate} `))) {
-        score = Math.max(score, score + 34);
-        reasons.push(`prefix:${key}`);
+      const keyTokens = splitLookupWords(normalizedKey);
+      const primaryTokens = splitLookupWords(entry.primaryModelKey);
+      const hasGenerationHint = primaryTokens.length > 0
+        && keyTokens.length > primaryTokens.length
+        && primaryTokens.every((token, index) => keyTokens[index] === token);
+
+      let candidateScore = 0;
+      let matchType = "";
+
+      if (listingCandidates.some(candidate => candidate === normalizedKey)) {
+        candidateScore = hasGenerationHint ? 72 : 64;
+        matchType = "exact";
+      } else if (listingCandidates.some(candidate => candidate.startsWith(`${normalizedKey} `) || normalizedKey.startsWith(`${candidate} `))) {
+        candidateScore = hasGenerationHint ? 58 : 50;
+        matchType = "prefix";
+      } else if (listingText.includes(normalizedKey)) {
+        candidateScore = hasGenerationHint ? 46 : 38;
+        matchType = "text";
+      }
+
+      if (!candidateScore) {
         return;
       }
 
-      if (listingText.includes(key)) {
-        score = Math.max(score, score + 24);
-        reasons.push(`text:${key}`);
+      if (
+        !bestModelSignal ||
+        candidateScore > bestModelSignal.score ||
+        (candidateScore === bestModelSignal.score && normalizedKey.length > bestModelSignal.key.length)
+      ) {
+        bestModelSignal = {
+          key: normalizedKey,
+          score: candidateScore,
+          matchType,
+          hasGenerationHint,
+          reason: `${matchType}:${normalizedKey}`
+        };
       }
     });
 
-    if (!score) {
+    if (!bestModelSignal) {
       return;
     }
 
+    score += bestModelSignal.score;
+    reasons.push(bestModelSignal.reason);
+
+    let yearMatched = null;
     if (entry.yearRange && Number.isFinite(Number(item.year))) {
       const year = Number(item.year);
       if (year >= entry.yearRange.min && year <= entry.yearRange.max) {
         score += 12;
         reasons.push("year");
+        yearMatched = true;
       } else {
-        score -= 70;
+        return;
       }
+    }
+
+    const matchConfidence = bestModelSignal.hasGenerationHint
+      ? yearMatched === true
+        ? "generation_match"
+        : "model_only"
+      : bestModelSignal.matchType === "exact"
+        ? "exact"
+        : "model_only";
+
+    if (
+      bestModelSignal.matchType === "text" &&
+      !bestModelSignal.hasGenerationHint &&
+      score < 70
+    ) {
+      return;
     }
 
     if (
@@ -811,12 +876,13 @@ function findAutopartsProfile(item, catalog = readAutopartsCatalog(), aliasesSto
       bestMatch = {
         profile: entry.profile,
         score,
-        reasons
+        reasons,
+        confidence: matchConfidence
       };
     }
   });
 
-  if (!bestMatch || bestMatch.score < 40) {
+  if (!bestMatch || bestMatch.score < 55) {
     return null;
   }
 
@@ -845,7 +911,10 @@ function findAutopartsProfile(item, catalog = readAutopartsCatalog(), aliasesSto
     pads_source_url: String(match.pads_source_url || ""),
     disc_source_url: String(match.disc_source_url || ""),
     match_score: Number(bestMatch.score || 0),
-    match_reason: bestMatch.reasons.join(", ")
+    match_reason: bestMatch.reasons.join(", "),
+    match_confidence: String(bestMatch.confidence || "none"),
+    match_confidence_label: getAutopartsMatchConfidenceLabel(bestMatch.confidence || "none"),
+    model_token_match: true
   };
 }
 
@@ -2514,18 +2583,22 @@ function uniqueListings(listings) {
   });
 }
 
-function mergeImportedListings(existingRows, importedRows) {
+function mergeImportedListingsDetailed(existingRows, importedRows) {
   const existing = normalizeListings(existingRows);
   const imported = normalizeListings(importedRows);
   const existingByKey = new Map(existing.map(item => [getListingStorageKey(item), item]));
+  const importedKeys = new Set(imported.map(item => getListingStorageKey(item)));
   const nowIso = new Date().toISOString();
+  let newCount = 0;
+  let updatedCount = 0;
+  let duplicateCount = 0;
 
-  return imported.map(item => {
+  const mergedImported = imported.map(item => {
     const previous = existingByKey.get(getListingStorageKey(item));
     const nextStatus = normalizeActualityStatus(item.actuality_status || "active");
     const previousStatus = normalizeActualityStatus(previous?.actuality_status || "active");
 
-    return {
+    const merged = {
       ...previous,
       ...item,
       advert_id: item.advert_id || previous?.advert_id || extractAdvertIdFromUrl(item.url),
@@ -2538,7 +2611,36 @@ function mergeImportedListings(existingRows, importedRows) {
           ? nowIso
           : item.last_status_change_at || previous?.last_status_change_at || nowIso
     };
+
+    if (!previous) {
+      newCount += 1;
+    } else {
+      const previousHash = buildListingSnapshotHash(previous);
+      const mergedHash = buildListingSnapshotHash(merged);
+      if (previousHash !== mergedHash || previousStatus !== nextStatus) {
+        updatedCount += 1;
+      } else {
+        duplicateCount += 1;
+      }
+    }
+
+    return merged;
   });
+
+  const untouchedExisting = existing.filter(item => !importedKeys.has(getListingStorageKey(item)));
+  return {
+    items: [...mergedImported, ...untouchedExisting],
+    summary: {
+      imported_count: imported.length,
+      new_count: newCount,
+      updated_count: updatedCount,
+      duplicate_count: duplicateCount
+    }
+  };
+}
+
+function mergeImportedListings(existingRows, importedRows) {
+  return mergeImportedListingsDetailed(existingRows, importedRows).items;
 }
 
 function saveListingsWithSnapshots(listings, { capturedAt } = {}) {
@@ -2752,11 +2854,16 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
     .slice(0, Math.max(0, maxItems));
 
   if (!targets.length) {
-    return listings;
+    return {
+      items: listings,
+      detailFailures: 0,
+      detailRequested: 0
+    };
   }
 
   const snapshotMap = new Map();
   let cursor = 0;
+  let detailFailures = 0;
 
   async function worker() {
     while (cursor < targets.length) {
@@ -2769,6 +2876,7 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
           snapshotMap.set(item.url, snapshot);
         }
       } catch (error) {
+        detailFailures += 1;
         // Keep imported list usable even if some detail pages fail to load.
       }
       if (typeof onProgress === "function") {
@@ -2784,51 +2892,55 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
     Array.from({ length: Math.min(concurrency, targets.length) }, () => worker())
   );
 
-  return listings.map(item => {
-    const snapshot = snapshotMap.get(item.url);
-    if (!snapshot) {
-      return item;
-    }
+  return {
+    items: listings.map(item => {
+      const snapshot = snapshotMap.get(item.url);
+      if (!snapshot) {
+        return item;
+      }
 
-    return {
-      ...item,
-      title: pickDefined(snapshot.title, item.title) || item.title,
-      price: pickDefined(snapshot.price, item.price) || item.price,
-      city: pickDefined(snapshot.city, item.city) || item.city,
-      description: pickDefined(snapshot.description, item.description) || item.description,
-      image: pickDefined(snapshot.image, item.image) || item.image,
-      photo_gallery: normalizePhotoGallery([...(item.photo_gallery || []), ...(snapshot.photo_gallery || [])]),
-      brand: pickDefined(snapshot.brand, item.brand) || item.brand,
-      model: pickDefined(snapshot.model, item.model) || item.model,
-      fuel_type: pickDefined(snapshot.fuel_type, item.fuel_type) || item.fuel_type,
-      drive_type: pickDefined(snapshot.drive_type, item.drive_type) || item.drive_type,
-      steering_side: pickDefined(snapshot.steering_side, item.steering_side) || item.steering_side,
-      color: pickDefined(snapshot.color, item.color) || item.color,
-      options: normalizeTextList([...(item.options || []), ...(snapshot.options || [])]),
-      repair_state: pickDefined(snapshot.repair_state, item.repair_state) || item.repair_state,
-      transmission: pickDefined(snapshot.transmission, item.transmission) || item.transmission,
-      body_type: pickDefined(snapshot.body_type, item.body_type) || item.body_type,
-      engine_volume: pickDefined(snapshot.engine_volume, item.engine_volume),
-      publication_date: pickDefined(snapshot.publication_date, item.publication_date) || item.publication_date,
-      last_update: pickDefined(snapshot.last_update, item.last_update) || item.last_update,
-      photo_count: pickDefined(snapshot.photo_count, item.photo_count),
-      phone_count: pickDefined(snapshot.phone_count, item.phone_count),
-      phone_prefix: pickDefined(snapshot.phone_prefix, item.phone_prefix) || item.phone_prefix,
-      credit_available: snapshot.credit_available ?? item.credit_available,
-      credit_monthly_payment: pickDefined(snapshot.credit_monthly_payment, item.credit_monthly_payment),
-      credit_down_payment: pickDefined(snapshot.credit_down_payment, item.credit_down_payment),
-      seller_user_id: pickDefined(snapshot.seller_user_id, item.seller_user_id) || item.seller_user_id,
-      seller_type_id: pickDefined(snapshot.seller_type_id, item.seller_type_id),
-      is_verified_dealer: snapshot.is_verified_dealer ?? item.is_verified_dealer,
-      is_used_car_dealer: snapshot.is_used_car_dealer ?? item.is_used_car_dealer,
-      public_history_available: snapshot.public_history_available ?? item.public_history_available,
-      history_summary: pickDefined(snapshot.history_summary, item.history_summary) || item.history_summary,
-      avg_price: pickDefined(snapshot.avg_price, item.avg_price),
-      market_difference: pickDefined(snapshot.market_difference, item.market_difference),
-      market_difference_percent: pickDefined(snapshot.market_difference_percent, item.market_difference_percent),
-      last_checked_at: pickDefined(snapshot.last_checked_at, item.last_checked_at) || item.last_checked_at
-    };
-  });
+      return {
+        ...item,
+        title: pickDefined(snapshot.title, item.title) || item.title,
+        price: pickDefined(snapshot.price, item.price) || item.price,
+        city: pickDefined(snapshot.city, item.city) || item.city,
+        description: pickDefined(snapshot.description, item.description) || item.description,
+        image: pickDefined(snapshot.image, item.image) || item.image,
+        photo_gallery: normalizePhotoGallery([...(item.photo_gallery || []), ...(snapshot.photo_gallery || [])]),
+        brand: pickDefined(snapshot.brand, item.brand) || item.brand,
+        model: pickDefined(snapshot.model, item.model) || item.model,
+        fuel_type: pickDefined(snapshot.fuel_type, item.fuel_type) || item.fuel_type,
+        drive_type: pickDefined(snapshot.drive_type, item.drive_type) || item.drive_type,
+        steering_side: pickDefined(snapshot.steering_side, item.steering_side) || item.steering_side,
+        color: pickDefined(snapshot.color, item.color) || item.color,
+        options: normalizeTextList([...(item.options || []), ...(snapshot.options || [])]),
+        repair_state: pickDefined(snapshot.repair_state, item.repair_state) || item.repair_state,
+        transmission: pickDefined(snapshot.transmission, item.transmission) || item.transmission,
+        body_type: pickDefined(snapshot.body_type, item.body_type) || item.body_type,
+        engine_volume: pickDefined(snapshot.engine_volume, item.engine_volume),
+        publication_date: pickDefined(snapshot.publication_date, item.publication_date) || item.publication_date,
+        last_update: pickDefined(snapshot.last_update, item.last_update) || item.last_update,
+        photo_count: pickDefined(snapshot.photo_count, item.photo_count),
+        phone_count: pickDefined(snapshot.phone_count, item.phone_count),
+        phone_prefix: pickDefined(snapshot.phone_prefix, item.phone_prefix) || item.phone_prefix,
+        credit_available: snapshot.credit_available ?? item.credit_available,
+        credit_monthly_payment: pickDefined(snapshot.credit_monthly_payment, item.credit_monthly_payment),
+        credit_down_payment: pickDefined(snapshot.credit_down_payment, item.credit_down_payment),
+        seller_user_id: pickDefined(snapshot.seller_user_id, item.seller_user_id) || item.seller_user_id,
+        seller_type_id: pickDefined(snapshot.seller_type_id, item.seller_type_id),
+        is_verified_dealer: snapshot.is_verified_dealer ?? item.is_verified_dealer,
+        is_used_car_dealer: snapshot.is_used_car_dealer ?? item.is_used_car_dealer,
+        public_history_available: snapshot.public_history_available ?? item.public_history_available,
+        history_summary: pickDefined(snapshot.history_summary, item.history_summary) || item.history_summary,
+        avg_price: pickDefined(snapshot.avg_price, item.avg_price),
+        market_difference: pickDefined(snapshot.market_difference, item.market_difference),
+        market_difference_percent: pickDefined(snapshot.market_difference_percent, item.market_difference_percent),
+        last_checked_at: pickDefined(snapshot.last_checked_at, item.last_checked_at) || item.last_checked_at
+      };
+    }),
+    detailFailures,
+    detailRequested: targets.length
+  };
 }
 
 async function fetchKolesaListings(sourceUrl, limit = 100, { onProgress = null, jobId = "" } = {}) {
@@ -2868,7 +2980,7 @@ async function fetchKolesaListings(sourceUrl, limit = 100, { onProgress = null, 
     }
   }
 
-  const enriched = await enrichKolesaListingsWithSnapshots(combined.slice(0, safeLimit), {
+  const enrichedResult = await enrichKolesaListingsWithSnapshots(combined.slice(0, safeLimit), {
     maxItems: safeLimit <= 25 ? safeLimit : 8,
     concurrency: LOW_LOAD_SETTINGS.enrichConcurrency,
     jobId,
@@ -2887,11 +2999,13 @@ async function fetchKolesaListings(sourceUrl, limit = 100, { onProgress = null, 
   });
 
   return {
-    items: enriched.map(item => ({
+    items: enrichedResult.items.map(item => ({
       ...item,
       repair_state: item.repair_state && item.repair_state !== "unknown" ? item.repair_state : repairState
     })),
-    pagesLoaded: pages.length
+    pagesLoaded: pages.length,
+    detailFailures: enrichedResult.detailFailures,
+    detailRequested: enrichedResult.detailRequested
   };
 }
 
@@ -2997,8 +3111,21 @@ async function runKolesaImportJob(job) {
     throw new Error("Не удалось найти объявления на странице.");
   }
 
+  let importSummary = {
+    imported_count: listings.length,
+    new_count: listings.length,
+    updated_count: 0,
+    duplicate_count: 0,
+    error_count: Number(result.detailFailures || 0)
+  };
+
   if (save) {
-    saveListingsWithSnapshots(mergeImportedListings(readListings(), listings));
+    const mergeResult = mergeImportedListingsDetailed(readListings(), listings);
+    saveListingsWithSnapshots(mergeResult.items);
+    importSummary = {
+      ...mergeResult.summary,
+      error_count: Number(result.detailFailures || 0)
+    };
   }
 
   job.result = {
@@ -3008,7 +3135,10 @@ async function runKolesaImportJob(job) {
     limit,
     count: listings.length,
     pagesLoaded: result.pagesLoaded,
-    activeCount: listings.filter(item => normalizeActualityStatus(item.actuality_status) === "active").length
+    activeCount: listings.filter(item => normalizeActualityStatus(item.actuality_status) === "active").length,
+    detailFailures: Number(result.detailFailures || 0),
+    detailRequested: Number(result.detailRequested || 0),
+    summary: importSummary
   };
 }
 
@@ -3373,8 +3503,9 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      saveListingsWithSnapshots(mergeImportedListings(readListings(), listings));
-      sendJson(response, 200, { ok: true, count: listings.length });
+      const mergeResult = mergeImportedListingsDetailed(readListings(), listings);
+      saveListingsWithSnapshots(mergeResult.items);
+      sendJson(response, 200, { ok: true, count: listings.length, summary: mergeResult.summary });
     } catch (error) {
       sendJson(response, 400, { error: "Некорректный JSON." });
     }
@@ -3495,10 +3626,22 @@ const server = http.createServer(async (request, response) => {
       }
 
       let responseItems = enrichListingsForClient(listings, readListingSnapshots());
+      let importSummary = {
+        imported_count: listings.length,
+        new_count: listings.length,
+        updated_count: 0,
+        duplicate_count: 0,
+        error_count: Number(result.detailFailures || 0)
+      };
       if (save) {
-        const savedListings = saveListingsWithSnapshots(mergeImportedListings(readListings(), listings));
+        const mergeResult = mergeImportedListingsDetailed(readListings(), listings);
+        const savedListings = saveListingsWithSnapshots(mergeResult.items);
         const savedSnapshots = readListingSnapshots();
         responseItems = enrichListingsForClient(savedListings, savedSnapshots);
+        importSummary = {
+          ...mergeResult.summary,
+          error_count: Number(result.detailFailures || 0)
+        };
       }
 
       sendJson(response, 200, {
@@ -3508,6 +3651,8 @@ const server = http.createServer(async (request, response) => {
         limit,
         pagesLoaded: result.pagesLoaded,
         count: listings.length,
+        detailFailures: Number(result.detailFailures || 0),
+        summary: importSummary,
         items: responseItems
       });
     } catch (error) {
