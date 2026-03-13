@@ -472,6 +472,9 @@ const elements = {
   archiveSummaryList: document.getElementById("archive-summary-list"),
   archiveSellerMeta: document.getElementById("archive-seller-meta"),
   archiveSellerList: document.getElementById("archive-seller-list"),
+  archiveCityFilter: document.getElementById("archive-city-filter"),
+  archiveBrandFilter: document.getElementById("archive-brand-filter"),
+  archiveSellerFilter: document.getElementById("archive-seller-filter"),
   bestMetricLabel: document.getElementById("best-metric-label"),
   bestTitle: document.getElementById("best-title"),
   bestPrice: document.getElementById("best-price"),
@@ -3105,6 +3108,42 @@ function renderArchiveSellerList(target, items, emptyText) {
   });
 }
 
+function populateArchiveFilterSelect(element, values, placeholder) {
+  if (!element) {
+    return;
+  }
+  const current = element.value;
+  element.innerHTML = "";
+  const defaultOption = document.createElement("option");
+  defaultOption.value = "";
+  defaultOption.textContent = placeholder;
+  element.append(defaultOption);
+
+  values.forEach(value => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    element.append(option);
+  });
+
+  if ([...element.options].some(option => option.value === current)) {
+    element.value = current;
+  } else {
+    element.value = "";
+  }
+}
+
+function populateArchiveFilters() {
+  const archived = state.archivedListings.filter(isKolesaListing);
+  const cities = [...new Set(archived.map(item => item.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const brands = [...new Set(archived.map(item => item.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  const sellers = [...new Set(archived.map(item => getSellerProfileLabel(item)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+
+  populateArchiveFilterSelect(elements.archiveCityFilter, cities, "Все города");
+  populateArchiveFilterSelect(elements.archiveBrandFilter, brands, "Все марки");
+  populateArchiveFilterSelect(elements.archiveSellerFilter, sellers, "Все продавцы");
+}
+
 function renderKolesaAnalytics(listings) {
   const allKolesaListings = state.listings.filter(isKolesaListing);
   const filteredKolesaListings = listings.filter(isKolesaListing);
@@ -3138,10 +3177,15 @@ function renderKolesaAnalytics(listings) {
 
 function renderArchiveAnalytics() {
   const allArchived = state.archivedListings.filter(isKolesaListing);
-  const selectedCity = elements.citySelect.value;
-  const scopedArchived = selectedCity
-    ? allArchived.filter(item => normalizeAnalyticsText(item.city) === normalizeAnalyticsText(selectedCity))
-    : allArchived;
+  const selectedCity = elements.archiveCityFilter?.value || "";
+  const selectedBrand = elements.archiveBrandFilter?.value || "";
+  const selectedSeller = elements.archiveSellerFilter?.value || "";
+  const scopedArchived = allArchived.filter(item => {
+    const cityMatch = !selectedCity || normalizeAnalyticsText(item.city) === normalizeAnalyticsText(selectedCity);
+    const brandMatch = !selectedBrand || normalizeAnalyticsText(item.brand) === normalizeAnalyticsText(selectedBrand);
+    const sellerMatch = !selectedSeller || normalizeAnalyticsText(getSellerProfileLabel(item)) === normalizeAnalyticsText(selectedSeller);
+    return cityMatch && brandMatch && sellerMatch;
+  });
 
   const archivedTopModels = buildAnalyticsGroups(scopedArchived, getModelAnalyticsLabel, 10);
   const withPriceDrops = scopedArchived.filter(item => item.priceDropTotal > 0 || item.priceChangeCount > 0);
@@ -3154,6 +3198,7 @@ function renderArchiveAnalytics() {
   const avgDrop = withPriceDrops.length
     ? Math.round(withPriceDrops.reduce((sum, item) => sum + Number(item.priceDropTotal || 0), 0) / withPriceDrops.length)
     : 0;
+  const archiveFilterLabel = [selectedCity, selectedBrand, selectedSeller].filter(Boolean).join(" / ");
 
   const sellerGroups = new Map();
   scopedArchived.forEach(item => {
@@ -3213,9 +3258,9 @@ function renderArchiveAnalytics() {
   ];
 
   elements.archiveModelMeta.textContent = scopedArchived.length
-    ? `${formatInteger(scopedArchived.length)} архивных объявл.${selectedCity ? ` по городу ${selectedCity}` : ""}.`
-    : selectedCity
-      ? `По архиву города ${selectedCity} данных пока нет.`
+    ? `${formatInteger(scopedArchived.length)} архивных объявл.${archiveFilterLabel ? ` · ${archiveFilterLabel}` : ""}.`
+    : archiveFilterLabel
+      ? `По архиву фильтра ${archiveFilterLabel} данных пока нет.`
       : "Архив пока пуст.";
   elements.archiveSummaryMeta.textContent = scopedArchived.length
     ? "Это отдельный слой анализа старых и скрытых машин."
@@ -5126,6 +5171,7 @@ function render() {
   populateMarks();
   populateModels();
   populateAttributeFilters();
+  populateArchiveFilters();
   renderStats(listings);
   renderFavorites();
   renderHistory();
@@ -5174,6 +5220,9 @@ function resetFilters() {
   elements.optionSearchInput.value = "";
   elements.sortSelect.value = "score";
   elements.showInactiveToggle.checked = false;
+  if (elements.archiveCityFilter) elements.archiveCityFilter.value = "";
+  if (elements.archiveBrandFilter) elements.archiveBrandFilter.value = "";
+  if (elements.archiveSellerFilter) elements.archiveSellerFilter.value = "";
   state.showHiddenArchived = false;
   state.tableSort.key = "";
   state.tableSort.direction = "asc";
@@ -5451,6 +5500,13 @@ if (elements.toggleHiddenBtn) {
     render();
   });
 }
+[
+  elements.archiveCityFilter,
+  elements.archiveBrandFilter,
+  elements.archiveSellerFilter
+].filter(Boolean).forEach(element => {
+  element.addEventListener("change", render);
+});
 [
   elements.importCitySelect,
   elements.importMarkSelect,

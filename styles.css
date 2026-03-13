@@ -588,6 +588,22 @@ select:focus {
   background: linear-gradient(180deg, #fbfcfe 0%, #f7f9fc 100%);
 }
 
+.archive-filter-row {
+  margin-bottom: 10px;
+}
+
+.archive-filter-field {
+  margin-bottom: 10px;
+}
+
+.archive-filter-field--full {
+  margin-bottom: 14px;
+}
+
+.archive-filter-field span {
+  margin-bottom: 6px;
+}
+
 .analytics-item--summary .analytics-item-value {
   font-weight: 800;
 }
