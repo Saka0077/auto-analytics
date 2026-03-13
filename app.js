@@ -1479,16 +1479,12 @@ function isKolesaListing(item) {
 }
 
 function toProxiedImageUrl(imageUrl) {
-  return String(imageUrl || "").trim();
-}
-
-function toDetailImageUrl(imageUrl) {
   const source = String(imageUrl || "").trim();
   if (!source) {
     return "";
   }
 
-  return source.replace(/-\d+x\d+\.(?:jpg|jpeg|png|webp)$/i, "-full.jpg");
+  return source.replace(/-full\.(jpg|jpeg|png|webp)$/i, "-750x470.$1");
 }
 
 function getListingGalleryState(item) {
@@ -4672,7 +4668,7 @@ function renderModalGallery(item) {
 
   const currentIndex = Math.max(0, Math.min(state.modalGalleryIndex, images.length - 1));
   const currentImage = images[currentIndex];
-  const proxiedImage = toDetailImageUrl(toProxiedImageUrl(currentImage));
+  const proxiedImage = toProxiedImageUrl(currentImage);
   const hasMultiple = images.length > 1;
   const loadingNote = galleryState.status === "loading"
     ? `<span class="modal-gallery-note">Загружаем все фото...</span>`

@@ -1152,7 +1152,7 @@ function getPhotoIdentityKey(urlValue) {
 function getPhotoQualityScore(urlValue) {
   const normalized = String(urlValue || "").trim().toLowerCase();
   if (/-full\./.test(normalized)) {
-    return Number.MAX_SAFE_INTEGER;
+    return 1;
   }
   if (/-\d+x\d+\./.test(normalized)) {
     const match = normalized.match(/-(\d+)x(\d+)\./);
@@ -2476,11 +2476,6 @@ function extractGalleryImages($, advertData = {}) {
     }
 
     candidates.push(normalized);
-
-    const fullVariant = normalized.replace(/-\d+x\d+\.(?:jpg|jpeg|png|webp)$/i, "-full.jpg");
-    if (fullVariant !== normalized) {
-      candidates.push(fullVariant);
-    }
   };
 
   $(".gallery__main [data-href], .gallery__thumb-image[data-href], .js__gallery-thumb[data-href]").each((_, element) => {
