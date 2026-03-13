@@ -340,7 +340,6 @@ const IMPORT_TRANSMISSIONS = [
 
 const HISTORY_BATCH_LIMIT = 400;
 const SMART_SCOPE_THRESHOLD = 300;
-const TABLE_PAGE_SIZE = 50;
 const GALLERY_FETCH_TIMEOUT_MS = 4000;
 const SAFE_DETAIL_MODE = true;
 let lazyImageObserver = null;
@@ -4251,22 +4250,17 @@ function renderTopLists(listings) {
 function renderTable(listings) {
   renderTableSortHeaders();
   elements.resultsBody.innerHTML = "";
-  const totalPages = Math.max(1, Math.ceil(listings.length / TABLE_PAGE_SIZE));
-  state.currentPage = Math.min(Math.max(state.currentPage, 1), totalPages);
-  const startIndex = (state.currentPage - 1) * TABLE_PAGE_SIZE;
-  const pageItems = listings.slice(startIndex, startIndex + TABLE_PAGE_SIZE);
-  const endIndex = Math.min(listings.length, startIndex + pageItems.length);
   elements.resultsCount.textContent = listings.length
-    ? `${formatInteger(listings.length)} результатов · показано ${formatInteger(startIndex + 1)}-${formatInteger(endIndex)}`
+    ? `${formatInteger(listings.length)} результатов`
     : "0 результатов";
   if (elements.resultsPageMeta) {
-    elements.resultsPageMeta.textContent = `Страница ${formatInteger(state.currentPage)} из ${formatInteger(totalPages)}`;
+    elements.resultsPageMeta.textContent = "";
   }
   if (elements.resultsPrevBtn) {
-    elements.resultsPrevBtn.disabled = state.currentPage <= 1;
+    elements.resultsPrevBtn.hidden = true;
   }
   if (elements.resultsNextBtn) {
-    elements.resultsNextBtn.disabled = state.currentPage >= totalPages;
+    elements.resultsNextBtn.hidden = true;
   }
 
   if (!listings.length) {
@@ -4276,7 +4270,7 @@ function renderTable(listings) {
     return;
   }
 
-  pageItems.forEach(item => {
+  listings.forEach(item => {
     const row = document.createElement("tr");
     row.className = "is-clickable";
     row.dataset.id = item.id;
