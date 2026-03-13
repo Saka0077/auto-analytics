@@ -57,11 +57,22 @@ let translatorRequestId = 0;
 const translatorPending = new Map();
 const remoteRequestTimestamps = [];
 const remoteGuardState = {
-  pausedUntil: 0,
-  lastReason: "",
-  lastEventAt: "",
-  totalProtectionEvents: 0,
-  recentEvents: []
+  scopes: {
+    search: {
+      pausedUntil: 0,
+      lastReason: "",
+      lastEventAt: "",
+      totalProtectionEvents: 0,
+      recentEvents: []
+    },
+    detail: {
+      pausedUntil: 0,
+      lastReason: "",
+      lastEventAt: "",
+      totalProtectionEvents: 0,
+      recentEvents: []
+    }
+  }
 };
 
 const MIME_TYPES = {
@@ -259,41 +270,75 @@ function pruneRemoteRequestTimestamps() {
 }
 
 function pushRemoteGuardEvent(type, detail) {
+  pushRemoteGuardScopedEvent("search", type, detail);
+}
+
+function pushRemoteGuardScopedEvent(scope, type, detail) {
+  const targetScope = remoteGuardState.scopes[scope] ? scope : "search";
+  const bucket = remoteGuardState.scopes[targetScope];
   const entry = {
     type: String(type || "info"),
     detail: String(detail || "").trim(),
     at: new Date().toISOString()
   };
-  remoteGuardState.lastEventAt = entry.at;
-  remoteGuardState.recentEvents.unshift(entry);
-  remoteGuardState.recentEvents = remoteGuardState.recentEvents.slice(0, 8);
+  bucket.lastEventAt = entry.at;
+  bucket.recentEvents.unshift(entry);
+  bucket.recentEvents = bucket.recentEvents.slice(0, 8);
 }
 
-function getRemoteGuardStatus() {
+function getRemoteGuardStatus(scope = "all") {
   pruneRemoteRequestTimestamps();
-  const waitMs = Math.max(0, remoteGuardState.pausedUntil - nowMs());
+  if (scope !== "all") {
+    const bucket = remoteGuardState.scopes[scope] || remoteGuardState.scopes.search;
+    const waitMs = Math.max(0, bucket.pausedUntil - nowMs());
+    return {
+      scope,
+      paused: waitMs > 0,
+      pausedUntil: waitMs > 0 ? new Date(bucket.pausedUntil).toISOString() : "",
+      waitMs,
+      lastReason: bucket.lastReason,
+      requestsInWindow: remoteRequestTimestamps.length,
+      maxRequestsPerWindow: LOW_LOAD_SETTINGS.maxRequestsPerWindow,
+      requestWindowMs: LOW_LOAD_SETTINGS.requestWindowMs,
+      totalProtectionEvents: bucket.totalProtectionEvents,
+      recentEvents: cloneJson(bucket.recentEvents)
+    };
+  }
+
+  const search = getRemoteGuardStatus("search");
+  const detail = getRemoteGuardStatus("detail");
+  const waitMs = Math.max(search.waitMs, detail.waitMs);
   return {
     paused: waitMs > 0,
-    pausedUntil: waitMs > 0 ? new Date(remoteGuardState.pausedUntil).toISOString() : "",
+    pausedUntil: waitMs > 0 ? new Date(nowMs() + waitMs).toISOString() : "",
     waitMs,
-    lastReason: remoteGuardState.lastReason,
+    lastReason: detail.waitMs >= search.waitMs ? detail.lastReason : search.lastReason,
     requestsInWindow: remoteRequestTimestamps.length,
     maxRequestsPerWindow: LOW_LOAD_SETTINGS.maxRequestsPerWindow,
     requestWindowMs: LOW_LOAD_SETTINGS.requestWindowMs,
-    totalProtectionEvents: remoteGuardState.totalProtectionEvents,
-    recentEvents: cloneJson(remoteGuardState.recentEvents)
+    totalProtectionEvents: search.totalProtectionEvents + detail.totalProtectionEvents,
+    recentEvents: [...detail.recentEvents, ...search.recentEvents]
+      .sort((left, right) => String(right.at || "").localeCompare(String(left.at || "")))
+      .slice(0, 8),
+    scopes: {
+      search,
+      detail
+    }
   };
 }
 
-function noteRemoteProtection(reason, { status, url } = {}) {
+function noteRemoteProtection(reason, { status, url, scope = "search" } = {}) {
+  const targetScope = remoteGuardState.scopes[scope] ? scope : "search";
+  const bucket = remoteGuardState.scopes[targetScope];
   const normalizedReason = String(reason || "remote-protection").trim();
   const pauseMs = /captcha|robot|challenge/i.test(normalizedReason)
     ? LOW_LOAD_SETTINGS.captchaPauseMs
     : LOW_LOAD_SETTINGS.protectionPauseMs;
-  remoteGuardState.pausedUntil = Math.max(remoteGuardState.pausedUntil, nowMs() + pauseMs);
-  remoteGuardState.lastReason = normalizedReason;
-  remoteGuardState.totalProtectionEvents += 1;
-  pushRemoteGuardEvent(
+  bucket.pausedUntil = Math.max(bucket.pausedUntil, nowMs() + pauseMs);
+  bucket.lastReason = normalizedReason;
+  bucket.totalProtectionEvents += 1;
+  pushRemoteGuardScopedEvent(
+    targetScope,
     "protection",
     `${normalizedReason}${status ? ` [${status}]` : ""}${url ? ` ${url}` : ""}`
   );
@@ -329,19 +374,21 @@ function describeFetchBlock(reason, status) {
   return "Kolesa ограничила ответы. Импорт поставлен на паузу.";
 }
 
-function createKolesaPausedError(waitMs) {
-  const error = new Error("kolesa-paused");
+function createKolesaPausedError(waitMs, scope = "search") {
+  const roundedWaitSec = Math.max(1, Math.ceil((Number(waitMs) || 0) / 1000));
+  const error = new Error(`Kolesa временно поставила ${scope === "detail" ? "проверку карточек" : "поиск"} на паузу. Подожди ${roundedWaitSec} сек и попробуй снова.`);
   error.code = "kolesa-paused";
   error.waitMs = Math.max(0, Number(waitMs) || 0);
+  error.scope = scope;
   return error;
 }
 
-async function waitForKolesaRateLimit({ jobId = "", context = "запрос", failFastOnPause = false } = {}) {
+async function waitForKolesaRateLimit({ jobId = "", context = "запрос", failFastOnPause = true, guardScope = "search" } = {}) {
   while (true) {
-    const guard = getRemoteGuardStatus();
+    const guard = getRemoteGuardStatus(guardScope);
     if (guard.paused) {
-      if (failFastOnPause) {
-        throw createKolesaPausedError(guard.waitMs);
+      if (failFastOnPause || jobId) {
+        throw createKolesaPausedError(guard.waitMs, guardScope);
       }
       if (jobId) {
         updateJob(jobId, {
@@ -368,8 +415,8 @@ async function waitForKolesaRateLimit({ jobId = "", context = "запрос", fa
   }
 }
 
-async function fetchKolesaHtml(url, { headers = {}, jobId = "", context = "запрос", failFastOnPause = false } = {}) {
-  await waitForKolesaRateLimit({ jobId, context, failFastOnPause });
+async function fetchKolesaHtml(url, { headers = {}, jobId = "", context = "запрос", failFastOnPause = true, guardScope = "search" } = {}) {
+  await waitForKolesaRateLimit({ jobId, context, failFastOnPause, guardScope });
 
   const response = await fetch(url, {
     headers: {
@@ -393,7 +440,7 @@ async function fetchKolesaHtml(url, { headers = {}, jobId = "", context = "за�
     const reason = looksLikeProtectionPage(text)
       ? "captcha-or-challenge"
       : `http-${response.status}`;
-    noteRemoteProtection(reason, { status: response.status, url });
+    noteRemoteProtection(reason, { status: response.status, url, scope: guardScope });
     throw new Error(describeFetchBlock(reason, response.status));
   }
 
@@ -487,11 +534,12 @@ async function ensureJobWorker() {
       job.message = "Готово";
     } catch (error) {
       const detail = String(error.message || error);
-      job.status = "failed";
+      const pausedByRemote = error && error.code === "kolesa-paused";
+      job.status = pausedByRemote ? "paused" : "failed";
       job.finished_at = new Date().toISOString();
       job.error = detail;
       job.message = detail;
-      pushRemoteGuardEvent("job-failed", `${job.type}: ${detail}`);
+      pushRemoteGuardEvent(pausedByRemote ? "job-paused" : "job-failed", `${job.type}: ${detail}`);
     } finally {
       activeJobId = "";
     }
@@ -2481,7 +2529,8 @@ async function fetchKolesaListingSnapshot(advertUrl, { force = false, jobId = ""
   const checkedAt = new Date().toISOString();
   const remote = await fetchKolesaHtml(parsedUrl.toString(), {
     jobId,
-    context: "карточка объявления"
+    context: "карточка объявления",
+    guardScope: "detail"
   });
 
   if (remote.status === 404) {

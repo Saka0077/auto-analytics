@@ -1873,6 +1873,10 @@ async function waitForServerJob(jobId, { onProgress } = {}) {
       return job;
     }
 
+    if (job.status === "paused") {
+      throw new Error(job.error || job.message || "Задача поставлена на паузу.");
+    }
+
     if (job.status === "failed") {
       throw new Error(job.error || "Задача завершилась с ошибкой.");
     }
