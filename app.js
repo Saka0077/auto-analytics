@@ -1891,6 +1891,86 @@ function renderListingBadges(item) {
   return badges.join("");
 }
 
+function getDealSignalItems(item) {
+  const signals = [];
+
+  if (Number.isFinite(item.marketDifferencePercent)) {
+    if (item.marketDifferencePercent >= 8) {
+      signals.push({
+        label: `Ниже рынка ${formatPercent(item.marketDifferencePercent)}`,
+        tone: "good"
+      });
+    } else if (item.marketDifferencePercent <= -8) {
+      signals.push({
+        label: `Выше рынка ${formatPercent(Math.abs(item.marketDifferencePercent))}`,
+        tone: "bad"
+      });
+    }
+  } else if (item.marketConfidence === "insufficient") {
+    signals.push({
+      label: "Мало рынка",
+      tone: "neutral"
+    });
+  }
+
+  if (Number(item.priceChangeCount || 0) > 0 && Number(item.priceDropTotal || 0) > 0) {
+    signals.push({
+      label: `Цена падала ${formatPrice(item.priceDropTotal)}`,
+      tone: "neutral"
+    });
+  }
+
+  if (Number(item.daysOnMarket || 0) >= 21) {
+    signals.push({
+      label: `Висит ${formatDaysOnMarket(item.daysOnMarket).toLowerCase()}`,
+      tone: "warn"
+    });
+  } else if (Number(item.daysOnMarket || 0) > 0) {
+    signals.push({
+      label: `В продаже ${formatDaysOnMarket(item.daysOnMarket).toLowerCase()}`,
+      tone: "neutral"
+    });
+  }
+
+  if (hasTrustedAutopartsProfile(item)) {
+    const maintenanceScore = Number(item.maintenanceScore || 0);
+    if (maintenanceScore <= 0.42) {
+      signals.push({
+        label: "Дорогой ремонт",
+        tone: "bad"
+      });
+    } else if (maintenanceScore >= 0.72) {
+      signals.push({
+        label: "Дешёвое обслуживание",
+        tone: "good"
+      });
+    }
+  }
+
+  const sellerLabel = getSellerLabel(item);
+  if (sellerLabel && sellerLabel !== "-" && sellerLabel !== "Продавец") {
+    signals.push({
+      label: sellerLabel,
+      tone: sellerLabel === "Дилер" ? "neutral" : "warn"
+    });
+  }
+
+  return signals.slice(0, 4);
+}
+
+function renderDealSignals(item) {
+  const signals = getDealSignalItems(item);
+  if (!signals.length) {
+    return `<div class="deal-signal-row"><span class="deal-signal deal-signal--neutral">Без сильных сигналов</span></div>`;
+  }
+
+  return `
+    <div class="deal-signal-row">
+      ${signals.map(signal => `<span class="deal-signal deal-signal--${escapeHtml(signal.tone)}">${escapeHtml(signal.label)}</span>`).join("")}
+    </div>
+  `;
+}
+
 function hasDetailEnrichment(item) {
   const detailFields = [
     item.publicationDate,
@@ -3769,6 +3849,7 @@ function renderTable(listings) {
         <strong>${escapeHtml(item.title)}</strong><br>
         <span class="muted">${escapeHtml([item.city, item.brand, item.model].filter(Boolean).join(" · "))}</span>
         <div class="listing-subline">${renderListingBadges(item)}<span class="muted">Проверено: ${escapeHtml(formatDateTime(item.lastCheckedAt))}</span></div>
+        ${renderDealSignals(item)}
       </td>
       <td>${formatPrice(item.price)}</td>
       <td>${item.year ?? "-"}</td>
