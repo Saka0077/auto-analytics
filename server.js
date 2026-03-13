@@ -2457,6 +2457,23 @@ function extractAdvertIdFromUrl(url) {
   return match ? String(match[1]) : "";
 }
 
+function listingMatchesTarget(item, { targetUrl = "", advertId = "" } = {}) {
+  const normalizedTargetUrl = String(targetUrl || "").trim();
+  const normalizedAdvertId = String(advertId || extractAdvertIdFromUrl(normalizedTargetUrl) || "").trim();
+  const itemUrl = String(item?.url || "").trim();
+  const itemAdvertId = String(item?.advert_id || extractAdvertIdFromUrl(itemUrl) || "").trim();
+
+  if (normalizedAdvertId && itemAdvertId && normalizedAdvertId === itemAdvertId) {
+    return true;
+  }
+
+  if (!normalizedTargetUrl) {
+    return false;
+  }
+
+  return itemUrl === normalizedTargetUrl;
+}
+
 function extractCreditTerms($) {
   const amounts = [];
   $('[data-test="credit-wrap"] .a-credit__amount').each((_, element) => {
@@ -3875,13 +3892,14 @@ const server = http.createServer(async (request, response) => {
     try {
       const payload = await parseRequestBody(request);
       const targetUrl = String(payload.url || "").trim();
-      if (!targetUrl) {
+      const targetAdvertId = String(payload.advertId || extractAdvertIdFromUrl(targetUrl) || "").trim();
+      if (!targetUrl && !targetAdvertId) {
         sendJson(response, 400, { error: "Нужен url объявления." });
         return;
       }
 
       const listings = readListings();
-      const current = listings.find(item => item.url === targetUrl);
+      const current = listings.find(item => listingMatchesTarget(item, { targetUrl, advertId: targetAdvertId }));
       if (!current) {
         sendJson(response, 404, { error: "Объявление не найдено в текущем списке." });
         return;
@@ -3896,7 +3914,7 @@ const server = http.createServer(async (request, response) => {
       const nextStatus = normalizeActualityStatus(snapshot.actuality_status);
       const checkedAt = snapshot.last_checked_at || new Date().toISOString();
       const updatedListings = listings.map(item => (
-        item.url !== targetUrl
+        !listingMatchesTarget(item, { targetUrl, advertId: targetAdvertId })
           ? item
           : applyKolesaSnapshotToListing(item, snapshot, { checkedAt, nextStatus })
       ));
@@ -3904,7 +3922,7 @@ const server = http.createServer(async (request, response) => {
       saveListingsWithSnapshots(updatedListings, { capturedAt: checkedAt });
       const refreshedListings = readListings();
       const refreshedSnapshots = readListingSnapshots();
-      const updated = enrichListingsForClient(refreshedListings, refreshedSnapshots).find(item => item.url === targetUrl);
+      const updated = enrichListingsForClient(refreshedListings, refreshedSnapshots).find(item => listingMatchesTarget(item, { targetUrl, advertId: targetAdvertId }));
       sendJson(response, 200, { ok: true, item: updated });
     } catch (error) {
       const message =
@@ -3920,7 +3938,7 @@ const server = http.createServer(async (request, response) => {
     try {
       const payload = await parseRequestBody(request);
       const targetUrl = String(payload.url || "").trim();
-      const advertId = String(payload.advertId || "").trim();
+      const advertId = String(payload.advertId || extractAdvertIdFromUrl(targetUrl) || "").trim();
       const vin = normalizeVin(payload.vin);
       const vinNote = String(payload.vinNote || "").trim().slice(0, 1000);
 
@@ -3937,7 +3955,7 @@ const server = http.createServer(async (request, response) => {
       const listings = readListings();
       let updated = null;
       const updatedListings = listings.map(item => {
-        const matches = (targetUrl && item.url === targetUrl) || (advertId && String(item.advert_id || "") === advertId);
+        const matches = listingMatchesTarget(item, { targetUrl, advertId });
         if (!matches) {
           return item;
         }
