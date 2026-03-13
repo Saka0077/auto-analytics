@@ -105,6 +105,212 @@ const IMPORT_MARKS = [
   { value: "cadillac", label: "Cadillac" }
 ];
 
+const IMPORT_MODELS_BY_MARK = {
+  audi: [
+    { value: "a6", label: "A6" },
+    { value: "a4", label: "A4" },
+    { value: "q5", label: "Q5" },
+    { value: "q7", label: "Q7" }
+  ],
+  bmw: [
+    { value: "5-series", label: "5 Series" },
+    { value: "3-series", label: "3 Series" },
+    { value: "x5", label: "X5" },
+    { value: "x6", label: "X6" }
+  ],
+  chevrolet: [
+    { value: "cobalt", label: "Cobalt" },
+    { value: "cruze", label: "Cruze" },
+    { value: "malibu", label: "Malibu" },
+    { value: "onix", label: "Onix" },
+    { value: "captiva", label: "Captiva" }
+  ],
+  daewoo: [
+    { value: "nexia", label: "Nexia" },
+    { value: "gentra", label: "Gentra" },
+    { value: "matiz", label: "Matiz" }
+  ],
+  honda: [
+    { value: "accord", label: "Accord" },
+    { value: "civic", label: "Civic" },
+    { value: "cr-v", label: "CR-V" }
+  ],
+  hyundai: [
+    { value: "accent", label: "Accent" },
+    { value: "elantra", label: "Elantra" },
+    { value: "sonata", label: "Sonata" },
+    { value: "tucson", label: "Tucson" },
+    { value: "santa-fe", label: "Santa Fe" }
+  ],
+  infiniti: [
+    { value: "fx35", label: "FX35" },
+    { value: "qx56", label: "QX56" },
+    { value: "qx80", label: "QX80" }
+  ],
+  kia: [
+    { value: "rio", label: "Rio" },
+    { value: "k5", label: "K5" },
+    { value: "sportage", label: "Sportage" },
+    { value: "cerato", label: "Cerato" },
+    { value: "sorento", label: "Sorento" }
+  ],
+  lexus: [
+    { value: "rx-350", label: "RX 350" },
+    { value: "lx-570", label: "LX 570" },
+    { value: "es-250", label: "ES 250" },
+    { value: "gx-460", label: "GX 460" }
+  ],
+  mazda: [
+    { value: "6", label: "Mazda 6" },
+    { value: "cx-5", label: "CX-5" },
+    { value: "cx-7", label: "CX-7" }
+  ],
+  "mercedes-benz": [
+    { value: "e-class", label: "E-Class" },
+    { value: "s-class", label: "S-Class" },
+    { value: "c-class", label: "C-Class" },
+    { value: "gle", label: "GLE" }
+  ],
+  mitsubishi: [
+    { value: "outlander", label: "Outlander" },
+    { value: "pajero", label: "Pajero" },
+    { value: "montero-sport", label: "Montero Sport" }
+  ],
+  nissan: [
+    { value: "almera", label: "Almera" },
+    { value: "teana", label: "Teana" },
+    { value: "patrol", label: "Patrol" },
+    { value: "x-trail", label: "X-Trail" }
+  ],
+  opel: [
+    { value: "vectra", label: "Vectra" },
+    { value: "omega", label: "Omega" },
+    { value: "astra", label: "Astra" }
+  ],
+  renault: [
+    { value: "logan", label: "Logan" },
+    { value: "duster", label: "Duster" },
+    { value: "sandero", label: "Sandero" }
+  ],
+  subaru: [
+    { value: "legacy", label: "Legacy" },
+    { value: "outback", label: "Outback" },
+    { value: "forester", label: "Forester" }
+  ],
+  toyota: [
+    { value: "camry", label: "Camry" },
+    { value: "corolla", label: "Corolla" },
+    { value: "land-cruiser-prado", label: "Land Cruiser Prado" },
+    { value: "land-cruiser", label: "Land Cruiser" },
+    { value: "rav4", label: "RAV4" }
+  ],
+  volkswagen: [
+    { value: "polo", label: "Polo" },
+    { value: "passat", label: "Passat" },
+    { value: "caddy", label: "Caddy" },
+    { value: "touareg", label: "Touareg" }
+  ],
+  vaz: [
+    { value: "2114", label: "2114" },
+    { value: "priora", label: "Priora" },
+    { value: "granta", label: "Granta" },
+    { value: "vesta", label: "Vesta" },
+    { value: "niva", label: "Niva" }
+  ],
+  gaz: [
+    { value: "gazel", label: "Газель" },
+    { value: "sobol", label: "Соболь" }
+  ],
+  skoda: [
+    { value: "octavia", label: "Octavia" },
+    { value: "superb", label: "Superb" },
+    { value: "kodiaq", label: "Kodiaq" }
+  ],
+  ford: [
+    { value: "focus", label: "Focus" },
+    { value: "mondeo", label: "Mondeo" },
+    { value: "explorer", label: "Explorer" }
+  ],
+  uaz: [
+    { value: "patriot", label: "Patriot" },
+    { value: "hunter", label: "Hunter" }
+  ],
+  changan: [
+    { value: "cs55-plus", label: "CS55 Plus" },
+    { value: "uni-k", label: "UNI-K" },
+    { value: "alsvin", label: "Alsvin" }
+  ],
+  zaz: [
+    { value: "chance", label: "Chance" },
+    { value: "sens", label: "Sens" }
+  ],
+  chery: [
+    { value: "tiggo-7-pro", label: "Tiggo 7 Pro" },
+    { value: "tiggo-8-pro", label: "Tiggo 8 Pro" },
+    { value: "tiggo-2", label: "Tiggo 2" }
+  ],
+  geely: [
+    { value: "coolray", label: "Coolray" },
+    { value: "atlas", label: "Atlas" },
+    { value: "emgrand", label: "Emgrand" }
+  ],
+  ravon: [
+    { value: "nexia-r3", label: "Nexia R3" },
+    { value: "r4", label: "R4" },
+    { value: "r2", label: "R2" }
+  ],
+  suzuki: [
+    { value: "grand-vitara", label: "Grand Vitara" },
+    { value: "sx4", label: "SX4" },
+    { value: "jimny", label: "Jimny" }
+  ],
+  "ssang-yong": [
+    { value: "kyron", label: "Kyron" },
+    { value: "actyon", label: "Actyon" }
+  ],
+  jeep: [
+    { value: "grand-cherokee", label: "Grand Cherokee" },
+    { value: "cherokee", label: "Cherokee" }
+  ],
+  exeed: [
+    { value: "txl", label: "TXL" },
+    { value: "vx", label: "VX" }
+  ],
+  byd: [
+    { value: "song-plus", label: "Song Plus" },
+    { value: "han", label: "Han" },
+    { value: "destroyer-05", label: "Destroyer 05" }
+  ],
+  gac: [
+    { value: "gs8", label: "GS8" },
+    { value: "empow", label: "Empow" }
+  ],
+  dodge: [
+    { value: "charger", label: "Charger" },
+    { value: "durango", label: "Durango" }
+  ],
+  faw: [
+    { value: "bestune-b70", label: "Bestune B70" },
+    { value: "bestune-t77", label: "Bestune T77" }
+  ],
+  jetour: [
+    { value: "x70-plus", label: "X70 Plus" },
+    { value: "dashing", label: "Dashing" }
+  ],
+  "land-rover": [
+    { value: "range-rover-sport", label: "Range Rover Sport" },
+    { value: "discovery", label: "Discovery" }
+  ],
+  saab: [
+    { value: "9-5", label: "9-5" },
+    { value: "9-3", label: "9-3" }
+  ],
+  cadillac: [
+    { value: "escalade", label: "Escalade" },
+    { value: "cts", label: "CTS" }
+  ]
+};
+
 const IMPORT_BODIES = [
   { value: "", label: "Любой кузов" },
   { value: "11", label: "седан" },
@@ -156,6 +362,8 @@ const state = {
     status: "idle",
     url: "",
     availableCount: null,
+    totalCount: null,
+    exactTotalKnown: false,
     hasMore: false,
     note: ""
   }
@@ -203,6 +411,7 @@ const elements = {
   showInactiveToggle: document.getElementById("show-inactive-toggle"),
   importCitySelect: document.getElementById("import-city-select"),
   importMarkSelect: document.getElementById("import-mark-select"),
+  importModelSelect: document.getElementById("import-model-select"),
   importBodySelect: document.getElementById("import-body-select"),
   importTransmissionSelect: document.getElementById("import-transmission-select"),
   importCustomSelect: document.getElementById("import-custom-select"),
@@ -1574,6 +1783,7 @@ function setImportBusy(isBusy) {
   elements.kolesaUrlInput.disabled = isBusy;
   elements.importCitySelect.disabled = isBusy;
   elements.importMarkSelect.disabled = isBusy;
+  elements.importModelSelect.disabled = isBusy || !elements.importMarkSelect.value;
   elements.importBodySelect.disabled = isBusy;
   elements.importTransmissionSelect.disabled = isBusy;
   elements.importCustomSelect.disabled = isBusy;
@@ -1624,11 +1834,22 @@ function renderImportPreview() {
 
   if (preview.status === "ready" && Number.isFinite(preview.availableCount)) {
     elements.importPreviewBox?.classList.add("is-ready");
-    const totalText = preview.hasMore ? `${formatInteger(preview.availableCount)}+ авто` : `${formatInteger(preview.availableCount)} авто`;
+    const displayCount = preview.exactTotalKnown && Number.isFinite(preview.totalCount)
+      ? preview.totalCount
+      : preview.availableCount;
+    const totalText = preview.exactTotalKnown
+      ? `${formatInteger(displayCount)} авто`
+      : preview.hasMore
+        ? `${formatInteger(preview.availableCount)}+ авто`
+        : `${formatInteger(preview.availableCount)} авто`;
     elements.importPreviewStatus.textContent = totalText;
-    elements.importPreviewNote.textContent = preview.hasMore
-      ? `По текущему поиску найдено больше ${formatInteger(preview.availableCount)} объявлений. Выбери, сколько импортировать сейчас.`
-      : `По текущему поиску найдено ${formatInteger(preview.availableCount)} объявлений. Теперь выбери, сколько импортировать.`;
+    elements.importPreviewNote.textContent = preview.exactTotalKnown
+      ? preview.totalCount > 1000
+        ? `По текущему поиску найдено ${formatInteger(preview.totalCount)} объявлений. За один раз импортируем до 1000, чтобы не грузить Kolesa.`
+        : `По текущему поиску найдено ${formatInteger(preview.totalCount)} объявлений. Теперь выбери, сколько импортировать.`
+      : preview.hasMore
+        ? `По текущему поиску найдено больше ${formatInteger(preview.availableCount)} объявлений. Выбери, сколько импортировать сейчас.`
+        : `По текущему поиску найдено ${formatInteger(preview.availableCount)} объявлений. Теперь выбери, сколько импортировать.`;
     return;
   }
 
@@ -1637,13 +1858,15 @@ function renderImportPreview() {
 }
 
 function markImportPreviewDirty() {
-  state.importPreview = {
-    status: "idle",
-    url: elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters(),
-    availableCount: null,
-    hasMore: false,
-    note: ""
-  };
+    state.importPreview = {
+      status: "idle",
+      url: elements.kolesaUrlInput.value.trim() || buildImportUrlFromFilters(),
+      availableCount: null,
+      totalCount: null,
+      exactTotalKnown: false,
+      hasMore: false,
+      note: ""
+    };
   elements.importLimitSelect.max = "1000";
   renderImportPreview();
 }
@@ -1655,6 +1878,8 @@ async function loadImportPreview(url) {
       status: "idle",
       url: "",
       availableCount: null,
+      totalCount: null,
+      exactTotalKnown: false,
       hasMore: false,
       note: ""
     };
@@ -1666,6 +1891,8 @@ async function loadImportPreview(url) {
     status: "loading",
     url: trimmedUrl,
     availableCount: null,
+    totalCount: null,
+    exactTotalKnown: false,
     hasMore: false,
     note: ""
   };
@@ -1692,6 +1919,8 @@ async function loadImportPreview(url) {
       status: "ready",
       url: trimmedUrl,
       availableCount: Number(payload.availableCount) || 0,
+      totalCount: Number.isFinite(Number(payload.totalCount)) ? Number(payload.totalCount) : null,
+      exactTotalKnown: Boolean(payload.exactTotalKnown),
       hasMore: Boolean(payload.hasMore),
       note: ""
     };
@@ -1716,6 +1945,8 @@ async function loadImportPreview(url) {
       status: "error",
       url: trimmedUrl,
       availableCount: null,
+      totalCount: null,
+      exactTotalKnown: false,
       hasMore: false,
       note: error.message || "Не удалось получить количество объявлений."
     };
@@ -1738,8 +1969,17 @@ function fillSelectOptions(element, options, selectedValue = "") {
 function populateImportFilters() {
   fillSelectOptions(elements.importCitySelect, IMPORT_CITIES, "");
   fillSelectOptions(elements.importMarkSelect, IMPORT_MARKS, "");
+  syncImportModelOptions("");
   fillSelectOptions(elements.importBodySelect, IMPORT_BODIES, "");
   fillSelectOptions(elements.importTransmissionSelect, IMPORT_TRANSMISSIONS, "");
+}
+
+function syncImportModelOptions(selectedValue = "") {
+  const mark = elements.importMarkSelect.value;
+  const models = IMPORT_MODELS_BY_MARK[mark] || [];
+  const options = [{ value: "", label: "Все модели" }, ...models];
+  fillSelectOptions(elements.importModelSelect, options, models.some(item => item.value === selectedValue) ? selectedValue : "");
+  elements.importModelSelect.disabled = !mark;
 }
 
 function syncImportUrlPreview() {
@@ -1766,6 +2006,7 @@ function requestImportPreview() {
 function buildImportUrlFromFilters() {
   const city = elements.importCitySelect.value;
   const mark = elements.importMarkSelect.value;
+  const model = elements.importModelSelect.value;
   const body = elements.importBodySelect.value;
   const transmission = elements.importTransmissionSelect.value;
   const custom = elements.importCustomSelect.value;
@@ -1779,6 +2020,9 @@ function buildImportUrlFromFilters() {
   }
   if (mark) {
     url += `${mark}/`;
+  }
+  if (model) {
+    url += `${model}/`;
   }
 
   const params = new URLSearchParams();
@@ -4500,6 +4744,8 @@ async function importFromKolesaUrl(url, limit = getImportLimit()) {
         || state.importPreview.availableCount
         || 0
       ),
+      totalCount: state.importPreview.totalCount,
+      exactTotalKnown: state.importPreview.exactTotalKnown,
       hasMore: state.importPreview.hasMore && Number(completedJob.result?.count || 0) >= 1000,
       note: ""
     };
@@ -4602,6 +4848,7 @@ elements.importKolesaBtn.addEventListener("click", importFromKolesa);
 elements.importPreviewBtn.addEventListener("click", requestImportPreview);
 elements.importAktauBtn.addEventListener("click", () => {
   elements.importCitySelect.value = "aktau";
+  elements.importModelSelect.value = "";
   elements.kolesaUrlInput.dataset.manual = "false";
   syncImportUrlPreview();
   markImportPreviewDirty();
@@ -4610,6 +4857,7 @@ elements.importAktauBtn.addEventListener("click", () => {
 [
   elements.importCitySelect,
   elements.importMarkSelect,
+  elements.importModelSelect,
   elements.importBodySelect,
   elements.importTransmissionSelect,
   elements.importCustomSelect,
@@ -4619,11 +4867,17 @@ elements.importAktauBtn.addEventListener("click", () => {
 ].forEach(element => {
   element.addEventListener("input", () => {
     elements.kolesaUrlInput.dataset.manual = "false";
+    if (element === elements.importMarkSelect) {
+      syncImportModelOptions("");
+    }
     syncImportUrlPreview();
     markImportPreviewDirty();
   });
   element.addEventListener("change", () => {
     elements.kolesaUrlInput.dataset.manual = "false";
+    if (element === elements.importMarkSelect) {
+      syncImportModelOptions("");
+    }
     syncImportUrlPreview();
     markImportPreviewDirty();
   });

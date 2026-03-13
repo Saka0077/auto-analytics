@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { spawn } = require("child_process");
 const { URL } = require("url");
 const cheerio = require("cheerio");
 
@@ -15,6 +16,8 @@ const AUTH_FILE = path.join(DATA_DIR, "auth-store.json");
 const AUTOPARTS_FILE = path.join(CATALOG_DIR, "autoparts-catalog.json");
 const AUTOPARTS_ALIASES_FILE = path.join(CATALOG_DIR, "autoparts-aliases.json");
 const SAMPLE_FILE = path.join(ROOT, "sample_listings.json");
+const TRANSLATOR_PYTHON = path.join(ROOT, ".venv-translate", "Scripts", "python.exe");
+const TRANSLATOR_SCRIPT = path.join(ROOT, "scripts", "offline_translate_worker.py");
 const STALE_AFTER_HOURS = Number(process.env.LISTING_STALE_AFTER_HOURS) > 0
   ? Number(process.env.LISTING_STALE_AFTER_HOURS)
   : 72;
@@ -30,6 +33,11 @@ const LOW_LOAD_SETTINGS = {
   pageCacheTtlMs: 10 * 60 * 1000,
   previewCacheTtlMs: 5 * 60 * 1000,
   previewProbeCap: 120,
+  requestWindowMs: 60 * 1000,
+  maxRequestsPerWindow: 18,
+  protectionPauseMs: 20 * 60 * 1000,
+  captchaPauseMs: 45 * 60 * 1000,
+  guardPollIntervalMs: 1500,
   enrichConcurrency: 1,
   collectConcurrency: 1,
   collectMaxConcurrency: 2,
@@ -42,6 +50,18 @@ const jobStore = new Map();
 const jobQueue = [];
 let activeJobId = "";
 let jobWorkerRunning = false;
+let translatorWorker = null;
+let translatorWorkerBuffer = "";
+let translatorRequestId = 0;
+const translatorPending = new Map();
+const remoteRequestTimestamps = [];
+const remoteGuardState = {
+  pausedUntil: 0,
+  lastReason: "",
+  lastEventAt: "",
+  totalProtectionEvents: 0,
+  recentEvents: []
+};
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -68,6 +88,103 @@ function sendJson(response, statusCode, payload) {
 function sendText(response, statusCode, text) {
   response.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
   response.end(text);
+}
+
+function runOfflineTranslator(command, payload) {
+  return new Promise((resolve, reject) => {
+    if (!fs.existsSync(TRANSLATOR_PYTHON)) {
+      reject(new Error("Python environment for translator is missing."));
+      return;
+    }
+
+    if (!fs.existsSync(TRANSLATOR_SCRIPT)) {
+      reject(new Error("Translator script is missing."));
+      return;
+    }
+
+    ensureTranslatorWorker();
+    const requestId = String(++translatorRequestId);
+    translatorPending.set(requestId, { resolve, reject });
+    translatorWorker.stdin.write(`${JSON.stringify({ id: requestId, command, ...(payload || {}) })}\n`);
+  });
+}
+
+function ensureTranslatorWorker() {
+  if (translatorWorker && !translatorWorker.killed) {
+    return translatorWorker;
+  }
+
+  translatorWorkerBuffer = "";
+  translatorWorker = spawn(TRANSLATOR_PYTHON, [TRANSLATOR_SCRIPT], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: "utf-8",
+      ARGOS_PACKAGES_DIR: path.join(ROOT, "offline-translator-data", "packages")
+    },
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+
+  translatorWorker.stdout.on("data", chunk => {
+    translatorWorkerBuffer += chunk.toString("utf-8");
+    let newlineIndex = translatorWorkerBuffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = translatorWorkerBuffer.slice(0, newlineIndex).trim();
+      translatorWorkerBuffer = translatorWorkerBuffer.slice(newlineIndex + 1);
+      if (line) {
+        handleTranslatorWorkerLine(line);
+      }
+      newlineIndex = translatorWorkerBuffer.indexOf("\n");
+    }
+  });
+
+  translatorWorker.stderr.on("data", chunk => {
+    const message = chunk.toString("utf-8").trim();
+    if (message) {
+      console.error("[translator]", message);
+    }
+  });
+
+  translatorWorker.on("close", () => {
+    const error = new Error("Offline translator worker stopped.");
+    for (const { reject } of translatorPending.values()) {
+      reject(error);
+    }
+    translatorPending.clear();
+    translatorWorker = null;
+    translatorWorkerBuffer = "";
+  });
+
+  translatorWorker.on("error", error => {
+    console.error("[translator]", error);
+  });
+
+  return translatorWorker;
+}
+
+function handleTranslatorWorkerLine(line) {
+  let message = null;
+  try {
+    message = JSON.parse(line);
+  } catch (error) {
+    console.error("[translator] Invalid JSON:", line);
+    return;
+  }
+
+  const entry = translatorPending.get(String(message.id || ""));
+  if (!entry) {
+    return;
+  }
+
+  translatorPending.delete(String(message.id || ""));
+  if (!message.ok) {
+    entry.reject(new Error(message.error || "Offline translator failed."));
+    return;
+  }
+
+  delete message.id;
+  delete message.ok;
+  entry.resolve(message);
 }
 
 function ensureDataDir() {
@@ -131,6 +248,154 @@ function writeCache(map, key, value, ttlMs) {
     value: cloneJson(value),
     expiresAt: nowMs() + Math.max(1000, Number(ttlMs) || 1000)
   });
+}
+
+function pruneRemoteRequestTimestamps() {
+  const threshold = nowMs() - LOW_LOAD_SETTINGS.requestWindowMs;
+  while (remoteRequestTimestamps.length && remoteRequestTimestamps[0] <= threshold) {
+    remoteRequestTimestamps.shift();
+  }
+}
+
+function pushRemoteGuardEvent(type, detail) {
+  const entry = {
+    type: String(type || "info"),
+    detail: String(detail || "").trim(),
+    at: new Date().toISOString()
+  };
+  remoteGuardState.lastEventAt = entry.at;
+  remoteGuardState.recentEvents.unshift(entry);
+  remoteGuardState.recentEvents = remoteGuardState.recentEvents.slice(0, 8);
+}
+
+function getRemoteGuardStatus() {
+  pruneRemoteRequestTimestamps();
+  const waitMs = Math.max(0, remoteGuardState.pausedUntil - nowMs());
+  return {
+    paused: waitMs > 0,
+    pausedUntil: waitMs > 0 ? new Date(remoteGuardState.pausedUntil).toISOString() : "",
+    waitMs,
+    lastReason: remoteGuardState.lastReason,
+    requestsInWindow: remoteRequestTimestamps.length,
+    maxRequestsPerWindow: LOW_LOAD_SETTINGS.maxRequestsPerWindow,
+    requestWindowMs: LOW_LOAD_SETTINGS.requestWindowMs,
+    totalProtectionEvents: remoteGuardState.totalProtectionEvents,
+    recentEvents: cloneJson(remoteGuardState.recentEvents)
+  };
+}
+
+function noteRemoteProtection(reason, { status, url } = {}) {
+  const normalizedReason = String(reason || "remote-protection").trim();
+  const pauseMs = /captcha|robot|challenge/i.test(normalizedReason)
+    ? LOW_LOAD_SETTINGS.captchaPauseMs
+    : LOW_LOAD_SETTINGS.protectionPauseMs;
+  remoteGuardState.pausedUntil = Math.max(remoteGuardState.pausedUntil, nowMs() + pauseMs);
+  remoteGuardState.lastReason = normalizedReason;
+  remoteGuardState.totalProtectionEvents += 1;
+  pushRemoteGuardEvent(
+    "protection",
+    `${normalizedReason}${status ? ` [${status}]` : ""}${url ? ` ${url}` : ""}`
+  );
+}
+
+function looksLikeProtectionPage(text) {
+  const normalized = String(text || "").toLowerCase();
+  return [
+    "captcha",
+    "cloudflare",
+    "access denied",
+    "too many requests",
+    "too many attempts",
+    "подтвердите, что вы не робот",
+    "подтвердите что вы не робот",
+    "слишком много запросов",
+    "временно ограничен",
+    "security check",
+    "ddos protection"
+  ].some(fragment => normalized.includes(fragment));
+}
+
+function describeFetchBlock(reason, status) {
+  if (/captcha|robot|challenge/i.test(reason)) {
+    return "Kolesa показала защиту или капчу. Импорт поставлен на паузу.";
+  }
+  if (Number(status) === 429) {
+    return "Kolesa ответила Too Many Requests. Импорт поставлен на паузу.";
+  }
+  if (Number(status) === 403) {
+    return "Kolesa временно режет доступ. Импорт поставлен на паузу.";
+  }
+  return "Kolesa ограничила ответы. Импорт поставлен на паузу.";
+}
+
+async function waitForKolesaRateLimit({ jobId = "", context = "запрос" } = {}) {
+  while (true) {
+    const guard = getRemoteGuardStatus();
+    if (guard.paused) {
+      if (jobId) {
+        updateJob(jobId, {
+          message: `Пауза защиты Kolesa: ждём ${Math.ceil(guard.waitMs / 1000)} сек`
+        });
+      }
+      await wait(Math.min(guard.waitMs, LOW_LOAD_SETTINGS.guardPollIntervalMs));
+      continue;
+    }
+
+    if (guard.requestsInWindow < LOW_LOAD_SETTINGS.maxRequestsPerWindow) {
+      remoteRequestTimestamps.push(nowMs());
+      return;
+    }
+
+    const nextFreeAt = remoteRequestTimestamps[0] + LOW_LOAD_SETTINGS.requestWindowMs;
+    const waitMs = Math.max(500, nextFreeAt - nowMs() + Math.round(120 + Math.random() * 280));
+    if (jobId) {
+      updateJob(jobId, {
+        message: `Мягкая пауза ${Math.ceil(waitMs / 1000)} сек: ${context}`
+      });
+    }
+    await wait(waitMs);
+  }
+}
+
+async function fetchKolesaHtml(url, { headers = {}, jobId = "", context = "запрос" } = {}) {
+  await waitForKolesaRateLimit({ jobId, context });
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 AutoAnalytics/1.0",
+      "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+      ...headers
+    }
+  });
+
+  if (response.status === 404) {
+    return {
+      ok: false,
+      status: 404,
+      text: "",
+      response
+    };
+  }
+
+  const text = await response.text();
+  if ([403, 429, 503].includes(response.status) || looksLikeProtectionPage(text)) {
+    const reason = looksLikeProtectionPage(text)
+      ? "captcha-or-challenge"
+      : `http-${response.status}`;
+    noteRemoteProtection(reason, { status: response.status, url });
+    throw new Error(describeFetchBlock(reason, response.status));
+  }
+
+  if (!response.ok) {
+    throw new Error(`fetch-failed-${response.status}`);
+  }
+
+  return {
+    ok: true,
+    status: response.status,
+    text,
+    response
+  };
 }
 
 function normalizeKolesaCacheKey(value) {
@@ -210,10 +475,12 @@ async function ensureJobWorker() {
       job.progress = job.total || job.progress;
       job.message = "Готово";
     } catch (error) {
+      const detail = String(error.message || error);
       job.status = "failed";
       job.finished_at = new Date().toISOString();
-      job.error = String(error.message || error);
-      job.message = "Ошибка";
+      job.error = detail;
+      job.message = detail;
+      pushRemoteGuardEvent("job-failed", `${job.type}: ${detail}`);
     } finally {
       activeJobId = "";
     }
@@ -1995,6 +2262,21 @@ function extractAssignedJsonObjects(html, marker) {
   return objects;
 }
 
+function extractKolesaSearchResultCount(html) {
+  const dataText = extractAssignedJsonObject(html, "var data =");
+  if (!dataText) {
+    return null;
+  }
+
+  try {
+    const data = JSON.parse(dataText);
+    const resultCount = Number(data?.searchAnalyticsData?.result_count);
+    return Number.isFinite(resultCount) && resultCount >= 0 ? resultCount : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function extractAdvertIdFromUrl(url) {
   const match = String(url || "").match(/\/a\/show\/(\d+)/);
   return match ? String(match[1]) : "";
@@ -2058,7 +2340,7 @@ async function fetchKolesaPriceInsight(advertUrl) {
   };
 }
 
-async function fetchKolesaListingSnapshot(advertUrl, { force = false } = {}) {
+async function fetchKolesaListingSnapshot(advertUrl, { force = false, jobId = "" } = {}) {
   const parsedUrl = new URL(advertUrl);
   if (!parsedUrl.hostname.endsWith("kolesa.kz")) {
     throw new Error("unsupported-host");
@@ -2073,25 +2355,19 @@ async function fetchKolesaListingSnapshot(advertUrl, { force = false } = {}) {
   }
 
   const checkedAt = new Date().toISOString();
-  const response = await fetch(parsedUrl.toString(), {
-    headers: {
-      "User-Agent": "Mozilla/5.0 AutoAnalytics/1.0",
-      "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
-    }
+  const remote = await fetchKolesaHtml(parsedUrl.toString(), {
+    jobId,
+    context: "карточка объявления"
   });
 
-  if (response.status === 404) {
+  if (remote.status === 404) {
     return {
       actuality_status: "archived",
       last_checked_at: checkedAt
     };
   }
 
-  if (!response.ok) {
-    throw new Error(`fetch-failed-${response.status}`);
-  }
-
-  const html = await response.text();
+  const html = remote.text;
   const $ = cheerio.load(html);
   const jsonText = extractAssignedJsonObject(html, "window.digitalData =");
   if (!jsonText) {
@@ -2295,7 +2571,7 @@ function buildKolesaPageUrl(sourceUrl, page) {
   return pageUrl.toString();
 }
 
-async function fetchKolesaPage(pageUrl, { force = false } = {}) {
+async function fetchKolesaPage(pageUrl, { force = false, jobId = "" } = {}) {
   const parsedUrl = new URL(pageUrl);
   if (!parsedUrl.hostname.endsWith("kolesa.kz")) {
     throw new Error("unsupported-host");
@@ -2309,18 +2585,15 @@ async function fetchKolesaPage(pageUrl, { force = false } = {}) {
     }
   }
 
-  const response = await fetch(parsedUrl.toString(), {
-    headers: {
-      "User-Agent": "Mozilla/5.0 AutoAnalytics/1.0",
-      "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
-    }
+  const remote = await fetchKolesaHtml(parsedUrl.toString(), {
+    jobId,
+    context: "страница поиска"
   });
-
-  if (!response.ok) {
-    throw new Error(`fetch-failed-${response.status}`);
+  if (!remote.ok) {
+    throw new Error(`fetch-failed-${remote.status}`);
   }
 
-  const html = await response.text();
+  const html = remote.text;
   const $ = cheerio.load(html);
   const checkedAt = new Date().toISOString();
   const listingMeta = new Map();
@@ -2418,7 +2691,7 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, concurrency = LOW_LOAD_SETTINGS.enrichConcurrency, onProgress = null } = {}) {
+async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, concurrency = LOW_LOAD_SETTINGS.enrichConcurrency, onProgress = null, jobId = "" } = {}) {
   const targets = listings
     .filter(item => item?.url && item.url.includes("/a/show/"))
     .slice(0, Math.max(0, maxItems));
@@ -2436,7 +2709,7 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
       cursor += 1;
       const item = targets[index];
       try {
-        const snapshot = await fetchKolesaListingSnapshot(item.url);
+        const snapshot = await fetchKolesaListingSnapshot(item.url, { jobId });
         if (snapshot?.actuality_status === "active") {
           snapshotMap.set(item.url, snapshot);
         }
@@ -2503,7 +2776,7 @@ async function enrichKolesaListingsWithSnapshots(listings, { maxItems = 12, conc
   });
 }
 
-async function fetchKolesaListings(sourceUrl, limit = 100, { onProgress = null } = {}) {
+async function fetchKolesaListings(sourceUrl, limit = 100, { onProgress = null, jobId = "" } = {}) {
   const safeLimit = clampImportLimit(limit);
   const maxPages = Math.ceil(safeLimit / 20) + 2;
   const pages = [];
@@ -2513,7 +2786,7 @@ async function fetchKolesaListings(sourceUrl, limit = 100, { onProgress = null }
 
   for (let page = 1; page <= maxPages && combined.length < safeLimit; page += 1) {
     const pageUrl = buildKolesaPageUrl(sourceUrl, page);
-    const pageItems = await fetchKolesaPage(pageUrl);
+    const pageItems = await fetchKolesaPage(pageUrl, { jobId });
     if (!pageItems.length) {
       break;
     }
@@ -2543,6 +2816,7 @@ async function fetchKolesaListings(sourceUrl, limit = 100, { onProgress = null }
   const enriched = await enrichKolesaListingsWithSnapshots(combined.slice(0, safeLimit), {
     maxItems: safeLimit <= 25 ? safeLimit : 8,
     concurrency: LOW_LOAD_SETTINGS.enrichConcurrency,
+    jobId,
     onProgress: (completed, total) => {
       if (typeof onProgress === "function") {
         onProgress({
@@ -2573,6 +2847,24 @@ async function fetchKolesaListingsPreview(sourceUrl, limit = 1000) {
   if (cached) {
     return cached;
   }
+
+  const firstPageUrl = buildKolesaPageUrl(sourceUrl, 1);
+  const firstPageRemote = await fetchKolesaHtml(firstPageUrl, {
+    context: "preview количества"
+  });
+  const exactTotalCount = extractKolesaSearchResultCount(firstPageRemote.text);
+  if (Number.isFinite(exactTotalCount)) {
+    const preview = {
+      availableCount: Math.min(exactTotalCount, safeLimit),
+      totalCount: exactTotalCount,
+      exactTotalKnown: true,
+      hasMore: exactTotalCount > safeLimit,
+      pagesLoaded: 1
+    };
+    writeCache(previewCache, cacheKey, preview, LOW_LOAD_SETTINGS.previewCacheTtlMs);
+    return preview;
+  }
+
   const previewLimit = Math.min(safeLimit, LOW_LOAD_SETTINGS.previewProbeCap);
   const probeLimit = previewLimit + 1;
   const maxPages = Math.ceil(probeLimit / 20) + 2;
@@ -2600,6 +2892,8 @@ async function fetchKolesaListingsPreview(sourceUrl, limit = 1000) {
 
   const preview = {
     availableCount: combined.length > previewLimit ? previewLimit : combined.length,
+    totalCount: combined.length > previewLimit ? null : combined.length,
+    exactTotalKnown: false,
     hasMore: combined.length > previewLimit,
     pagesLoaded: pages.length
   };
@@ -2621,6 +2915,7 @@ async function runKolesaImportJob(job) {
   job.message = "Готовим мягкий импорт";
 
   const result = await fetchKolesaListings(sourceUrl, limit, {
+    jobId: job.id,
     onProgress: progress => {
       if (progress?.stage === "pages") {
         job.progress = Math.min(limit, progress.collected || 0);
@@ -2692,7 +2987,7 @@ async function runCollectSnapshotsJob(job) {
     const batch = targets.slice(index, index + concurrency);
     const results = await Promise.all(batch.map(async item => {
       try {
-        const snapshot = await fetchKolesaListingSnapshot(item.url);
+        const snapshot = await fetchKolesaListingSnapshot(item.url, { jobId: job.id });
         const checkedAt = snapshot.last_checked_at || new Date().toISOString();
         return {
           ok: true,
@@ -2798,9 +3093,13 @@ const server = http.createServer(async (request, response) => {
         detailCacheTtlMs: LOW_LOAD_SETTINGS.detailCacheTtlMs,
         pageCacheTtlMs: LOW_LOAD_SETTINGS.pageCacheTtlMs,
         previewCacheTtlMs: LOW_LOAD_SETTINGS.previewCacheTtlMs,
+        requestWindowMs: LOW_LOAD_SETTINGS.requestWindowMs,
+        maxRequestsPerWindow: LOW_LOAD_SETTINGS.maxRequestsPerWindow,
+        protectionPauseMs: LOW_LOAD_SETTINGS.protectionPauseMs,
         collectConcurrency: LOW_LOAD_SETTINGS.collectConcurrency,
         enrichConcurrency: LOW_LOAD_SETTINGS.enrichConcurrency
-      }
+      },
+      remoteGuard: getRemoteGuardStatus()
     });
     return;
   }
@@ -3431,6 +3730,45 @@ const server = http.createServer(async (request, response) => {
     }
 
     await proxyRemoteImage(imageUrl, response);
+    return;
+  }
+
+  if (pathname === "/api/translate/languages" && request.method === "GET") {
+    try {
+      const payload = await runOfflineTranslator("languages");
+      sendJson(response, 200, payload);
+    } catch (error) {
+      sendJson(response, 500, { error: "Не удалось загрузить локальные языки.", detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname === "/api/translate" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const sourceCode = String(payload.from || "").trim().toLowerCase();
+      const targetCode = String(payload.to || "").trim().toLowerCase();
+      const text = String(payload.text || "");
+
+      if (!sourceCode || !targetCode) {
+        sendJson(response, 400, { error: "Нужно указать языки перевода." });
+        return;
+      }
+
+      if (!text.trim()) {
+        sendJson(response, 200, { translatedText: "", usedPivotEnglish: false });
+        return;
+      }
+
+      const result = await runOfflineTranslator("translate", {
+        from: sourceCode,
+        to: targetCode,
+        text
+      });
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 400, { error: "Не удалось выполнить локальный перевод.", detail: String(error.message || error) });
+    }
     return;
   }
 
