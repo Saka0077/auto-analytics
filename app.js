@@ -367,6 +367,7 @@ const state = {
   authToken: localStorage.getItem(AUTH_TOKEN_KEY) || "",
   currentUser: null,
   collectorStatus: null,
+  remoteGuard: null,
   listingInsights: {},
   listingGalleries: {},
   listingSnapshots: {},
@@ -1520,6 +1521,21 @@ function getGalleryNote(item, galleryState) {
   }
 
   return "";
+}
+
+function getDetailGuardState() {
+  const detailScope = state.remoteGuard?.scopes?.detail || state.remoteGuard || null;
+  if (!detailScope?.paused) {
+    return { paused: false, waitMs: 0, note: "" };
+  }
+
+  const waitMs = Number(detailScope.waitMs || 0);
+  const minutes = waitMs > 0 ? Math.max(1, Math.ceil(waitMs / 60000)) : 0;
+  return {
+    paused: true,
+    waitMs,
+    note: minutes ? `Kolesa временно поставила карточки на паузу. Подожди примерно ${minutes} мин.` : "Kolesa временно поставила карточки на паузу."
+  };
 }
 
 function shouldAutoCheckActuality(item) {
@@ -4756,6 +4772,19 @@ async function loadListingGallery(item) {
     return;
   }
 
+  const guard = getDetailGuardState();
+  if (guard.paused) {
+    state.listingGalleries[item.url] = {
+      status: "partial",
+      message: guard.note,
+      images: normalizePhotoGallery(item.photoGallery || (item.image ? [item.image] : []))
+    };
+    if (state.selectedListingId === item.id) {
+      renderModalGallery(getListingById(item.id) || item);
+    }
+    return;
+  }
+
   const cached = state.listingGalleries[item.url];
   const fallbackImages = normalizePhotoGallery(item.photoGallery || (item.image ? [item.image] : []));
   if (cached?.status === "loading" || cached?.status === "loaded") {
@@ -5758,6 +5787,7 @@ function openListingDetails(listingId) {
   if (!item) {
     return;
   }
+  const detailGuard = getDetailGuardState();
 
   state.selectedListingId = listingId;
   state.modalGalleryIndex = 0;
@@ -5789,15 +5819,24 @@ function openListingDetails(listingId) {
     : state.favoriteIds.includes(listingId)
       ? "Убрать из избранного"
       : "В избранное";
-  elements.modalCheckBtn.disabled = !isKolesaListing(item);
-  elements.modalCheckBtn.textContent = "Проверить актуальность";
+  elements.modalCheckBtn.disabled = !isKolesaListing(item) || detailGuard.paused;
+  elements.modalCheckBtn.textContent = detailGuard.paused ? "Kolesa на паузе" : "Проверить актуальность";
 
   elements.detailModal.hidden = false;
   document.body.style.overflow = "hidden";
-  void loadListingGallery(item);
+  if (!detailGuard.paused) {
+    void loadListingGallery(item);
+  } else if (item.url) {
+    state.listingGalleries[item.url] = {
+      status: "partial",
+      message: detailGuard.note,
+      images: normalizePhotoGallery(item.photoGallery || (item.image ? [item.image] : []))
+    };
+    renderModalGallery(item);
+  }
   void loadKolesaPriceInsight(item);
   void loadListingSnapshots(item);
-  if (shouldAutoCheckActuality(item)) {
+  if (!detailGuard.paused && shouldAutoCheckActuality(item)) {
     void checkListingActuality(item.id, { silent: true });
   }
 }
@@ -5975,6 +6014,19 @@ function renderCollectorStatus() {
     : formatCollectorMode(collector.last_mode);
 }
 
+async function loadHealthStatusFromServer() {
+  try {
+    const response = await fetch("/api/health");
+    if (!response.ok) {
+      throw new Error("Health failed");
+    }
+    const payload = await response.json();
+    state.remoteGuard = payload.remoteGuard || null;
+  } catch (error) {
+    state.remoteGuard = null;
+  }
+}
+
 async function loadCollectorStatusFromServer() {
   try {
     const response = await fetch("/api/collector/status");
@@ -6011,6 +6063,7 @@ async function loadListingsFromServer() {
     }
 
     const payload = await response.json();
+    await loadHealthStatusFromServer();
     await loadCollectorStatusFromServer();
     const rows = Array.isArray(payload.items) ? payload.items : [];
     if (rows.length) {
