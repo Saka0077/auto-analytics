@@ -4321,15 +4321,22 @@ const server = http.createServer(async (request, response) => {
     }
 
     try {
-      const current = readListings().find(item => item.url === advertUrl);
-      if (current && current.source !== "kolesa.kz") {
+      const current = [
+        ...readListings(),
+        ...readArchivedListings()
+      ].find(item => item.url === advertUrl);
+      const currentImages = current ? normalizePhotoGallery(current.photo_gallery || [current.image]) : [];
+      const currentPhotoCount = current?.photo_count || currentImages.length || null;
+      const hasStoredGallery = currentImages.length > 1 || (currentImages.length === 1 && (!currentPhotoCount || currentPhotoCount <= 1));
+
+      if (current && (current.source !== "kolesa.kz" || hasStoredGallery)) {
         const images = normalizePhotoGallery(current.photo_gallery || [current.image]);
         sendJson(response, 200, {
           ok: true,
           url: advertUrl,
           image: current.image || images[0] || "",
           images,
-          photoCount: current.photo_count || images.length || null
+          photoCount: currentPhotoCount
         });
         return;
       }

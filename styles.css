@@ -155,7 +155,7 @@ h1 {
 
 .layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: minmax(320px, 320px) minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -199,8 +199,12 @@ h1 {
   align-self: start;
   display: grid;
   gap: 16px;
+  width: 320px;
+  min-width: 320px;
   max-height: calc(100vh - 16px);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
   padding-right: 4px;
   padding: 0;
   background: transparent;
@@ -465,7 +469,7 @@ select:focus {
 
 .import-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
