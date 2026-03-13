@@ -615,13 +615,19 @@ function renderTableSortHeaders() {
 }
 
 function createListingId(item) {
-  return [
-    item.url || "",
-    item.title || "",
-    item.price || "",
-    item.year || "",
-    item.city || ""
-  ].join("|");
+  return String(
+    item.listing_uid ||
+    item.listingUid ||
+    item.advert_id ||
+    item.advertId ||
+    item.url ||
+    [
+      item.title || "",
+      item.price || "",
+      item.year || "",
+      item.city || ""
+    ].join("|")
+  ).trim();
 }
 
 function escapeHtml(value) {
@@ -751,6 +757,7 @@ function serializeRowForServer(item) {
     vin_note: item.vinNote,
     repair_state: item.repairState,
     advert_id: item.advertId,
+    listing_uid: item.listingUid,
     engine_volume: item.engineVolume,
     publication_date: item.publicationDate,
     last_update: item.lastUpdate,
@@ -940,6 +947,7 @@ function normalizeRow(item) {
     lastSeenAt: item.last_seen_at || item.lastSeenAt || "",
     lastCheckedAt: item.last_checked_at || item.lastCheckedAt || "",
     lastStatusChangeAt: item.last_status_change_at || item.lastStatusChangeAt || "",
+    listingUid: item.listing_uid || item.listingUid || createListingId(item),
     hiddenAfterImport: Boolean(item.hidden_after_import ?? item.hiddenAfterImport),
     hiddenReason: item.hidden_reason || item.hiddenReason || "",
     hiddenAt: item.hidden_at || item.hiddenAt || "",
@@ -3187,7 +3195,47 @@ function renderArchiveAnalytics() {
     return cityMatch && brandMatch && sellerMatch;
   });
 
-  const archivedTopModels = buildAnalyticsGroups(scopedArchived, getModelAnalyticsLabel, 10);
+  const modelGroups = new Map();
+  scopedArchived.forEach(item => {
+    const label = getModelAnalyticsLabel(item);
+    const key = normalizeAnalyticsText(label);
+    if (!key) {
+      return;
+    }
+    if (!modelGroups.has(key)) {
+      modelGroups.set(key, {
+        label,
+        count: 0,
+        totalDays: 0,
+        dayCount: 0,
+        fastCount: 0,
+        stuckCount: 0
+      });
+    }
+    const entry = modelGroups.get(key);
+    const days = Number(item.daysOnMarket || 0);
+    entry.count += 1;
+    if (days > 0) {
+      entry.totalDays += days;
+      entry.dayCount += 1;
+      if (days <= 7) {
+        entry.fastCount += 1;
+      }
+      if (days >= 21 && Number(item.priceDropTotal || 0) <= 0) {
+        entry.stuckCount += 1;
+      }
+    }
+  });
+  const archivedTopModels = [...modelGroups.values()]
+    .map(item => ({
+      label: item.label,
+      count: item.count,
+      averageDays: item.dayCount ? Math.round(item.totalDays / item.dayCount) : 0,
+      fastCount: item.fastCount,
+      stuckCount: item.stuckCount
+    }))
+    .sort((left, right) => right.count - left.count || left.averageDays - right.averageDays || left.label.localeCompare(right.label, "ru"))
+    .slice(0, 10);
   const withPriceDrops = scopedArchived.filter(item => item.priceDropTotal > 0 || item.priceChangeCount > 0);
   const longRunning = scopedArchived.filter(item => item.daysOnMarket >= 14);
   const relisted = scopedArchived.filter(item => item.wasRelisted);
@@ -3234,6 +3282,13 @@ function renderArchiveAnalytics() {
       value: `${formatInteger(item.count)} шт.`
     }));
 
+  const fastLeader = [...archivedTopModels]
+    .sort((left, right) => right.fastCount - left.fastCount || left.averageDays - right.averageDays || right.count - left.count)
+    .find(item => item.fastCount > 0);
+  const stuckLeader = [...archivedTopModels]
+    .sort((left, right) => right.stuckCount - left.stuckCount || right.averageDays - left.averageDays || right.count - left.count)
+    .find(item => item.stuckCount > 0);
+
   const summaryItems = [
     {
       label: "Цена падала",
@@ -3254,7 +3309,21 @@ function renderArchiveAnalytics() {
       label: "Цена не двигалась",
       meta: "долго висели без заметного снижения",
       value: `${formatInteger(stalePrice.length)}`
-    }
+    },
+    fastLeader
+      ? {
+          label: "Быстрее уходят",
+          meta: `${fastLeader.label} · ср. ${formatInteger(fastLeader.averageDays)} дн.`,
+          value: `${formatInteger(fastLeader.fastCount)}`
+        }
+      : null,
+    stuckLeader
+      ? {
+          label: "Чаще зависают",
+          meta: `${stuckLeader.label} · ср. ${formatInteger(stuckLeader.averageDays)} дн.`,
+          value: `${formatInteger(stuckLeader.stuckCount)}`
+        }
+      : null
   ];
 
   elements.archiveModelMeta.textContent = scopedArchived.length
@@ -3269,8 +3338,16 @@ function renderArchiveAnalytics() {
     ? "Показывает, как в архиве ведут себя типы продавцов."
     : "Когда архив наполнится, здесь появится срез по продавцам.";
 
-  renderAnalyticsList(elements.archiveModelList, archivedTopModels, selectedCity ? `В архиве города ${selectedCity} пока нет моделей.` : "Архивных моделей пока нет.");
-  renderArchiveSummaryList(elements.archiveSummaryList, summaryItems.filter(item => Number(item.value) > 0), "Архив ещё не накопил сигналы по срокам и ценам.");
+  renderArchiveSellerList(
+    elements.archiveModelList,
+    archivedTopModels.map(item => ({
+      label: item.label,
+      meta: `ср. ${formatInteger(item.averageDays)} дн. · быстрых ${formatInteger(item.fastCount)} · зависших ${formatInteger(item.stuckCount)}`,
+      value: `${formatInteger(item.count)} шт.`
+    })),
+    selectedCity ? `В архиве города ${selectedCity} пока нет моделей.` : "Архивных моделей пока нет."
+  );
+  renderArchiveSummaryList(elements.archiveSummaryList, summaryItems.filter(Boolean).filter(item => Number(item.value) > 0), "Архив ещё не накопил сигналы по срокам и ценам.");
   renderArchiveSellerList(elements.archiveSellerList, sellerItems, "Пока нет архивных продавцов для анализа.");
 }
 

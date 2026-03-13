@@ -1337,7 +1337,14 @@ function resolveActualityStatus(item) {
 }
 
 function getListingStorageKey(item) {
-  return String(item.advert_id || extractAdvertIdFromUrl(item.url) || item.url || `${item.title}|${item.price}|${item.city}`);
+  return String(
+    item.listing_uid ||
+    item.listingUid ||
+    item.advert_id ||
+    extractAdvertIdFromUrl(item.url) ||
+    item.url ||
+    `${item.title}|${item.price}|${item.city}`
+  );
 }
 
 function createListingSnapshotId(listingId, capturedAt) {
@@ -1830,6 +1837,7 @@ function normalizeListings(rows) {
         vin_note: textField(item, "vin_note", "vinNote"),
         repair_state: normalizeRepairState(item.repair_state ?? item.repairState ?? descriptionMeta.repairState),
         advert_id: textField(item, "advert_id", "advertId") || extractAdvertIdFromUrl(item.url),
+        listing_uid: textField(item, "listing_uid", "listingUid") || getListingStorageKey(item),
         engine_volume: engineVolume,
         publication_date: textField(item, "publication_date", "publicationDate"),
         last_update: textField(item, "last_update", "lastUpdate"),
