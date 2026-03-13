@@ -8,7 +8,8 @@
   "scripts": {
     "start": "node server.js",
     "import:autoparts": "node scripts/import-autoparts-workbook.js",
-    "collect:daily": "node scripts/daily-collect-history.js"
+    "collect:daily": "node scripts/daily-collect-history.js",
+    "collect:daily:runner": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/daily-collect-runner.ps1"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
