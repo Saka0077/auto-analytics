@@ -46,6 +46,7 @@ const LOW_LOAD_SETTINGS = {
 const pageCache = new Map();
 const listingSnapshotCache = new Map();
 const previewCache = new Map();
+const importModelsCache = new Map();
 const jobStore = new Map();
 const jobQueue = [];
 let activeJobId = "";
@@ -328,10 +329,20 @@ function describeFetchBlock(reason, status) {
   return "Kolesa ограничила ответы. Импорт поставлен на паузу.";
 }
 
-async function waitForKolesaRateLimit({ jobId = "", context = "запрос" } = {}) {
+function createKolesaPausedError(waitMs) {
+  const error = new Error("kolesa-paused");
+  error.code = "kolesa-paused";
+  error.waitMs = Math.max(0, Number(waitMs) || 0);
+  return error;
+}
+
+async function waitForKolesaRateLimit({ jobId = "", context = "запрос", failFastOnPause = false } = {}) {
   while (true) {
     const guard = getRemoteGuardStatus();
     if (guard.paused) {
+      if (failFastOnPause) {
+        throw createKolesaPausedError(guard.waitMs);
+      }
       if (jobId) {
         updateJob(jobId, {
           message: `Пауза защиты Kolesa: ждём ${Math.ceil(guard.waitMs / 1000)} сек`
@@ -357,8 +368,8 @@ async function waitForKolesaRateLimit({ jobId = "", context = "запрос" } =
   }
 }
 
-async function fetchKolesaHtml(url, { headers = {}, jobId = "", context = "запрос" } = {}) {
-  await waitForKolesaRateLimit({ jobId, context });
+async function fetchKolesaHtml(url, { headers = {}, jobId = "", context = "запрос", failFastOnPause = false } = {}) {
+  await waitForKolesaRateLimit({ jobId, context, failFastOnPause });
 
   const response = await fetch(url, {
     headers: {
@@ -2277,6 +2288,50 @@ function extractKolesaSearchResultCount(html) {
   }
 }
 
+function formatModelLabelFromSlug(slug) {
+  return String(slug || "")
+    .split("-")
+    .filter(Boolean)
+    .map(part => {
+      if (/^\d+$/.test(part)) {
+        return part;
+      }
+      if (/^[a-z]$/.test(part)) {
+        return part.toUpperCase();
+      }
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(" ");
+}
+
+function extractKolesaModelOptions(html, mark, city = "") {
+  const normalizedMark = String(mark || "").trim().toLowerCase();
+  const normalizedCity = String(city || "").trim().toLowerCase();
+  if (!normalizedMark) {
+    return [];
+  }
+
+  const escapedMark = normalizedMark.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const cityPart = normalizedCity ? `${normalizedCity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/` : "(?:[^/]+/)?";
+  const pattern = new RegExp(`/cars/${cityPart}${escapedMark}/([a-z0-9-]+)`, "gi");
+  const ignored = new Set(["new", "avtokredit", "price", normalizedCity].filter(Boolean));
+  const found = new Map();
+  let match = pattern.exec(html);
+
+  while (match) {
+    const slug = String(match[1] || "").trim().toLowerCase();
+    if (slug && !ignored.has(slug)) {
+      found.set(slug, {
+        value: slug,
+        label: formatModelLabelFromSlug(slug)
+      });
+    }
+    match = pattern.exec(html);
+  }
+
+  return [...found.values()].sort((left, right) => left.label.localeCompare(right.label, "ru"));
+}
+
 function extractAdvertIdFromUrl(url) {
   const match = String(url || "").match(/\/a\/show\/(\d+)/);
   return match ? String(match[1]) : "";
@@ -2850,7 +2905,8 @@ async function fetchKolesaListingsPreview(sourceUrl, limit = 1000) {
 
   const firstPageUrl = buildKolesaPageUrl(sourceUrl, 1);
   const firstPageRemote = await fetchKolesaHtml(firstPageUrl, {
-    context: "preview количества"
+    context: "preview количества",
+    failFastOnPause: true
   });
   const exactTotalCount = extractKolesaSearchResultCount(firstPageRemote.text);
   if (Number.isFinite(exactTotalCount)) {
@@ -3484,10 +3540,61 @@ const server = http.createServer(async (request, response) => {
       });
     } catch (error) {
       const message =
-        error.message === "unsupported-host"
+        error.code === "kolesa-paused"
+          ? `Kolesa временно поставила импорт на паузу. Подожди ${Math.max(1, Math.ceil((error.waitMs || 0) / 1000))} сек и попробуй снова.`
+          : error.message === "unsupported-host"
           ? "Поддерживаются только ссылки вида https://kolesa.kz/..."
           : "Не удалось получить количество объявлений с Kolesa.";
       console.error("Kolesa preview failed:", error);
+      sendJson(response, 400, { error: message, detail: String(error.message || error) });
+    }
+    return;
+  }
+
+  if (pathname === "/api/import/kolesa/models" && request.method === "POST") {
+    try {
+      const payload = await parseRequestBody(request);
+      const mark = String(payload.mark || "").trim().toLowerCase();
+      const city = String(payload.city || "").trim().toLowerCase();
+
+      if (!mark) {
+        sendJson(response, 200, { ok: true, items: [] });
+        return;
+      }
+
+      const cacheKey = `${city}::${mark}`;
+      const cached = readCache(importModelsCache, cacheKey);
+      if (cached) {
+        sendJson(response, 200, {
+          ok: true,
+          source: "kolesa.kz",
+          sourceUrl: buildKolesaPageUrl(`https://kolesa.kz/cars/${city ? `${city}/` : ""}${mark}/`, 1),
+          items: cached.items || []
+        });
+        return;
+      }
+
+      const sourceUrl = buildKolesaPageUrl(`https://kolesa.kz/cars/${city ? `${city}/` : ""}${mark}/`, 1);
+      const remote = await fetchKolesaHtml(sourceUrl, {
+        context: "список моделей",
+        failFastOnPause: true
+      });
+      const items = extractKolesaModelOptions(remote.text, mark, city);
+      writeCache(importModelsCache, cacheKey, { items }, LOW_LOAD_SETTINGS.previewCacheTtlMs);
+
+      sendJson(response, 200, {
+        ok: true,
+        source: "kolesa.kz",
+        sourceUrl,
+        items
+      });
+    } catch (error) {
+      const message =
+        error.code === "kolesa-paused"
+          ? `Kolesa временно поставила импорт на паузу. Подожди ${Math.max(1, Math.ceil((error.waitMs || 0) / 1000))} сек и попробуй снова.`
+          : error.message === "unsupported-host"
+          ? "Не удалось получить модели с Kolesa."
+          : "Не удалось загрузить модели с Kolesa.";
       sendJson(response, 400, { error: message, detail: String(error.message || error) });
     }
     return;

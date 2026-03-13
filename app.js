@@ -358,6 +358,8 @@ const state = {
   listingInsights: {},
   listingGalleries: {},
   listingSnapshots: {},
+  importModelOptionsCache: {},
+  importModelRequestKey: "",
   importPreview: {
     status: "idle",
     url: "",
@@ -411,8 +413,7 @@ const elements = {
   showInactiveToggle: document.getElementById("show-inactive-toggle"),
   importCitySelect: document.getElementById("import-city-select"),
   importMarkSelect: document.getElementById("import-mark-select"),
-  importModelInput: document.getElementById("import-model-input"),
-  importModelList: document.getElementById("import-model-list"),
+  importModelSelect: document.getElementById("import-model-select"),
   importBodySelect: document.getElementById("import-body-select"),
   importTransmissionSelect: document.getElementById("import-transmission-select"),
   importCustomSelect: document.getElementById("import-custom-select"),
@@ -1784,7 +1785,7 @@ function setImportBusy(isBusy) {
   elements.kolesaUrlInput.disabled = isBusy;
   elements.importCitySelect.disabled = isBusy;
   elements.importMarkSelect.disabled = isBusy;
-  elements.importModelInput.disabled = isBusy;
+  elements.importModelSelect.disabled = isBusy || !elements.importMarkSelect.value;
   elements.importBodySelect.disabled = isBusy;
   elements.importTransmissionSelect.disabled = isBusy;
   elements.importCustomSelect.disabled = isBusy;
@@ -1822,7 +1823,7 @@ function renderImportPreview() {
   if (preview.status === "loading") {
     elements.importPreviewBox?.classList.add("is-loading");
     elements.importPreviewStatus.textContent = "Считаю...";
-    elements.importPreviewNote.textContent = "Проверяю, сколько объявлений доступно по текущему поиску.";
+    elements.importPreviewNote.textContent = "Запрашиваю точное количество с первой страницы Kolesa.";
     return;
   }
 
@@ -1970,53 +1971,73 @@ function fillSelectOptions(element, options, selectedValue = "") {
 function populateImportFilters() {
   fillSelectOptions(elements.importCitySelect, IMPORT_CITIES, "");
   fillSelectOptions(elements.importMarkSelect, IMPORT_MARKS, "");
-  syncImportModelOptions("");
+  fillSelectOptions(elements.importModelSelect, [{ value: "", label: "Сначала выбери марку" }], "");
+  elements.importModelSelect.disabled = true;
   fillSelectOptions(elements.importBodySelect, IMPORT_BODIES, "");
   fillSelectOptions(elements.importTransmissionSelect, IMPORT_TRANSMISSIONS, "");
 }
 
-function syncImportModelOptions(selectedValue = "") {
+async function loadImportModelOptions(selectedValue = "") {
   const mark = elements.importMarkSelect.value;
-  const models = IMPORT_MODELS_BY_MARK[mark] || [];
-  const currentValue = String(selectedValue || elements.importModelInput.value || "").trim();
-  const matchedModel = models.find(item => item.value === currentValue || item.label.toLowerCase() === currentValue.toLowerCase());
+  const city = elements.importCitySelect.value;
+  const requestKey = `${city}::${mark}`;
 
-  elements.importModelList.innerHTML = "";
-  models.forEach(item => {
-    const option = document.createElement("option");
-    option.value = item.label;
-    elements.importModelList.append(option);
-  });
-
-  elements.importModelInput.placeholder = mark
-    ? "Выбери из подсказок или впиши модель"
-    : "Сначала выбери марку или впиши модель вручную";
-  elements.importModelInput.value = matchedModel ? matchedModel.label : currentValue;
-}
-
-function getImportModelSlug() {
-  const rawValue = String(elements.importModelInput.value || "").trim();
-  if (!rawValue) {
-    return "";
+  if (!mark) {
+    fillSelectOptions(elements.importModelSelect, [{ value: "", label: "Сначала выбери марку" }], "");
+    elements.importModelSelect.disabled = true;
+    return;
   }
 
-  const mark = elements.importMarkSelect.value;
-  const models = IMPORT_MODELS_BY_MARK[mark] || [];
-  const matchedModel = models.find(item =>
-    item.value === rawValue ||
-    item.label.toLowerCase() === rawValue.toLowerCase()
-  );
-  if (matchedModel) {
-    return matchedModel.value;
+  const cached = state.importModelOptionsCache[requestKey];
+  if (cached) {
+    fillSelectOptions(
+      elements.importModelSelect,
+      [{ value: "", label: cached.length ? "Все модели" : "Нет моделей на Kolesa" }, ...cached],
+      selectedValue
+    );
+    elements.importModelSelect.disabled = false;
+    return;
   }
 
-  return rawValue
-    .toLowerCase()
-    .replace(/[']/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+  state.importModelRequestKey = requestKey;
+  fillSelectOptions(elements.importModelSelect, [{ value: "", label: "Загрузка моделей..." }], "");
+  elements.importModelSelect.disabled = true;
+
+  try {
+    const response = await fetch("/api/import/kolesa/models", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ city, mark })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Models load failed");
+    }
+    if (state.importModelRequestKey !== requestKey) {
+      return;
+    }
+
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    state.importModelOptionsCache[requestKey] = items;
+    fillSelectOptions(
+      elements.importModelSelect,
+      [{ value: "", label: items.length ? "Все модели" : "Нет моделей на Kolesa" }, ...items],
+      selectedValue
+    );
+    elements.importModelSelect.disabled = false;
+  } catch (error) {
+    if (state.importModelRequestKey !== requestKey) {
+      return;
+    }
+    fillSelectOptions(
+      elements.importModelSelect,
+      [{ value: "", label: error.message || "Не удалось загрузить модели" }],
+      ""
+    );
+    elements.importModelSelect.disabled = true;
+  }
 }
 
 function syncImportUrlPreview() {
@@ -2043,7 +2064,7 @@ function requestImportPreview() {
 function buildImportUrlFromFilters() {
   const city = elements.importCitySelect.value;
   const mark = elements.importMarkSelect.value;
-  const model = getImportModelSlug();
+  const model = elements.importModelSelect.value;
   const body = elements.importBodySelect.value;
   const transmission = elements.importTransmissionSelect.value;
   const custom = elements.importCustomSelect.value;
@@ -4896,7 +4917,7 @@ elements.importKolesaBtn.addEventListener("click", importFromKolesa);
 elements.importPreviewBtn.addEventListener("click", requestImportPreview);
 elements.importAktauBtn.addEventListener("click", () => {
   elements.importCitySelect.value = "aktau";
-  elements.importModelInput.value = "";
+  elements.importModelSelect.value = "";
   elements.kolesaUrlInput.dataset.manual = "false";
   syncImportUrlPreview();
   markImportPreviewDirty();
@@ -4905,7 +4926,7 @@ elements.importAktauBtn.addEventListener("click", () => {
 [
   elements.importCitySelect,
   elements.importMarkSelect,
-  elements.importModelInput,
+  elements.importModelSelect,
   elements.importBodySelect,
   elements.importTransmissionSelect,
   elements.importCustomSelect,
@@ -4915,22 +4936,22 @@ elements.importAktauBtn.addEventListener("click", () => {
 ].forEach(element => {
   element.addEventListener("input", () => {
     elements.kolesaUrlInput.dataset.manual = "false";
-    if (element === elements.importMarkSelect) {
-      elements.importModelInput.value = "";
-      syncImportModelOptions("");
-    }
     syncImportUrlPreview();
     markImportPreviewDirty();
   });
   element.addEventListener("change", () => {
     elements.kolesaUrlInput.dataset.manual = "false";
-    if (element === elements.importMarkSelect) {
-      elements.importModelInput.value = "";
-      syncImportModelOptions("");
-    }
     syncImportUrlPreview();
     markImportPreviewDirty();
   });
+});
+elements.importMarkSelect.addEventListener("change", () => {
+  void loadImportModelOptions("");
+});
+elements.importCitySelect.addEventListener("change", () => {
+  if (elements.importMarkSelect.value) {
+    void loadImportModelOptions("");
+  }
 });
 elements.kolesaUrlInput.addEventListener("input", () => {
   elements.kolesaUrlInput.dataset.manual = elements.kolesaUrlInput.value.trim() ? "true" : "false";
