@@ -776,8 +776,11 @@ function getAutopartsMatchConfidenceLabel(confidence) {
 
 function buildAutopartsLookupMap(catalog = readAutopartsCatalog(), aliasesStore = readAutopartsAliases()) {
   const snapshotItems = Array.isArray(catalog?.snapshot_items) ? catalog.snapshot_items : [];
+  const observations = Array.isArray(catalog?.observations) ? catalog.observations : [];
   const aliases = Array.isArray(aliasesStore?.items) ? aliasesStore.items : [];
   const aliasMap = new Map();
+  const profiles = [...snapshotItems, ...observations]
+    .filter(item => item && typeof item === "object" && String(item.id || "").trim());
 
   aliases.forEach(item => {
     const key = String(item.catalog_id || "").trim();
@@ -787,7 +790,7 @@ function buildAutopartsLookupMap(catalog = readAutopartsCatalog(), aliasesStore 
     aliasMap.set(key, item);
   });
 
-  return snapshotItems.map(profile => {
+  return profiles.map(profile => {
     const aliasEntry = aliasMap.get(String(profile.id || "").trim());
     const brandKey = normalizeLookupText(profile.brand_key || profile.brand);
     const directKeys = Array.isArray(profile.lookup_keys)

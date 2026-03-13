@@ -150,6 +150,286 @@
         "windom xv20",
         "toyota windom xv20"
       ]
+    },
+    {
+      "catalog_id": "lada-vesta-sw",
+      "brand": "ВАЗ (Lada)",
+      "aliases": [
+        "lada vesta sw",
+        "vesta sw cross",
+        "vesta sw enjoy",
+        "vesta sw comfort",
+        "vesta sw comfort mt"
+      ]
+    },
+    {
+      "catalog_id": "gac-gs3",
+      "brand": "GAC",
+      "aliases": [
+        "gac gs3",
+        "gs3 flagship r",
+        "gs3 flagship-r",
+        "gs3 standart",
+        "gs3 standard",
+        "gs3 emzoom"
+      ]
+    },
+    {
+      "catalog_id": "gac-trumpchi-m8",
+      "brand": "GAC",
+      "aliases": [
+        "gac trumpchi m8",
+        "trumpchi m8 gx",
+        "trumpchi m8 gx+",
+        "gac m8",
+        "m8 gx",
+        "m8 gx+"
+      ]
+    },
+    {
+      "catalog_id": "gac-gs8",
+      "brand": "GAC",
+      "aliases": [
+        "gac gs8",
+        "gs8 gx",
+        "gs8 gx+",
+        "gs8 gl",
+        "gs8 gt"
+      ]
+    },
+    {
+      "catalog_id": "lada-vesta",
+      "brand": "ВАЗ (Lada)",
+      "aliases": [
+        "lada vesta",
+        "vesta comfort",
+        "vesta comfort cvt",
+        "vesta enjoy",
+        "vesta elegance"
+      ]
+    },
+    {
+      "catalog_id": "changan-x5-plus",
+      "brand": "Changan",
+      "aliases": [
+        "changan x5 plus",
+        "x5 plus luxury",
+        "x5 plus tech",
+        "x5 plus luxe"
+      ]
+    },
+    {
+      "catalog_id": "lada-2121-4x4",
+      "brand": "ВАЗ (Lada)",
+      "aliases": [
+        "lada 2121",
+        "lada niva 4x4",
+        "niva 4x4",
+        "lada 2121 luxe",
+        "lada 2121 classic"
+      ]
+    },
+    {
+      "catalog_id": "lada-granta-2190",
+      "brand": "ВАЗ (Lada)",
+      "aliases": [
+        "lada granta 2190",
+        "granta sedan",
+        "granta classic 24",
+        "granta classic'24",
+        "granta седан"
+      ]
+    },
+    {
+      "catalog_id": "changan-cs55-plus",
+      "brand": "Changan",
+      "aliases": [
+        "changan cs55 plus",
+        "cs55 plus luxe",
+        "cs55 plus premium",
+        "cs55 plus tech"
+      ]
+    },
+    {
+      "catalog_id": "lexus-is-250-xe20",
+      "brand": "Lexus",
+      "aliases": [
+        "lexus is 250",
+        "lexus is250",
+        "is 250",
+        "is250",
+        "is 250 xe20"
+      ]
+    },
+    {
+      "catalog_id": "toyota-corolla",
+      "brand": "Toyota",
+      "aliases": [
+        "toyota corolla",
+        "corolla e140",
+        "corolla e150",
+        "corolla e170",
+        "corolla prestige"
+      ]
+    },
+    {
+      "catalog_id": "lada-granta-2191",
+      "brand": "ВАЗ (Lada)",
+      "aliases": [
+        "lada granta 2191",
+        "granta liftback",
+        "granta лифтбек",
+        "granta 2191 classic 24",
+        "granta 2191 classic'24"
+      ]
+    },
+    {
+      "catalog_id": "hyundai-sonata",
+      "brand": "Hyundai",
+      "aliases": [
+        "hyundai sonata",
+        "sonata lf",
+        "sonata dn8",
+        "sonata yf"
+      ]
+    },
+    {
+      "catalog_id": "kia-sportage",
+      "brand": "Kia",
+      "aliases": [
+        "kia sportage",
+        "sportage ql",
+        "sportage sl",
+        "sportage nq5"
+      ]
+    },
+    {
+      "catalog_id": "omoda-c5",
+      "brand": "OMODA",
+      "aliases": [
+        "omoda c5",
+        "c5 premium",
+        "c5 tech",
+        "c5 lifestyle"
+      ]
+    },
+    {
+      "catalog_id": "toyota-camry-xv30",
+      "brand": "Toyota",
+      "aliases": [
+        "toyota camry",
+        "camry xv30",
+        "camry 30",
+        "camry xle"
+      ]
+    },
+    {
+      "catalog_id": "toyota-camry-xv40",
+      "brand": "Toyota",
+      "aliases": [
+        "toyota camry",
+        "camry xv40",
+        "camry 40",
+        "camry se"
+      ]
+    },
+    {
+      "catalog_id": "toyota-camry-xv70",
+      "brand": "Toyota",
+      "aliases": [
+        "toyota camry",
+        "camry xv70",
+        "camry 70",
+        "camry prestige"
+      ]
+    },
+    {
+      "catalog_id": "lexus-is-250-xe30",
+      "brand": "Lexus",
+      "aliases": [
+        "lexus is 250",
+        "lexus is250",
+        "is 250",
+        "is250 f sport"
+      ]
+    },
+    {
+      "catalog_id": "toyota-prado-120",
+      "brand": "Toyota",
+      "aliases": [
+        "toyota land cruiser prado",
+        "land cruiser prado",
+        "prado 120",
+        "toyota prado 120"
+      ]
+    },
+    {
+      "catalog_id": "toyota-rav4",
+      "brand": "Toyota",
+      "aliases": [
+        "toyota rav4",
+        "toyota rav 4",
+        "rav4 luxe",
+        "rav4 prestige"
+      ]
+    },
+    {
+      "catalog_id": "hyundai-tucson",
+      "brand": "Hyundai",
+      "aliases": [
+        "hyundai tucson",
+        "tucson travel",
+        "tucson prime",
+        "tucson high-tech"
+      ]
+    },
+    {
+      "catalog_id": "kia-sorento",
+      "brand": "Kia",
+      "aliases": [
+        "kia sorento",
+        "sorento prestige",
+        "sorento premium",
+        "sorento luxe"
+      ]
+    },
+    {
+      "catalog_id": "hyundai-grandeur",
+      "brand": "Hyundai",
+      "aliases": [
+        "hyundai grandeur",
+        "grandeur qx",
+        "grandeur calligraphy"
+      ]
+    },
+    {
+      "catalog_id": "toyota-highlander",
+      "brand": "Toyota",
+      "aliases": [
+        "toyota highlander",
+        "highlander prestige",
+        "highlander luxe"
+      ]
+    },
+    {
+      "catalog_id": "volkswagen-passat",
+      "brand": "Volkswagen",
+      "aliases": [
+        "volkswagen passat",
+        "passat b6",
+        "passat b7",
+        "passat cc"
+      ]
+    },
+    {
+      "catalog_id": "lada-largus",
+      "brand": "ВАЗ (Lada)",
+      "aliases": [
+        "lada largus",
+        "largus classic",
+        "largus comfort",
+        "largus cross"
+      ]
     }
   ]
 }
