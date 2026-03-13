@@ -3752,7 +3752,7 @@ function getAllScoredListings() {
 function renderThumb(imageUrl, className = "thumb") {
   if (imageUrl) {
     const proxied = toProxiedImageUrl(imageUrl);
-    return `<div class="${className}">${renderLazyImageTag(proxied, "Фото авто")}</div>`;
+    return `<div class="${className}">${renderLazyImageTag(proxied, "Фото авто", { eager: true, className: "lazy-image thumb-image" })}</div>`;
   }
 
   return `<div class="${className} thumb--empty">нет фото</div>`;
