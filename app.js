@@ -337,6 +337,8 @@ const IMPORT_TRANSMISSIONS = [
   { value: "5", label: "робот" }
 ];
 
+const HISTORY_BATCH_LIMIT = 400;
+
 const state = {
   listings: defaultListings.map(normalizeRow),
   archivedListings: [],
@@ -445,6 +447,7 @@ const elements = {
   favoritesList: document.getElementById("favorites-list"),
   historyList: document.getElementById("history-list"),
   collectHistoryBtn: document.getElementById("collect-history-btn"),
+  collectAllHistoryBtn: document.getElementById("collect-all-history-btn"),
   pickBestCompareBtn: document.getElementById("pick-best-compare-btn"),
   openCompareBtn: document.getElementById("open-compare-btn"),
   clearCompareBtn: document.getElementById("clear-compare-btn"),
@@ -4435,43 +4438,74 @@ async function checkListingActuality(listingId, { silent = false } = {}) {
   }
 }
 
-async function collectHistoryForRenderedListings() {
-  const targets = state.renderedListings.filter(isKolesaListing).filter(item => item.url);
+async function queueHistoryCollection(targets, {
+  button,
+  idleText = "Собрать историю",
+  queueText = "В очереди...",
+  progressPrefix = "История",
+  sourceLabel = "текущего списка"
+} = {}) {
   if (!targets.length) {
-    window.alert("В текущем списке нет объявлений Kolesa для истории.");
+    window.alert(`Нет объявлений Kolesa для истории из ${sourceLabel}.`);
     return;
   }
 
-  elements.collectHistoryBtn.disabled = true;
-  elements.collectHistoryBtn.textContent = "В очереди...";
-  setStatus(`Источник: ставим сбор истории в очередь для ${targets.length} объявлений...`);
+  const normalizedTargets = [...new Map(
+    targets
+      .filter(item => item?.url)
+      .map(item => [item.listingUid || item.advertId || item.url, item])
+  ).values()];
+  const batches = [];
+  for (let index = 0; index < normalizedTargets.length; index += HISTORY_BATCH_LIMIT) {
+    batches.push(normalizedTargets.slice(index, index + HISTORY_BATCH_LIMIT));
+  }
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = queueText;
+  }
+  setStatus(`Источник: ставим сбор истории в очередь для ${normalizedTargets.length} объявлений из ${sourceLabel}...`);
 
   try {
-    const response = await fetch("/api/jobs/collect-snapshots", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        urls: targets.map(item => item.url),
-        limit: targets.length,
-        concurrency: 1
-      })
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "Collect history failed");
-    }
+    let totalChecked = 0;
+    let totalFailed = 0;
+    let processedBeforeBatch = 0;
 
-    const completedJob = await waitForServerJob(payload.job?.id, {
-      onProgress: job => {
-        const progressText = job.total > 0 ? `${job.progress || 0}/${job.total}` : "в очереди";
-        elements.collectHistoryBtn.textContent = job.status === "queued"
-          ? "В очереди..."
-          : `История ${progressText}`;
-        setStatus(`Источник: ${job.message || "идет сбор истории"}${job.status === "queued" ? "" : ` (${progressText})`}`);
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+      const batch = batches[batchIndex];
+      const response = await fetch("/api/jobs/collect-snapshots", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          urls: batch.map(item => item.url),
+          limit: batch.length,
+          concurrency: 1
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Collect history failed");
       }
-    });
+
+      const completedJob = await waitForServerJob(payload.job?.id, {
+        onProgress: job => {
+          const batchProgress = Number(job.progress || 0);
+          const totalProgress = Math.min(normalizedTargets.length, processedBeforeBatch + batchProgress);
+          if (button) {
+            button.textContent = job.status === "queued"
+              ? queueText
+              : `${progressPrefix} ${totalProgress}/${normalizedTargets.length}`;
+          }
+          setStatus(`Источник: ${job.message || "идет сбор истории"} · пакет ${batchIndex + 1}/${batches.length} (${totalProgress}/${normalizedTargets.length})`);
+        }
+      });
+
+      processedBeforeBatch += batch.length;
+      totalChecked += Number(completedJob.result?.checked || 0);
+      totalFailed += Number(completedJob.result?.failed || 0);
+    }
 
     await loadListingsFromServer();
     state.renderedListings = getFilteredListings();
@@ -4485,14 +4519,38 @@ async function collectHistoryForRenderedListings() {
       }
     }
 
-    setStatus(`Источник: история собрана, обновлено ${completedJob.result?.checked || 0}, ошибок ${completedJob.result?.failed || 0}.`);
+    setStatus(`Источник: история собрана, обновлено ${totalChecked}, ошибок ${totalFailed}.`);
   } catch (error) {
     window.alert(error.message || "Не удалось собрать историю.");
     setStatus("Источник: ошибка сбора истории");
   } finally {
-    elements.collectHistoryBtn.disabled = false;
-    elements.collectHistoryBtn.textContent = "Собрать историю";
+    if (button) {
+      button.disabled = false;
+      button.textContent = idleText;
+    }
   }
+}
+
+async function collectHistoryForRenderedListings() {
+  const targets = state.renderedListings.filter(isKolesaListing).filter(item => item.url);
+  await queueHistoryCollection(targets, {
+    button: elements.collectHistoryBtn,
+    idleText: "Собрать историю",
+    queueText: "В очереди...",
+    progressPrefix: "История",
+    sourceLabel: "текущего списка"
+  });
+}
+
+async function collectHistoryForAllListings() {
+  const targets = state.listings.filter(isKolesaListing).filter(item => item.url);
+  await queueHistoryCollection(targets, {
+    button: elements.collectAllHistoryBtn,
+    idleText: "Собрать всё",
+    queueText: "Вся база...",
+    progressPrefix: "Вся база",
+    sourceLabel: "всей локальной базы"
+  });
 }
 
 async function bulkCheckRenderedListings() {
@@ -5563,6 +5621,7 @@ elements.profileSelect.addEventListener("change", event => {
 elements.fileInput.addEventListener("change", handleFileUpload);
 elements.importKolesaBtn.addEventListener("click", importFromKolesa);
 elements.importPreviewBtn.addEventListener("click", requestImportPreview);
+elements.collectAllHistoryBtn.addEventListener("click", collectHistoryForAllListings);
 elements.importAktauBtn.addEventListener("click", () => {
   elements.importCitySelect.value = "aktau";
   elements.importModelSelect.value = "";
