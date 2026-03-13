@@ -339,12 +339,14 @@ const IMPORT_TRANSMISSIONS = [
 
 const HISTORY_BATCH_LIMIT = 400;
 const SMART_SCOPE_THRESHOLD = 300;
+const TABLE_PAGE_SIZE = 50;
 
 const state = {
   listings: defaultListings.map(normalizeRow),
   archivedListings: [],
   renderedListings: [],
   analysisMode: "buyer",
+  currentPage: 1,
   tableSort: {
     key: "",
     direction: "asc"
@@ -461,6 +463,9 @@ const elements = {
   resultsHead: document.getElementById("results-head"),
   resultsBody: document.getElementById("results-body"),
   resultsCount: document.getElementById("results-count"),
+  resultsPageMeta: document.getElementById("results-page-meta"),
+  resultsPrevBtn: document.getElementById("results-prev-btn"),
+  resultsNextBtn: document.getElementById("results-next-btn"),
   bulkCheckBtn: document.getElementById("bulk-check-btn"),
   topScoreList: document.getElementById("top-score-list"),
   topDealList: document.getElementById("top-deal-list"),
@@ -3676,7 +3681,23 @@ function renderTopLists(listings) {
 function renderTable(listings) {
   renderTableSortHeaders();
   elements.resultsBody.innerHTML = "";
-  elements.resultsCount.textContent = `${formatInteger(listings.length)} результатов`;
+  const totalPages = Math.max(1, Math.ceil(listings.length / TABLE_PAGE_SIZE));
+  state.currentPage = Math.min(Math.max(state.currentPage, 1), totalPages);
+  const startIndex = (state.currentPage - 1) * TABLE_PAGE_SIZE;
+  const pageItems = listings.slice(startIndex, startIndex + TABLE_PAGE_SIZE);
+  const endIndex = Math.min(listings.length, startIndex + pageItems.length);
+  elements.resultsCount.textContent = listings.length
+    ? `${formatInteger(listings.length)} результатов · показано ${formatInteger(startIndex + 1)}-${formatInteger(endIndex)}`
+    : "0 результатов";
+  if (elements.resultsPageMeta) {
+    elements.resultsPageMeta.textContent = `Страница ${formatInteger(state.currentPage)} из ${formatInteger(totalPages)}`;
+  }
+  if (elements.resultsPrevBtn) {
+    elements.resultsPrevBtn.disabled = state.currentPage <= 1;
+  }
+  if (elements.resultsNextBtn) {
+    elements.resultsNextBtn.disabled = state.currentPage >= totalPages;
+  }
 
   if (!listings.length) {
     const row = document.createElement("tr");
@@ -3685,7 +3706,7 @@ function renderTable(listings) {
     return;
   }
 
-  listings.forEach(item => {
+  pageItems.forEach(item => {
     const row = document.createElement("tr");
     row.className = "is-clickable";
     row.dataset.id = item.id;
@@ -5591,6 +5612,7 @@ function resetFilters() {
   if (elements.archiveSellerFilter) elements.archiveSellerFilter.value = "";
   state.smartScopeEnabled = true;
   chooseSmartScopeBrand();
+  state.currentPage = 1;
   state.showHiddenArchived = false;
   state.tableSort.key = "";
   state.tableSort.direction = "asc";
@@ -5728,6 +5750,7 @@ async function loadListingsFromServer() {
       state.listings = normalizeRows(rows);
       state.smartScopeEnabled = true;
       chooseSmartScopeBrand();
+      state.currentPage = 1;
       await loadArchivedListingsFromServer();
       state.compareIds = [];
       state.compareWinnerId = null;
@@ -5889,12 +5912,19 @@ async function handleFileUpload(event) {
   elements.sortSelect,
   elements.showInactiveToggle
 ].forEach(element => {
-  element.addEventListener("input", render);
-  element.addEventListener("change", render);
+  element.addEventListener("input", () => {
+    state.currentPage = 1;
+    render();
+  });
+  element.addEventListener("change", () => {
+    state.currentPage = 1;
+    render();
+  });
 });
 
 elements.markFilterSelect.addEventListener("change", () => {
   state.smartScopeEnabled = false;
+  state.currentPage = 1;
   populateModels();
   if (![...elements.modelFilterSelect.options].some(option => option.value === elements.modelFilterSelect.value)) {
     elements.modelFilterSelect.value = "";
@@ -5911,6 +5941,7 @@ if (elements.toggleSmartScopeBtn) {
         chooseSmartScopeBrand();
       }
     }
+    state.currentPage = 1;
     render();
   });
 }
@@ -5944,6 +5975,19 @@ elements.importAktauBtn.addEventListener("click", () => {
 if (elements.toggleHiddenBtn) {
   elements.toggleHiddenBtn.addEventListener("click", () => {
     state.showHiddenArchived = !state.showHiddenArchived;
+    state.currentPage = 1;
+    render();
+  });
+}
+if (elements.resultsPrevBtn) {
+  elements.resultsPrevBtn.addEventListener("click", () => {
+    state.currentPage = Math.max(1, state.currentPage - 1);
+    render();
+  });
+}
+if (elements.resultsNextBtn) {
+  elements.resultsNextBtn.addEventListener("click", () => {
+    state.currentPage += 1;
     render();
   });
 }
@@ -5952,7 +5996,10 @@ if (elements.toggleHiddenBtn) {
   elements.archiveBrandFilter,
   elements.archiveSellerFilter
 ].filter(Boolean).forEach(element => {
-  element.addEventListener("change", render);
+  element.addEventListener("change", () => {
+    state.currentPage = 1;
+    render();
+  });
 });
 [
   elements.importCitySelect,
