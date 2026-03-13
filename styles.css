@@ -1041,6 +1041,15 @@ a:hover {
   display: block;
 }
 
+.lazy-image {
+  opacity: 0.01;
+  transition: opacity 0.18s ease;
+}
+
+.lazy-image.is-loaded {
+  opacity: 1;
+}
+
 .thumb--small {
   width: 56px;
   height: 42px;

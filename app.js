@@ -340,6 +340,7 @@ const IMPORT_TRANSMISSIONS = [
 const HISTORY_BATCH_LIMIT = 400;
 const SMART_SCOPE_THRESHOLD = 300;
 const TABLE_PAGE_SIZE = 50;
+let lazyImageObserver = null;
 
 const state = {
   listings: defaultListings.map(normalizeRow),
@@ -3610,10 +3611,62 @@ function getAllScoredListings() {
 function renderThumb(imageUrl, className = "thumb") {
   if (imageUrl) {
     const proxied = toProxiedImageUrl(imageUrl);
-    return `<div class="${className}"><img src="${proxied}" alt="Фото авто" loading="lazy"></div>`;
+    return `<div class="${className}">${renderLazyImageTag(proxied, "Фото авто")}</div>`;
   }
 
   return `<div class="${className} thumb--empty">нет фото</div>`;
+}
+
+function renderLazyImageTag(src, alt, { eager = false, className = "lazy-image" } = {}) {
+  const safeSrc = escapeHtml(src || "");
+  const safeAlt = escapeHtml(alt || "");
+  if (!safeSrc) {
+    return "";
+  }
+
+  if (eager) {
+    return `<img class="${className} is-loaded" src="${safeSrc}" alt="${safeAlt}" loading="eager" decoding="async">`;
+  }
+
+  return `<img class="${className}" data-lazy-src="${safeSrc}" alt="${safeAlt}" loading="lazy" decoding="async">`;
+}
+
+function ensureLazyImageObserver() {
+  if (lazyImageObserver || typeof window === "undefined" || typeof IntersectionObserver === "undefined") {
+    return;
+  }
+
+  lazyImageObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) {
+        return;
+      }
+      const image = entry.target;
+      const lazySrc = image.dataset.lazySrc;
+      if (lazySrc && !image.src) {
+        image.src = lazySrc;
+      }
+      image.classList.add("is-loaded");
+      image.removeAttribute("data-lazy-src");
+      lazyImageObserver.unobserve(image);
+    });
+  }, {
+    rootMargin: "250px 0px"
+  });
+}
+
+function hydrateLazyImages(root = document) {
+  ensureLazyImageObserver();
+  const images = root.querySelectorAll ? root.querySelectorAll("img[data-lazy-src]") : [];
+  images.forEach(image => {
+    if (!lazyImageObserver) {
+      image.src = image.dataset.lazySrc;
+      image.classList.add("is-loaded");
+      image.removeAttribute("data-lazy-src");
+      return;
+    }
+    lazyImageObserver.observe(image);
+  });
 }
 
 function renderTopLists(listings) {
@@ -4475,7 +4528,7 @@ function renderModalGallery(item) {
       <div class="modal-gallery-main">
         ${hasMultiple ? '<button class="modal-gallery-nav modal-gallery-nav--prev" type="button" data-gallery-step="-1" aria-label="Предыдущее фото">‹</button>' : ""}
         <a class="modal-gallery-link" href="${escapeHtml(proxiedImage)}" target="_blank" rel="noreferrer">
-          <img src="${escapeHtml(proxiedImage)}" alt="${escapeHtml(item.title)}" loading="eager">
+          ${renderLazyImageTag(proxiedImage, item.title, { eager: true, className: "lazy-image modal-main-image" })}
         </a>
         ${hasMultiple ? '<button class="modal-gallery-nav modal-gallery-nav--next" type="button" data-gallery-step="1" aria-label="Следующее фото">›</button>' : ""}
       </div>
@@ -4495,13 +4548,14 @@ function renderModalGallery(item) {
               data-gallery-index="${index}"
               aria-label="Фото ${index + 1}"
             >
-              <img src="${escapeHtml(toProxiedImageUrl(image))}" alt="${escapeHtml(`${item.title} ${index + 1}`)}" loading="lazy">
+              ${renderLazyImageTag(toProxiedImageUrl(image), `${item.title} ${index + 1}`)}
             </button>
           `).join("")}
         </div>
       ` : ""}
     </div>
   `;
+  hydrateLazyImages(elements.modalMedia);
 }
 
 function stepModalGallery(direction) {
@@ -5476,6 +5530,7 @@ function openCompareModal() {
   }
 
   elements.compareGrid.innerHTML = items.map(renderCompareCard).join("");
+  hydrateLazyImages(elements.compareGrid);
   elements.compareModal.hidden = false;
   document.body.style.overflow = "hidden";
 }
@@ -5567,6 +5622,7 @@ function render() {
   renderTopLists(listings);
   renderBars(listings);
   renderTable(listings);
+  hydrateLazyImages(document);
   if (state.selectedListingId && !elements.detailModal.hidden) {
     const selected = getListingById(state.selectedListingId);
     if (selected) {
