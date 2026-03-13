@@ -580,6 +580,18 @@ select:focus {
   min-height: 100%;
 }
 
+.archive-analytics-grid {
+  margin-top: 4px;
+}
+
+.archive-analytics-card {
+  background: linear-gradient(180deg, #fbfcfe 0%, #f7f9fc 100%);
+}
+
+.analytics-item--summary .analytics-item-value {
+  font-weight: 800;
+}
+
 .top-list {
   display: grid;
   gap: 10px;

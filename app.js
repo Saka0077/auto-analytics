@@ -466,6 +466,12 @@ const elements = {
   kolesaModelList: document.getElementById("kolesa-model-list"),
   kolesaAktauMeta: document.getElementById("kolesa-aktau-meta"),
   kolesaAktauList: document.getElementById("kolesa-aktau-list"),
+  archiveModelMeta: document.getElementById("archive-model-meta"),
+  archiveModelList: document.getElementById("archive-model-list"),
+  archiveSummaryMeta: document.getElementById("archive-summary-meta"),
+  archiveSummaryList: document.getElementById("archive-summary-list"),
+  archiveSellerMeta: document.getElementById("archive-seller-meta"),
+  archiveSellerList: document.getElementById("archive-seller-list"),
   bestMetricLabel: document.getElementById("best-metric-label"),
   bestTitle: document.getElementById("best-title"),
   bestPrice: document.getElementById("best-price"),
@@ -3055,6 +3061,50 @@ function renderAnalyticsList(target, items, emptyText) {
   });
 }
 
+function renderArchiveSummaryList(target, items, emptyText) {
+  target.innerHTML = "";
+
+  if (!items.length) {
+    target.innerHTML = `<div class="analytics-empty">${escapeHtml(emptyText)}</div>`;
+    return;
+  }
+
+  items.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "analytics-item analytics-item--summary";
+    row.innerHTML = `
+      <div>
+        <div class="analytics-item-title">${escapeHtml(item.label)}</div>
+        <div class="analytics-item-meta">${escapeHtml(item.meta || "")}</div>
+      </div>
+      <div class="analytics-item-value">${escapeHtml(item.value || "0")}</div>
+    `;
+    target.append(row);
+  });
+}
+
+function renderArchiveSellerList(target, items, emptyText) {
+  target.innerHTML = "";
+
+  if (!items.length) {
+    target.innerHTML = `<div class="analytics-empty">${escapeHtml(emptyText)}</div>`;
+    return;
+  }
+
+  items.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "analytics-item";
+    row.innerHTML = `
+      <div>
+        <div class="analytics-item-title">${escapeHtml(item.label)}</div>
+        <div class="analytics-item-meta">${escapeHtml(item.meta || "")}</div>
+      </div>
+      <div class="analytics-item-value">${escapeHtml(item.value || "0")}</div>
+    `;
+    target.append(row);
+  });
+}
+
 function renderKolesaAnalytics(listings) {
   const allKolesaListings = state.listings.filter(isKolesaListing);
   const filteredKolesaListings = listings.filter(isKolesaListing);
@@ -3084,6 +3134,99 @@ function renderKolesaAnalytics(listings) {
   renderAnalyticsList(elements.kolesaBrandList, topBrands, "Нет импортированных объявлений Kolesa по текущим фильтрам.");
   renderAnalyticsList(elements.kolesaModelList, topModels, selectedCity ? `По городу ${selectedCity} пока нет данных Kolesa.` : "Нет данных Kolesa по текущей выборке.");
   renderAnalyticsList(elements.kolesaAktauList, topAktauModels, "По Актау пока нет объявлений Kolesa. Сначала импортируй Актау.");
+}
+
+function renderArchiveAnalytics() {
+  const allArchived = state.archivedListings.filter(isKolesaListing);
+  const selectedCity = elements.citySelect.value;
+  const scopedArchived = selectedCity
+    ? allArchived.filter(item => normalizeAnalyticsText(item.city) === normalizeAnalyticsText(selectedCity))
+    : allArchived;
+
+  const archivedTopModels = buildAnalyticsGroups(scopedArchived, getModelAnalyticsLabel, 10);
+  const withPriceDrops = scopedArchived.filter(item => item.priceDropTotal > 0 || item.priceChangeCount > 0);
+  const longRunning = scopedArchived.filter(item => item.daysOnMarket >= 14);
+  const relisted = scopedArchived.filter(item => item.wasRelisted);
+  const stalePrice = scopedArchived.filter(item => item.daysOnMarket >= 14 && item.priceDropTotal <= 0);
+  const avgDays = scopedArchived.length
+    ? Math.round(scopedArchived.reduce((sum, item) => sum + Number(item.daysOnMarket || 0), 0) / scopedArchived.length)
+    : 0;
+  const avgDrop = withPriceDrops.length
+    ? Math.round(withPriceDrops.reduce((sum, item) => sum + Number(item.priceDropTotal || 0), 0) / withPriceDrops.length)
+    : 0;
+
+  const sellerGroups = new Map();
+  scopedArchived.forEach(item => {
+    const analysis = item.sellerAnalysis;
+    const label = analysis?.profileLabel || getSellerProfileLabel(item) || "Без сигнала";
+    const key = normalizeAnalyticsText(label) || "unknown";
+    if (!sellerGroups.has(key)) {
+      sellerGroups.set(key, {
+        label,
+        count: 0,
+        totalTraderScore: 0,
+        belowMarketCount: 0,
+        relistedCount: 0
+      });
+    }
+    const entry = sellerGroups.get(key);
+    entry.count += 1;
+    entry.totalTraderScore += Number(analysis?.traderScore || 0);
+    if (Number(item.marketDifferencePercent || 0) <= -10) {
+      entry.belowMarketCount += 1;
+    }
+    if (item.wasRelisted) {
+      entry.relistedCount += 1;
+    }
+  });
+
+  const sellerItems = [...sellerGroups.values()]
+    .sort((left, right) => right.count - left.count || right.totalTraderScore - left.totalTraderScore)
+    .slice(0, 8)
+    .map(item => ({
+      label: item.label,
+      meta: `ниже рынка ${formatInteger(item.belowMarketCount)} · переопубл. ${formatInteger(item.relistedCount)}`,
+      value: `${formatInteger(item.count)} шт.`
+    }));
+
+  const summaryItems = [
+    {
+      label: "Цена падала",
+      meta: avgDrop > 0 ? `среднее снижение ${formatPrice(avgDrop)}` : "падений цены почти нет",
+      value: `${formatInteger(withPriceDrops.length)}`
+    },
+    {
+      label: "Висели долго",
+      meta: avgDays > 0 ? `средний срок ${formatInteger(avgDays)} дн.` : "срок ещё не накоплен",
+      value: `${formatInteger(longRunning.length)}`
+    },
+    {
+      label: "Переопубликовано",
+      meta: "архивные объявления с повторным выходом",
+      value: `${formatInteger(relisted.length)}`
+    },
+    {
+      label: "Цена не двигалась",
+      meta: "долго висели без заметного снижения",
+      value: `${formatInteger(stalePrice.length)}`
+    }
+  ];
+
+  elements.archiveModelMeta.textContent = scopedArchived.length
+    ? `${formatInteger(scopedArchived.length)} архивных объявл.${selectedCity ? ` по городу ${selectedCity}` : ""}.`
+    : selectedCity
+      ? `По архиву города ${selectedCity} данных пока нет.`
+      : "Архив пока пуст.";
+  elements.archiveSummaryMeta.textContent = scopedArchived.length
+    ? "Это отдельный слой анализа старых и скрытых машин."
+    : "Нужен архив объявлений для анализа.";
+  elements.archiveSellerMeta.textContent = sellerItems.length
+    ? "Показывает, как в архиве ведут себя типы продавцов."
+    : "Когда архив наполнится, здесь появится срез по продавцам.";
+
+  renderAnalyticsList(elements.archiveModelList, archivedTopModels, selectedCity ? `В архиве города ${selectedCity} пока нет моделей.` : "Архивных моделей пока нет.");
+  renderArchiveSummaryList(elements.archiveSummaryList, summaryItems.filter(item => Number(item.value) > 0), "Архив ещё не накопил сигналы по срокам и ценам.");
+  renderArchiveSellerList(elements.archiveSellerList, sellerItems, "Пока нет архивных продавцов для анализа.");
 }
 
 function renderBars(listings) {
@@ -4987,6 +5130,7 @@ function render() {
   renderFavorites();
   renderHistory();
   renderKolesaAnalytics(listings);
+  renderArchiveAnalytics();
   renderTopLists(listings);
   renderBars(listings);
   renderTable(listings);
