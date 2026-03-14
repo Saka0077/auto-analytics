@@ -4689,23 +4689,15 @@ function renderListingFacts(item) {
     renderFact("Покупка", formatScore(item.buyerScore ?? item.score)),
     renderFact("Перекуп", formatScore(item.resellerOpportunityScore)),
     renderFact("Содержание", formatScore(item.maintenanceScore)),
-    renderFact("Качество", formatScore(item.qualityScore)),
     renderFact("Выгода", formatScore(item.dealScore)),
     ...renderMarketFacts(item),
-    renderFact("Дата объявления", formatListingDateDetailed(item)),
     renderFact("Дней в продаже", formatDaysOnMarket(item.daysOnMarket)),
-    renderFact("Наблюдений", item.snapshotCount ?? "-"),
     renderFact("Изменений цены", item.priceChangeCount ?? "-"),
-    renderFact("Первая цена", Number.isFinite(item.firstPrice) ? formatPrice(item.firstPrice) : "-"),
     renderFact("Текущая цена", Number.isFinite(item.lastPrice) ? formatPrice(item.lastPrice) : formatPrice(item.price)),
     renderFact("Снижение цены", Number.isFinite(item.priceDropTotal) ? formatPrice(item.priceDropTotal) : "-"),
-    renderFact("Последнее изм. цены", item.lastPriceChangeAt ? formatDateTime(item.lastPriceChangeAt) : "-"),
     renderFact("Переопубликовано", formatYesNo(item.wasRelisted)),
     renderFact("Год", item.year ?? "-"),
     renderFact("Пробег", item.mileage ? formatMileage(item.mileage) : "-"),
-    renderFact("Владельцы", item.owners ?? "-"),
-    renderFact("Состояние", getRepairStateLabel(item) || "Неизвестно"),
-    renderFact("VIN", item.vin || "-"),
     renderFact("Марка", item.brand || "-"),
     renderFact("Модель", item.model || "-"),
     renderFact("Поколение", item.generation || "-"),
@@ -4713,14 +4705,9 @@ function renderListingFacts(item) {
     renderFact("КПП", item.transmission || "-"),
     renderFact("Кузов", item.bodyType || "-"),
     renderFact("Привод", item.driveType || "-"),
-    renderFact("Руль", item.steeringSide || "-"),
-    renderFact("Цвет", item.color || "-"),
     renderFact("Двигатель", item.engineVolume ? `${item.engineVolume} л` : "-"),
-    renderFact("Фото", item.photoCount ?? "-"),
     renderFact("Кредит", formatYesNo(item.creditAvailable)),
     renderFact("Платёж / мес", item.creditMonthlyPayment ? formatPrice(item.creditMonthlyPayment) : "-"),
-    renderFact("Кредит-скор", Number.isFinite(item.creditScore) ? `${(item.creditScore * 100).toFixed(0)}%` : "-"),
-    renderFact("Продавец", getSellerLabel(item)),
     renderFact("Профиль продавца", sellerSummary.label || "-"),
     renderFact(
       "Объявлений продавца",
@@ -4728,22 +4715,17 @@ function renderListingFacts(item) {
         ? `${sellerSummary.active ?? sellerSummary.total} акт. / ${sellerSummary.total}`
         : "-"
     ),
-    renderFact("Поток продавца", sellerSummary.traderScore !== null ? `${Math.round(sellerSummary.traderScore)}%` : "-"),
     renderFact("Анализ продавца", sellerSummary.note || "-"),
     renderFact("Риск", Number.isFinite(item.riskScore) ? `${Math.round(item.riskScore)}/100` : "-"),
     renderFact("Ликвидность", Number.isFinite(item.liquidityScore) ? `${(item.liquidityScore * 100).toFixed(0)}%` : "-"),
-    renderFact("Признак перекупа", Number.isFinite(item.sellerSignalScore) ? `${(item.sellerSignalScore * 100).toFixed(0)}%` : "-"),
     renderFact(
       "Запчасти",
       autoparts
         ? `${autoparts.maintenanceLabel || "Есть данные"}${Number.isFinite(autoparts.cheapnessScore) ? ` (${formatScorePercent(autoparts.cheapnessScore / 100)})` : ""}`
         : "-"
     ),
-    renderFact("Матч запчастей", autoparts?.matchConfidenceLabel || "-"),
     renderFact("Данные запчастей", autoparts?.coverageLabel || "-"),
     renderFact("Сервисная корзина", autoparts?.serviceBasketKzt ? formatPrice(autoparts.serviceBasketKzt) : "-"),
-    renderFact("Колодки / перед", autoparts?.frontPadsPriceKzt ? formatPrice(autoparts.frontPadsPriceKzt) : "-"),
-    renderFact("Диск / перед", autoparts?.frontDiscPriceKzt ? formatPrice(autoparts.frontDiscPriceKzt) : "-"),
     renderFact("Цена", formatPrice(item.price)),
     renderFact("Город", item.city || "-")
   ].join("");
