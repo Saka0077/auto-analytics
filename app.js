@@ -1121,6 +1121,20 @@ function buildMarketKey(parts) {
   return normalized.length ? normalized.join("::") : "";
 }
 
+function getMarketYearBand(year) {
+  const numericYear = Number(year);
+  if (!Number.isFinite(numericYear) || numericYear <= 0) {
+    return "";
+  }
+
+  if (numericYear <= 2004) {
+    return "before_2005";
+  }
+
+  const rangeStart = numericYear - ((numericYear - 2005) % 3);
+  return `${rangeStart}-${rangeStart + 2}`;
+}
+
 function formatDaysOnMarket(value) {
   return Number.isFinite(Number(value)) ? `${formatInteger(value)} дн.` : "-";
 }
@@ -2933,8 +2947,12 @@ function normalize(value, min, max, invert = false) {
 }
 
 function buildDerivedMarketMap(listings) {
+  const byGenerationYear = new Map();
+  const byGenerationYearCity = new Map();
   const byGeneration = new Map();
   const byGenerationCity = new Map();
+  const byModelYear = new Map();
+  const byModelYearCity = new Map();
   const byBody = new Map();
   const byBodyCity = new Map();
   const byCity = new Map();
@@ -2945,8 +2963,13 @@ function buildDerivedMarketMap(listings) {
       return;
     }
 
+    const yearBand = getMarketYearBand(item.year);
     const generationKey = buildMarketKey([item.brand, item.model, item.generation]);
     const generationCityKey = buildMarketKey([item.brand, item.model, item.generation, item.city]);
+    const generationYearKey = buildMarketKey([item.brand, item.model, item.generation, yearBand]);
+    const generationYearCityKey = buildMarketKey([item.brand, item.model, item.generation, yearBand, item.city]);
+    const modelYearKey = buildMarketKey([item.brand, item.model, yearBand]);
+    const modelYearCityKey = buildMarketKey([item.brand, item.model, yearBand, item.city]);
     const bodyKey = buildMarketKey([item.brand, item.model, item.bodyType]);
     const bodyCityKey = buildMarketKey([item.brand, item.model, item.bodyType, item.city]);
     const modelKey = buildMarketKey([item.brand, item.model]);
@@ -2962,6 +2985,30 @@ function buildDerivedMarketMap(listings) {
       const bucket = byGenerationCity.get(generationCityKey) || [];
       bucket.push(item);
       byGenerationCity.set(generationCityKey, bucket);
+    }
+
+    if (generationYearKey) {
+      const bucket = byGenerationYear.get(generationYearKey) || [];
+      bucket.push(item);
+      byGenerationYear.set(generationYearKey, bucket);
+    }
+
+    if (generationYearCityKey) {
+      const bucket = byGenerationYearCity.get(generationYearCityKey) || [];
+      bucket.push(item);
+      byGenerationYearCity.set(generationYearCityKey, bucket);
+    }
+
+    if (modelYearKey) {
+      const bucket = byModelYear.get(modelYearKey) || [];
+      bucket.push(item);
+      byModelYear.set(modelYearKey, bucket);
+    }
+
+    if (modelYearCityKey) {
+      const bucket = byModelYearCity.get(modelYearCityKey) || [];
+      bucket.push(item);
+      byModelYearCity.set(modelYearCityKey, bucket);
     }
 
     if (bodyKey) {
@@ -3007,6 +3054,20 @@ function buildDerivedMarketMap(listings) {
 
     const candidates = [
       {
+        key: buildMarketKey([item.brand, item.model, item.generation, getMarketYearBand(item.year), item.city]),
+        store: byGenerationYearCity,
+        minSize: 2,
+        scope: "brand_model_generation_year_city",
+        sourceLabel: "Локальный рынок поколения и года"
+      },
+      {
+        key: buildMarketKey([item.brand, item.model, item.generation, getMarketYearBand(item.year)]),
+        store: byGenerationYear,
+        minSize: 3,
+        scope: "brand_model_generation_year",
+        sourceLabel: "Рынок поколения и года"
+      },
+      {
         key: buildMarketKey([item.brand, item.model, item.generation, item.city]),
         store: byGenerationCity,
         minSize: 2,
@@ -3019,6 +3080,20 @@ function buildDerivedMarketMap(listings) {
         minSize: 3,
         scope: "brand_model_generation",
         sourceLabel: "Рынок поколения"
+      },
+      {
+        key: buildMarketKey([item.brand, item.model, getMarketYearBand(item.year), item.city]),
+        store: byModelYearCity,
+        minSize: 3,
+        scope: "brand_model_year_city",
+        sourceLabel: "Локальный рынок года"
+      },
+      {
+        key: buildMarketKey([item.brand, item.model, getMarketYearBand(item.year)]),
+        store: byModelYear,
+        minSize: 4,
+        scope: "brand_model_year",
+        sourceLabel: "Рынок года"
       },
       {
         key: buildMarketKey([item.brand, item.model, item.bodyType, item.city]),
