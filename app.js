@@ -2089,21 +2089,7 @@ function renderListingBadges(item) {
     renderActualityBadge(item),
     `<span class="${decision.className}">${escapeHtml(decision.label)}</span>`
   ];
-  const promotion = getPromotionLabel(item);
-  const freshness = getFreshnessMeta(item);
   const market = getMarketBadge(item);
-
-  if (promotion) {
-    badges.push(`<span class="status-badge status-badge--promotion">${escapeHtml(promotion)}</span>`);
-  }
-
-  if (item.creditAvailable) {
-    badges.push(`<span class="status-badge status-badge--credit">Кредит</span>`);
-  }
-
-  if (item.photoCount) {
-    badges.push(`<span class="status-badge">Фото ${item.photoCount}</span>`);
-  }
 
   if (market) {
     badges.push(`<span class="status-badge status-badge--deal">${escapeHtml(market)}</span>`);
@@ -2117,19 +2103,6 @@ function renderListingBadges(item) {
   const sellerLabel = getSellerLabel(item);
   if (sellerLabel && sellerLabel !== "Продавец") {
     badges.push(`<span class="status-badge status-badge--seller">${escapeHtml(sellerLabel)}</span>`);
-  }
-
-  getHistorySignalMeta(item).slice(0, 2).forEach(signal => {
-    badges.push(`<span class="${signal.className}">${escapeHtml(signal.label)}</span>`);
-  });
-
-  const repairState = getRepairStateLabel(item);
-  if (repairState) {
-    badges.push(`<span class="status-badge status-badge--repair">${escapeHtml(repairState)}</span>`);
-  }
-
-  if (freshness.label) {
-    badges.push(`<span class="${freshness.className}">${escapeHtml(freshness.label)}</span>`);
   }
 
   return badges.join("");
