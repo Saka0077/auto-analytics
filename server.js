@@ -2,7 +2,6 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
-const { spawn } = require("child_process");
 const { URL } = require("url");
 const cheerio = require("cheerio");
 
@@ -18,8 +17,6 @@ const AUTH_FILE = path.join(DATA_DIR, "auth-store.json");
 const AUTOPARTS_FILE = path.join(CATALOG_DIR, "autoparts-catalog.json");
 const AUTOPARTS_ALIASES_FILE = path.join(CATALOG_DIR, "autoparts-aliases.json");
 const SAMPLE_FILE = path.join(ROOT, "sample_listings.json");
-const TRANSLATOR_PYTHON = path.join(ROOT, ".venv-translate", "Scripts", "python.exe");
-const TRANSLATOR_SCRIPT = path.join(ROOT, "scripts", "offline_translate_worker.py");
 const OLLAMA_BASE_URL = String(process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/+$/, "");
 const OLLAMA_MODEL = String(process.env.OLLAMA_MODEL || "").trim();
 const STALE_AFTER_HOURS = Number(process.env.LISTING_STALE_AFTER_HOURS) > 0
@@ -65,10 +62,6 @@ const jobStore = new Map();
 const jobQueue = [];
 let activeJobId = "";
 let jobWorkerRunning = false;
-let translatorWorker = null;
-let translatorWorkerBuffer = "";
-let translatorRequestId = 0;
-const translatorPending = new Map();
 const remoteRequestTimestamps = [];
 const remoteGuardState = {
   scopes: {
@@ -275,103 +268,6 @@ async function requestOllamaListingAnalysis(item) {
     model: status.model,
     text: String(payload?.response || "").trim()
   };
-}
-
-function runOfflineTranslator(command, payload) {
-  return new Promise((resolve, reject) => {
-    if (!fs.existsSync(TRANSLATOR_PYTHON)) {
-      reject(new Error("Python environment for translator is missing."));
-      return;
-    }
-
-    if (!fs.existsSync(TRANSLATOR_SCRIPT)) {
-      reject(new Error("Translator script is missing."));
-      return;
-    }
-
-    ensureTranslatorWorker();
-    const requestId = String(++translatorRequestId);
-    translatorPending.set(requestId, { resolve, reject });
-    translatorWorker.stdin.write(`${JSON.stringify({ id: requestId, command, ...(payload || {}) })}\n`);
-  });
-}
-
-function ensureTranslatorWorker() {
-  if (translatorWorker && !translatorWorker.killed) {
-    return translatorWorker;
-  }
-
-  translatorWorkerBuffer = "";
-  translatorWorker = spawn(TRANSLATOR_PYTHON, [TRANSLATOR_SCRIPT], {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      PYTHONIOENCODING: "utf-8",
-      ARGOS_PACKAGES_DIR: path.join(ROOT, "offline-translator-data", "packages")
-    },
-    stdio: ["pipe", "pipe", "pipe"]
-  });
-
-  translatorWorker.stdout.on("data", chunk => {
-    translatorWorkerBuffer += chunk.toString("utf-8");
-    let newlineIndex = translatorWorkerBuffer.indexOf("\n");
-    while (newlineIndex >= 0) {
-      const line = translatorWorkerBuffer.slice(0, newlineIndex).trim();
-      translatorWorkerBuffer = translatorWorkerBuffer.slice(newlineIndex + 1);
-      if (line) {
-        handleTranslatorWorkerLine(line);
-      }
-      newlineIndex = translatorWorkerBuffer.indexOf("\n");
-    }
-  });
-
-  translatorWorker.stderr.on("data", chunk => {
-    const message = chunk.toString("utf-8").trim();
-    if (message) {
-      console.error("[translator]", message);
-    }
-  });
-
-  translatorWorker.on("close", () => {
-    const error = new Error("Offline translator worker stopped.");
-    for (const { reject } of translatorPending.values()) {
-      reject(error);
-    }
-    translatorPending.clear();
-    translatorWorker = null;
-    translatorWorkerBuffer = "";
-  });
-
-  translatorWorker.on("error", error => {
-    console.error("[translator]", error);
-  });
-
-  return translatorWorker;
-}
-
-function handleTranslatorWorkerLine(line) {
-  let message = null;
-  try {
-    message = JSON.parse(line);
-  } catch (error) {
-    console.error("[translator] Invalid JSON:", line);
-    return;
-  }
-
-  const entry = translatorPending.get(String(message.id || ""));
-  if (!entry) {
-    return;
-  }
-
-  translatorPending.delete(String(message.id || ""));
-  if (!message.ok) {
-    entry.reject(new Error(message.error || "Offline translator failed."));
-    return;
-  }
-
-  delete message.id;
-  delete message.ok;
-  entry.resolve(message);
 }
 
 function ensureDataDir() {
@@ -4623,45 +4519,6 @@ const server = http.createServer(async (request, response) => {
     }
 
     await proxyRemoteImage(imageUrl, response);
-    return;
-  }
-
-  if (pathname === "/api/translate/languages" && request.method === "GET") {
-    try {
-      const payload = await runOfflineTranslator("languages");
-      sendJson(response, 200, payload);
-    } catch (error) {
-      sendJson(response, 500, { error: "Не удалось загрузить локальные языки.", detail: String(error.message || error) });
-    }
-    return;
-  }
-
-  if (pathname === "/api/translate" && request.method === "POST") {
-    try {
-      const payload = await parseRequestBody(request);
-      const sourceCode = String(payload.from || "").trim().toLowerCase();
-      const targetCode = String(payload.to || "").trim().toLowerCase();
-      const text = String(payload.text || "");
-
-      if (!sourceCode || !targetCode) {
-        sendJson(response, 400, { error: "Нужно указать языки перевода." });
-        return;
-      }
-
-      if (!text.trim()) {
-        sendJson(response, 200, { translatedText: "", usedPivotEnglish: false });
-        return;
-      }
-
-      const result = await runOfflineTranslator("translate", {
-        from: sourceCode,
-        to: targetCode,
-        text
-      });
-      sendJson(response, 200, result);
-    } catch (error) {
-      sendJson(response, 400, { error: "Не удалось выполнить локальный перевод.", detail: String(error.message || error) });
-    }
     return;
   }
 
