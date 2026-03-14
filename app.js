@@ -1530,13 +1530,17 @@ function getGalleryNote(item, galleryState) {
   }
 
   if (galleryState.status === "partial") {
+    const photoCount = Number(item?.photoCount || 0);
+    if (photoCount > 1) {
+      return galleryState.message || `Сейчас доступна только обложка из ${photoCount} фото. Остальные Kolesa пока не отдала.`;
+    }
     return galleryState.message || "Показана только обложка. Остальные фото сейчас недоступны.";
   }
 
   const imageCount = galleryState.images.length;
   const photoCount = Number(item?.photoCount || 0);
   if (galleryState.status === "loaded" && photoCount > imageCount) {
-    return `Показано ${imageCount} из ${photoCount} фото. Остальные сейчас недоступны.`;
+    return `Сейчас доступны только ${imageCount} из ${photoCount} фото. Остальные Kolesa пока не отдала.`;
   }
 
   return "";
@@ -4847,21 +4851,25 @@ function applyListingGallery(listingId, payload) {
 
   const images = normalizePhotoGallery(payload.images ?? payload.photoGallery ?? []);
   const photoGallery = images.length ? images : current.photoGallery;
+  const resolvedPhotoCount =
+    optionalPositiveNumber(payload.photoCount ?? payload.photo_count)
+    || optionalPositiveNumber(photoGallery.length)
+    || current.photoCount;
   const patch = {
     image: String(payload.image || photoGallery[0] || current.image || "").trim(),
     photoGallery,
-    photoCount:
-      optionalPositiveNumber(payload.photoCount ?? payload.photo_count)
-      || optionalPositiveNumber(photoGallery.length)
-      || current.photoCount
+    photoCount: resolvedPhotoCount
   };
+  const resolvedStatus = payload.partial || (resolvedPhotoCount && photoGallery.length < resolvedPhotoCount)
+    ? "partial"
+    : "loaded";
   const merge = item => (item.id === listingId ? { ...item, ...patch } : item);
 
   state.listings = state.listings.map(merge);
   state.renderedListings = state.renderedListings.map(merge);
   if (current.url) {
     state.listingGalleries[current.url] = {
-      status: payload.partial ? "partial" : "loaded",
+      status: resolvedStatus,
       message: String(payload.message || "").trim(),
       images: photoGallery
     };
@@ -5030,6 +5038,8 @@ function renderModalGallery(item) {
   const currentImage = images[currentIndex];
   const proxiedImage = toProxiedImageUrl(currentImage);
   const hasMultiple = images.length > 1;
+  const declaredPhotoCount = Number(item?.photoCount || 0);
+  const availablePhotoCount = images.length;
   const galleryNote = getGalleryNote(item, galleryState);
   const loadingNote = galleryNote
     ? `<span class="modal-gallery-note ${galleryState.status === "error" ? "is-error" : ""}">${escapeHtml(galleryNote)}</span>`
@@ -5047,7 +5057,8 @@ function renderModalGallery(item) {
       </div>
       <div class="modal-gallery-caption">
         <div class="modal-gallery-meta">
-          <strong>${currentIndex + 1} / ${images.length}</strong>
+          <strong>${currentIndex + 1} / ${availablePhotoCount}</strong>
+          ${declaredPhotoCount > availablePhotoCount ? `<span class="modal-gallery-total">из ${declaredPhotoCount} заявленных фото</span>` : ""}
           ${loadingNote}
         </div>
         <a class="modal-gallery-open" href="${escapeHtml(proxiedImage)}" target="_blank" rel="noreferrer">Открыть фото</a>

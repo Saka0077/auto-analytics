@@ -1314,6 +1314,11 @@ a:hover {
   gap: 10px;
 }
 
+.modal-gallery-total {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .modal-gallery-note {
   color: var(--muted);
   font-size: 12px;

@@ -4547,12 +4547,16 @@ const server = http.createServer(async (request, response) => {
 
       const snapshot = await fetchKolesaListingSnapshot(advertUrl);
       const images = normalizePhotoGallery(snapshot.photo_gallery || [snapshot.image]);
+      const resolvedPhotoCount = pickDefined(snapshot.photo_count, current?.photo_count, images.length || null);
+      const isPartial = Boolean(resolvedPhotoCount && images.length < resolvedPhotoCount);
       sendJson(response, 200, {
         ok: true,
+        partial: isPartial,
         url: advertUrl,
         image: snapshot.image || images[0] || "",
         images,
-        photoCount: pickDefined(snapshot.photo_count, current?.photo_count, images.length || null)
+        photoCount: resolvedPhotoCount,
+        message: isPartial ? "Сейчас доступна только часть фото. Остальные Kolesa пока не отдала." : ""
       });
     } catch (error) {
       const fallbackImages = currentImages.length ? currentImages : (current?.image ? [current.image] : []);
