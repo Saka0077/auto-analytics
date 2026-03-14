@@ -6,15 +6,68 @@
   "example_seed": {
     "url": "https://satu.kz/p-example.html",
     "part_type": "front_pads",
-    "make": "Toyota",
-    "model": "Camry",
-    "generation": "XV50",
-    "year_from": 2011,
-    "year_to": 2017,
-    "engine": "2.5",
-    "body_type": "sedan",
+    "make": "Nissan",
+    "model": "Tiida",
+    "generation": "C11",
+    "year_from": 2004,
+    "year_to": 2012,
+    "engine": "",
+    "body_type": "hatchback/sedan",
     "fitment_confidence": "manual",
-    "fitment_raw": "Toyota Camry XV50 2011-2017 2.5"
+    "fitment_raw": "Nissan Tiida C11 2004-2012"
   },
-  "seeds": []
+  "seeds": [
+    {
+      "url": "",
+      "part_type": "front_pads",
+      "make": "Nissan",
+      "model": "Tiida",
+      "generation": "C11",
+      "year_from": 2004,
+      "year_to": 2012,
+      "engine": "",
+      "body_type": "hatchback/sedan",
+      "fitment_confidence": "manual",
+      "fitment_raw": "Nissan Tiida C11 2004-2012 передние колодки"
+    },
+    {
+      "url": "",
+      "part_type": "front_disc",
+      "make": "Nissan",
+      "model": "Tiida",
+      "generation": "C11",
+      "year_from": 2004,
+      "year_to": 2012,
+      "engine": "",
+      "body_type": "hatchback/sedan",
+      "fitment_confidence": "manual",
+      "fitment_raw": "Nissan Tiida C11 2004-2012 передние тормозные диски"
+    },
+    {
+      "url": "",
+      "part_type": "oil_filter",
+      "make": "Nissan",
+      "model": "Tiida",
+      "generation": "C11",
+      "year_from": 2004,
+      "year_to": 2012,
+      "engine": "",
+      "body_type": "hatchback/sedan",
+      "fitment_confidence": "manual",
+      "fitment_raw": "Nissan Tiida C11 2004-2012 масляный фильтр"
+    },
+    {
+      "url": "",
+      "part_type": "air_filter",
+      "make": "Nissan",
+      "model": "Tiida",
+      "generation": "C11",
+      "year_from": 2004,
+      "year_to": 2012,
+      "engine": "",
+      "body_type": "hatchback/sedan",
+      "fitment_confidence": "manual",
+      "fitment_raw": "Nissan Tiida C11 2004-2012 воздушный фильтр"
+    }
+  ]
 }
