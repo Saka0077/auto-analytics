@@ -49,6 +49,8 @@ const LOW_LOAD_SETTINGS = {
   maxRequestsPerWindow: 18,
   protectionPauseMs: 20 * 60 * 1000,
   captchaPauseMs: 45 * 60 * 1000,
+  detailProtectionPauseMs: 8 * 60 * 1000,
+  detailCaptchaPauseMs: 8 * 60 * 1000,
   guardPollIntervalMs: 1500,
   enrichConcurrency: 1,
   collectConcurrency: 1,
@@ -504,9 +506,10 @@ function noteRemoteProtection(reason, { status, url, scope = "search" } = {}) {
   const targetScope = remoteGuardState.scopes[scope] ? scope : "search";
   const bucket = remoteGuardState.scopes[targetScope];
   const normalizedReason = String(reason || "remote-protection").trim();
-  const pauseMs = /captcha|robot|challenge/i.test(normalizedReason)
-    ? LOW_LOAD_SETTINGS.captchaPauseMs
-    : LOW_LOAD_SETTINGS.protectionPauseMs;
+  const isCaptchaLike = /captcha|robot|challenge/i.test(normalizedReason);
+  const pauseMs = targetScope === "detail"
+    ? (isCaptchaLike ? LOW_LOAD_SETTINGS.detailCaptchaPauseMs : LOW_LOAD_SETTINGS.detailProtectionPauseMs)
+    : (isCaptchaLike ? LOW_LOAD_SETTINGS.captchaPauseMs : LOW_LOAD_SETTINGS.protectionPauseMs);
   bucket.pausedUntil = Math.max(bucket.pausedUntil, nowMs() + pauseMs);
   bucket.lastReason = normalizedReason;
   bucket.totalProtectionEvents += 1;
@@ -515,6 +518,24 @@ function noteRemoteProtection(reason, { status, url, scope = "search" } = {}) {
     "protection",
     `${normalizedReason}${status ? ` [${status}]` : ""}${url ? ` ${url}` : ""}`
   );
+}
+
+function resetRemoteGuard(scope = "all") {
+  const resetBucket = bucket => {
+    bucket.pausedUntil = 0;
+    bucket.lastReason = "";
+  };
+
+  if (scope === "all") {
+    Object.values(remoteGuardState.scopes).forEach(resetBucket);
+    pushRemoteGuardScopedEvent("search", "manual-reset", "guard reset");
+    pushRemoteGuardScopedEvent("detail", "manual-reset", "guard reset");
+    return;
+  }
+
+  const targetScope = remoteGuardState.scopes[scope] ? scope : "search";
+  resetBucket(remoteGuardState.scopes[targetScope]);
+  pushRemoteGuardScopedEvent(targetScope, "manual-reset", "guard reset");
 }
 
 function looksLikeProtectionPage(text) {
@@ -4009,6 +4030,18 @@ const server = http.createServer(async (request, response) => {
     context.store.sessions = context.store.sessions.filter(session => session.token !== context.token);
     writeAuthStore(context.store);
     sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (pathname === "/api/kolesa/guard/reset" && request.method === "POST") {
+    const body = await parseRequestBody(request).catch(() => ({}));
+    const scope = String(body?.scope || requestUrl.searchParams.get("scope") || "all").trim() || "all";
+    resetRemoteGuard(scope);
+    sendJson(response, 200, {
+      ok: true,
+      scope,
+      remoteGuard: getRemoteGuardStatus()
+    });
     return;
   }
 
