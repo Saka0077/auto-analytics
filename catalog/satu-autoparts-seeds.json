@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "source": "satu.kz",
+    "notes": "Add explicit public product URLs here. Do not use search pages. One seed = one public product card."
+  },
+  "example_seed": {
+    "url": "https://satu.kz/p-example.html",
+    "part_type": "front_pads",
+    "make": "Toyota",
+    "model": "Camry",
+    "generation": "XV50",
+    "year_from": 2011,
+    "year_to": 2017,
+    "engine": "2.5",
+    "body_type": "sedan",
+    "fitment_confidence": "manual",
+    "fitment_raw": "Toyota Camry XV50 2011-2017 2.5"
+  },
+  "seeds": []
+}

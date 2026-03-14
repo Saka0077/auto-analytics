@@ -8,6 +8,7 @@
   "scripts": {
     "start": "node server.js",
     "import:autoparts": "node scripts/import-autoparts-workbook.js",
+    "import:satu": "node scripts/import-satu-autoparts.js",
     "collect:daily": "node scripts/daily-collect-history.js",
     "collect:daily:runner": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/daily-collect-runner.ps1"
   },

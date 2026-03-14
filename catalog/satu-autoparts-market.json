@@ -1,0 +1,224 @@
+{
+  "meta": {
+    "source": "satu.kz",
+    "version": 1,
+    "currency": "KZT",
+    "captured_at": "2026-03-14T19:26:30.883Z",
+    "notes": "Template for Kazakhstan autoparts market data from Satu.kz. Store raw offers, normalized fitment, and aggregated market summaries separately."
+  },
+  "part_types": [
+    {
+      "code": "engine_oil",
+      "label_ru": "Масло двигателя",
+      "basket": "basic"
+    },
+    {
+      "code": "oil_filter",
+      "label_ru": "Масляный фильтр",
+      "basket": "basic"
+    },
+    {
+      "code": "air_filter",
+      "label_ru": "Воздушный фильтр",
+      "basket": "basic"
+    },
+    {
+      "code": "cabin_filter",
+      "label_ru": "Салонный фильтр",
+      "basket": "basic"
+    },
+    {
+      "code": "spark_plugs",
+      "label_ru": "Свечи зажигания",
+      "basket": "basic"
+    },
+    {
+      "code": "brake_fluid",
+      "label_ru": "Тормозная жидкость",
+      "basket": "basic"
+    },
+    {
+      "code": "coolant",
+      "label_ru": "Антифриз",
+      "basket": "basic"
+    },
+    {
+      "code": "front_pads",
+      "label_ru": "Передние колодки",
+      "basket": "basic"
+    },
+    {
+      "code": "rear_pads",
+      "label_ru": "Задние колодки",
+      "basket": "basic"
+    },
+    {
+      "code": "front_disc",
+      "label_ru": "Передние тормозные диски",
+      "basket": "basic"
+    },
+    {
+      "code": "battery",
+      "label_ru": "Аккумулятор",
+      "basket": "basic"
+    },
+    {
+      "code": "wiper_blades",
+      "label_ru": "Щетки стеклоочистителя",
+      "basket": "basic"
+    },
+    {
+      "code": "rear_disc",
+      "label_ru": "Задние тормозные диски",
+      "basket": "extended"
+    },
+    {
+      "code": "transmission_oil",
+      "label_ru": "Масло КПП",
+      "basket": "extended"
+    },
+    {
+      "code": "at_filter_kit",
+      "label_ru": "Фильтр и прокладка АКПП",
+      "basket": "extended"
+    },
+    {
+      "code": "timing_belt_kit",
+      "label_ru": "Комплект ГРМ",
+      "basket": "extended"
+    },
+    {
+      "code": "timing_chain_service",
+      "label_ru": "Обслуживание цепи ГРМ",
+      "basket": "extended"
+    },
+    {
+      "code": "water_pump",
+      "label_ru": "Водяная помпа",
+      "basket": "extended"
+    },
+    {
+      "code": "drive_belt",
+      "label_ru": "Приводной ремень",
+      "basket": "extended"
+    },
+    {
+      "code": "belt_tensioner",
+      "label_ru": "Натяжитель или ролик",
+      "basket": "extended"
+    },
+    {
+      "code": "shock_absorber_front",
+      "label_ru": "Передний амортизатор",
+      "basket": "extended"
+    },
+    {
+      "code": "shock_absorber_rear",
+      "label_ru": "Задний амортизатор",
+      "basket": "extended"
+    },
+    {
+      "code": "strut_mount",
+      "label_ru": "Опора стойки",
+      "basket": "extended"
+    },
+    {
+      "code": "stabilizer_link",
+      "label_ru": "Стойка стабилизатора",
+      "basket": "extended"
+    },
+    {
+      "code": "ball_joint",
+      "label_ru": "Шаровая опора",
+      "basket": "extended"
+    },
+    {
+      "code": "control_arm_bushing",
+      "label_ru": "Сайлентблок рычага",
+      "basket": "extended"
+    },
+    {
+      "code": "wheel_bearing",
+      "label_ru": "Ступичный подшипник",
+      "basket": "extended"
+    },
+    {
+      "code": "tie_rod_end",
+      "label_ru": "Наконечник рулевой тяги",
+      "basket": "extended"
+    },
+    {
+      "code": "cv_boot",
+      "label_ru": "Пыльник ШРУС",
+      "basket": "extended"
+    },
+    {
+      "code": "engine_mount",
+      "label_ru": "Подушка двигателя",
+      "basket": "extended"
+    },
+    {
+      "code": "clutch_kit",
+      "label_ru": "Комплект сцепления",
+      "basket": "optional"
+    },
+    {
+      "code": "flywheel",
+      "label_ru": "Маховик",
+      "basket": "optional"
+    },
+    {
+      "code": "ignition_coil",
+      "label_ru": "Катушка зажигания",
+      "basket": "optional"
+    },
+    {
+      "code": "injector",
+      "label_ru": "Форсунка",
+      "basket": "optional"
+    },
+    {
+      "code": "fuel_pump",
+      "label_ru": "Топливный насос",
+      "basket": "optional"
+    },
+    {
+      "code": "hpfp",
+      "label_ru": "ТНВД",
+      "basket": "optional"
+    },
+    {
+      "code": "turbo",
+      "label_ru": "Турбина",
+      "basket": "optional"
+    },
+    {
+      "code": "lambda_sensor",
+      "label_ru": "Лямбда-зонд",
+      "basket": "optional"
+    },
+    {
+      "code": "catalyst",
+      "label_ru": "Катализатор",
+      "basket": "optional"
+    },
+    {
+      "code": "thermostat",
+      "label_ru": "Термостат",
+      "basket": "optional"
+    },
+    {
+      "code": "radiator",
+      "label_ru": "Радиатор",
+      "basket": "optional"
+    },
+    {
+      "code": "ac_compressor",
+      "label_ru": "Компрессор кондиционера",
+      "basket": "optional"
+    }
+  ],
+  "offers": [],
+  "fitment_map": [],
+  "market_summary": []
+}
